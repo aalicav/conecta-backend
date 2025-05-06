@@ -317,7 +317,7 @@ Route::middleware(['auth:sanctum'])->prefix('dashboard')->group(function () {
 });
 
 // WhatsApp routes
-Route::prefix('whatsapp')->group(function () {
+Route::middleware(['auth:sanctum'])->prefix('whatsapp')->group(function () {
     Route::get('messages', [WhatsappController::class, 'index']);
     Route::get('messages/{id}', [WhatsappController::class, 'show']);
     Route::post('send/text', [WhatsappController::class, 'sendText']);
@@ -330,6 +330,9 @@ Route::prefix('whatsapp')->group(function () {
     Route::get('statistics', [WhatsappController::class, 'statistics']);
     Route::match(['get', 'post'], 'webhook', [WhatsappController::class, 'webhook'])->withoutMiddleware('auth:sanctum');
 });
+
+// Additional route outside the middleware group for testing
+Route::post('/api/whatsapp/test/simple', [App\Http\Controllers\Api\WhatsappController::class, 'sendSimpleTest']);
 
 // Auth routes
 Route::group(['prefix' => 'auth', 'namespace' => 'Api\Auth'], function () {
