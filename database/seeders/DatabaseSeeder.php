@@ -24,7 +24,7 @@ class DatabaseSeeder extends Seeder
             SystemSettingSeeder::class,
             TussProcedureSeeder::class,
             ContractTemplateSeeder::class,
-            NegotiationExampleSeeder::class,
+            // NegotiationExampleSeeder::class,
         ]);        
         
         $user = User::factory()->create([

@@ -27,6 +27,8 @@ use App\Http\Controllers\Api\DataPrivacyController;
 use App\Http\Controllers\Api\BillingRuleController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\WhatsappController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\Api\HealthPlanDashboardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -40,6 +42,11 @@ Route::post('/login', [AuthController::class, 'login']);
 // Protected routes
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    // Perfil do Usuário
+    Route::get('/user/profile', [ProfileController::class, 'getProfile']);
+    Route::post('/user/profile', [ProfileController::class, 'updateProfile']);
+    Route::post('/user/change-password', [ProfileController::class, 'changePassword']);
 
     // TUSS Procedures
     Route::prefix('tuss')->group(function () {
@@ -63,6 +70,13 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/health-plans/{health_plan}/parent', [HealthPlanController::class, 'setParent'])->middleware('permission:edit health plans');
     Route::delete('/health-plans/{health_plan}/parent', [HealthPlanController::class, 'removeParent'])->middleware('permission:edit health plans');
     Route::get('/health-plans/{health_plan}/children', [HealthPlanController::class, 'getChildren']);
+    
+    // Health Plans Dashboard
+    Route::get('/health-plans/dashboard/stats', [HealthPlanDashboardController::class, 'getStats']);
+    Route::get('/health-plans/dashboard/procedures', [HealthPlanDashboardController::class, 'getProcedures']);
+    Route::get('/health-plans/dashboard/financial', [HealthPlanDashboardController::class, 'getFinancial']);
+    Route::get('/health-plans/dashboard/recent', [HealthPlanDashboardController::class, 'getRecentPlans']);
+    Route::get('/health-plans/dashboard/solicitations', [HealthPlanDashboardController::class, 'getRecentSolicitations']);
     
     // Clinics
     Route::apiResource('clinics', ClinicController::class);
@@ -313,4 +327,16 @@ Route::prefix('whatsapp')->middleware(['auth:sanctum'])->group(function () {
 });
 
 // WhatsApp Webhook (no auth required as it's called by the WhatsApp API)
-Route::match(['get', 'post'], '/webhooks/whatsapp', [WhatsappController::class, 'webhook']); 
+Route::match(['get', 'post'], '/webhooks/whatsapp', [WhatsappController::class, 'webhook']);
+
+// Auth routes
+Route::group(['prefix' => 'auth', 'namespace' => 'Api\Auth'], function () {
+    Route::post('/login', 'AuthController@login');
+    Route::post('/logout', 'AuthController@logout')->middleware('auth:sanctum');
+    Route::get('/user', 'AuthController@user')->middleware('auth:sanctum');
+    
+    // Password reset routes
+    Route::post('/password/reset-request', 'AuthController@requestPasswordReset');
+    Route::post('/password/validate-token', 'AuthController@validateResetToken');
+    Route::post('/password/reset', 'AuthController@resetPassword');
+}); 
