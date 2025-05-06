@@ -316,18 +316,20 @@ Route::middleware(['auth:sanctum'])->prefix('dashboard')->group(function () {
     Route::get('/suri/stats', [DashboardController::class, 'getSuriStats']);
 });
 
-// WhatsApp Management
-Route::prefix('whatsapp')->middleware(['auth:sanctum'])->group(function () {
-    Route::get('/messages', [WhatsappController::class, 'index']);
-    Route::get('/messages/{id}', [WhatsappController::class, 'show']);
-    Route::post('/messages/text', [WhatsappController::class, 'sendText']);
-    Route::post('/messages/media', [WhatsappController::class, 'sendMedia']);
-    Route::post('/messages/{id}/resend', [WhatsappController::class, 'resend']);
-    Route::get('/statistics', [WhatsappController::class, 'statistics']);
+// WhatsApp routes
+Route::prefix('whatsapp')->group(function () {
+    Route::get('messages', [WhatsappController::class, 'index']);
+    Route::get('messages/{id}', [WhatsappController::class, 'show']);
+    Route::post('send/text', [WhatsappController::class, 'sendText']);
+    Route::post('send/media', [WhatsappController::class, 'sendMedia']);
+    Route::post('send/template', [WhatsappController::class, 'sendTemplate']);
+    Route::post('test/template', [WhatsappController::class, 'testTemplate']);
+    Route::post('test/conecta-template', [WhatsappController::class, 'testConectaTemplate']);
+    Route::post('test/simple', [WhatsappController::class, 'sendSimpleTest']);
+    Route::post('resend/{id}', [WhatsappController::class, 'resend']);
+    Route::get('statistics', [WhatsappController::class, 'statistics']);
+    Route::match(['get', 'post'], 'webhook', [WhatsappController::class, 'webhook'])->withoutMiddleware('auth:sanctum');
 });
-
-// WhatsApp Webhook (no auth required as it's called by the WhatsApp API)
-Route::match(['get', 'post'], '/webhooks/whatsapp', [WhatsappController::class, 'webhook']);
 
 // Auth routes
 Route::group(['prefix' => 'auth', 'namespace' => 'Api\Auth'], function () {

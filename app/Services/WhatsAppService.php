@@ -10,6 +10,7 @@ use App\Models\Professional;
 use App\Models\HealthPlan;
 use App\Models\Appointment;
 use App\Models\WhatsappMessage;
+use Carbon\Carbon;
 
 class WhatsAppService
 {
@@ -458,10 +459,17 @@ class WhatsAppService
      * @param  string  $to The recipient's phone number (with country code, no + prefix)
      * @param  string  $contentSid The content SID of the template
      * @param  array  $variables The variables to be used in the template
+     * @param  string|null  $relatedModelType The type of related model
+     * @param  int|null  $relatedModelId The ID of related model
      * @return \Twilio\Rest\Api\V2010\Account\MessageInstance|null
      */
-    public function sendTemplateMessage(string $to, string $contentSid, array $variables = [])
-    {
+    public function sendTemplateMessage(
+        string $to, 
+        string $contentSid, 
+        array $variables = [],
+        $relatedModelType = null,
+        $relatedModelId = null
+    ) {
         try {
             $to = $this->formatNumber($to);
             $from = $this->formatNumber($this->fromNumber);
@@ -481,7 +489,23 @@ class WhatsAppService
                 $messageParams['messagingServiceSid'] = $this->messagingServiceSid;
             }
 
+            // Create a record in the database first
+            $whatsappMessage = WhatsappMessage::create([
+                'recipient' => preg_replace('/[^0-9]/', '', $to),
+                'message' => json_encode($variables),
+                'status' => WhatsappMessage::STATUS_PENDING,
+                'related_model_type' => $relatedModelType,
+                'related_model_id' => $relatedModelId,
+            ]);
+
             $message = $this->client->messages->create($to, $messageParams);
+            
+            // Update the message with the SID and status
+            $whatsappMessage->update([
+                'status' => WhatsappMessage::STATUS_SENT,
+                'external_id' => $message->sid,
+                'sent_at' => now(),
+            ]);
             
             Log::info('WhatsApp template message sent', [
                 'to' => $to,
@@ -492,6 +516,14 @@ class WhatsAppService
 
             return $message;
         } catch (Exception $e) {
+            // If we created a message record, update it with the error
+            if (isset($whatsappMessage)) {
+                $whatsappMessage->update([
+                    'status' => WhatsappMessage::STATUS_FAILED,
+                    'error_message' => $e->getMessage(),
+                ]);
+            }
+
             Log::error('Failed to send WhatsApp template message', [
                 'to' => $to,
                 'content_sid' => $contentSid,
@@ -534,7 +566,9 @@ class WhatsAppService
             return $this->sendTemplateMessage(
                 $payload['to'],
                 $templateSid,
-                $payload['variables'] ?? []
+                $payload['variables'] ?? [],
+                $payload['related_model_type'] ?? null,
+                $payload['related_model_id'] ?? null
             );
         } catch (Exception $e) {
             Log::error('Failed to send WhatsApp template message', [
@@ -759,5 +793,145 @@ class WhatsAppService
         
         // Format as required by Twilio WhatsApp
         return "whatsapp:+{$number}";
+    }
+
+    /**
+     * Send a test message using a template without requiring actual model objects
+     *
+     * @param string $to The recipient's phone number (with country code, no + prefix)
+     * @param string $templateKey Which template to use (agendamento_cliente, nps_survey, etc.)
+     * @param array $testData Optional override test data
+     * @return \Twilio\Rest\Api\V2010\Account\MessageInstance|null
+     */
+    public function sendTestMessage(string $to, string $templateKey, array $testData = [])
+    {
+        try {
+            // Map template keys to template SIDs
+            $templateMap = [
+                'agendamento_cliente' => self::TEMPLATE_AGENDAMENTO_CLIENTE,
+                'agendamento_cancelado' => self::TEMPLATE_AGENDAMENTO_CANCELADO,
+                'agendamento_confirmado' => self::TEMPLATE_AGENDAMENTO_CONFIRMADO,
+                'nps_survey' => self::TEMPLATE_NPS_SURVEY,
+                'nps_survey_prestador' => self::TEMPLATE_NPS_SURVEY_PRESTADOR,
+                'nps_pergunta' => self::TEMPLATE_NPS_PERGUNTA,
+                'copy_menssagem_operadora' => self::TEMPLATE_COPY_MENSAGEM_OPERADORA
+            ];
+            
+            if (!isset($templateMap[$templateKey])) {
+                throw new Exception("Template key '{$templateKey}' not found");
+            }
+            
+            $templateSid = $templateMap[$templateKey];
+            
+            // Generate default test data if none provided
+            if (empty($testData)) {
+                $testData = $this->generateDefaultTestData($templateKey);
+            }
+            
+            // Send the template message
+            $message = $this->sendTemplateMessage(
+                $to,
+                $templateSid,
+                $testData,
+                'test',
+                null
+            );
+            
+            Log::info('Test message sent', [
+                'template_key' => $templateKey,
+                'to' => $to,
+                'data' => $testData
+            ]);
+            
+            return $message;
+        } catch (Exception $e) {
+            Log::error('Failed to send test message', [
+                'template_key' => $templateKey,
+                'to' => $to,
+                'error' => $e->getMessage()
+            ]);
+            
+            throw $e;
+        }
+    }
+    
+    /**
+     * Generate default test data for templates
+     *
+     * @param string $templateKey
+     * @return array
+     */
+    public function generateDefaultTestData($templateKey)
+    {
+        $currentDate = Carbon::now()->format('d/m/Y');
+        $futureDate = Carbon::now()->addDays(3)->format('d/m/Y');
+        
+        switch ($templateKey) {
+            case 'agendamento_cliente':
+                return [
+                    '1' => 'João da Silva', // nome_cliente
+                    '2' => 'Dr. Maria Fernandes', // nome_especialista
+                    '3' => 'Cardiologia', // especialidade
+                    '4' => $futureDate, // data_consulta
+                    '5' => '14:30', // hora_consulta
+                    '6' => 'Av. Paulista, 1000, São Paulo - SP', // endereco_clinica
+                    '7' => 'https://agendamento.example.com/123456' // link_confirmacao
+                ];
+                
+            case 'agendamento_cancelado':
+                return [
+                    '1' => 'Ana Souza', // nome_cliente
+                    '2' => $futureDate, // data_consulta
+                    '3' => 'https://reagendamento.example.com/123456' // link_reagendamento
+                ];
+                
+            case 'agendamento_confirmado':
+                return [
+                    '1' => 'Pedro Santos', // nome_cliente
+                    '2' => $futureDate, // data_consulta
+                    '3' => '10:15', // hora_consulta
+                    '4' => 'https://detalhes.example.com/123456' // link_detalhes
+                ];
+                
+            case 'nps_survey':
+                return [
+                    '1' => 'Carlos Oliveira', // nome_cliente
+                    '2' => $currentDate, // data_consulta
+                    '3' => 'Dr. Ricardo Mendes', // nome_especialista
+                    '4' => 'Ortopedia', // especialidade
+                    '5' => '123456' // appointment_id
+                ];
+                
+            case 'nps_survey_prestador':
+                return [
+                    '1' => 'Mariana Costa', // nome_cliente
+                    '2' => 'Dra. Juliana Alves', // nome_especialista
+                    '3' => $currentDate, // data_consulta
+                    '4' => '123456' // appointment_id
+                ];
+                
+            case 'nps_pergunta':
+                return [
+                    '1' => '123456' // appointment_id
+                ];
+                
+            case 'copy_menssagem_operadora':
+                return [
+                    '1' => 'Fernanda Lima', // nome_operador
+                    '2' => 'Lucas Martins', // nome_cliente
+                    '3' => 'Dr. Paulo Cardoso', // nome_especialista
+                    '4' => 'Oftalmologia', // especialidade
+                    '5' => $futureDate, // data_consulta
+                    '6' => '15:45', // hora_consulta
+                    '7' => 'Rua Augusta, 500, São Paulo - SP' // endereco_clinica
+                ];
+                
+            default:
+                return [
+                    '1' => 'Usuário Teste',
+                    '2' => $currentDate,
+                    '3' => 'https://teste.example.com/123'
+                ];
+        }
     }
 } 
