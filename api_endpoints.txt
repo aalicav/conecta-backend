@@ -1,0 +1,1374 @@
+# CONECTA API ENDPOINTS
+
+## Autenticação
+
+### POST /api/login
+- **Descrição**: Autentica um usuário e retorna um token
+- **Request Body**:
+  ```json
+  {
+    "email": "exemplo@email.com",
+    "password": "senha123"
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "user": {
+      "id": 1,
+      "name": "Nome Completo",
+      "email": "exemplo@email.com",
+      "role": "admin",
+      "permissions": ["approve health plans", "edit clinics", "..."]
+    }
+  }
+  ```
+
+### POST /api/logout
+- **Descrição**: Encerra a sessão do usuário
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Logout realizado com sucesso"
+  }
+  ```
+
+### GET /api/user
+- **Descrição**: Retorna informações do usuário autenticado
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "id": 1,
+    "name": "Nome Completo",
+    "email": "exemplo@email.com",
+    "role": "admin",
+    "permissions": ["approve health plans", "edit clinics", "..."],
+    "clinic_id": 5,
+    "professional_id": null,
+    "created_at": "2023-01-15T10:30:00.000000Z",
+    "updated_at": "2023-06-20T14:45:00.000000Z"
+  }
+  ```
+
+## Planos de Saúde
+
+### GET /api/health-plans
+- **Descrição**: Lista todos os planos de saúde
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: page, per_page, sort, filter
+- **Response**: 
+  ```json
+  {
+    "data": [
+      {
+        "id": 1,
+        "name": "Plano Saúde Total",
+        "status": "active",
+        "coverage": "national",
+        "ans_number": "123456",
+        "contact_email": "contato@plano.com",
+        "contact_phone": "(11) 99999-8888",
+        "created_at": "2023-01-15T10:30:00.000000Z",
+        "updated_at": "2023-06-20T14:45:00.000000Z"
+      },
+      {...}
+    ],
+    "meta": {
+      "current_page": 1,
+      "total": 50,
+      "per_page": 15,
+      "last_page": 4,
+      "first_page_url": "https://api.exemplo.com/api/health-plans?page=1",
+      "last_page_url": "https://api.exemplo.com/api/health-plans?page=4",
+      "next_page_url": "https://api.exemplo.com/api/health-plans?page=2",
+      "prev_page_url": null
+    }
+  }
+  ```
+
+### GET /api/health-plans/{id}
+- **Descrição**: Obtém detalhes de um plano de saúde específico
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "id": 1,
+    "name": "Plano Saúde Total",
+    "status": "active",
+    "coverage": "national",
+    "ans_number": "123456",
+    "contact_email": "contato@plano.com",
+    "contact_phone": "(11) 99999-8888",
+    "address": {
+      "street": "Rua Exemplo",
+      "number": "123",
+      "complement": "Sala 45",
+      "neighborhood": "Centro",
+      "city": "São Paulo",
+      "state": "SP",
+      "zip_code": "01234-567"
+    },
+    "documents": [
+      {
+        "id": 1,
+        "name": "Contrato",
+        "path": "/storage/documents/health_plans/1/contract.pdf",
+        "created_at": "2023-01-15T10:30:00.000000Z"
+      }
+    ],
+    "created_at": "2023-01-15T10:30:00.000000Z",
+    "updated_at": "2023-06-20T14:45:00.000000Z"
+  }
+  ```
+
+### POST /api/health-plans
+- **Descrição**: Cria um novo plano de saúde
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**:
+  ```json
+  {
+    "name": "Novo Plano de Saúde",
+    "coverage": "national",
+    "ans_number": "654321",
+    "contact_email": "contato@novoplano.com",
+    "contact_phone": "(11) 98888-7777"
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Plano de saúde criado com sucesso",
+    "data": {
+      "id": 51,
+      "name": "Novo Plano de Saúde",
+      "status": "pending",
+      "coverage": "national",
+      "ans_number": "654321",
+      "contact_email": "contato@novoplano.com",
+      "contact_phone": "(11) 98888-7777",
+      "created_at": "2023-07-20T10:30:00.000000Z",
+      "updated_at": "2023-07-20T10:30:00.000000Z"
+    }
+  }
+  ```
+
+### PUT /api/health-plans/{id}
+- **Descrição**: Atualiza um plano de saúde existente
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados para atualização
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Plano de saúde atualizado com sucesso",
+    "data": {
+      "id": 1,
+      "name": "Plano Saúde Total Atualizado",
+      "status": "active",
+      "coverage": "regional",
+      "ans_number": "123456",
+      "contact_email": "novo.contato@plano.com",
+      "contact_phone": "(11) 99999-8888",
+      "updated_at": "2023-07-21T15:20:00.000000Z"
+    }
+  }
+  ```
+
+### DELETE /api/health-plans/{id}
+- **Descrição**: Remove um plano de saúde
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Plano de saúde removido com sucesso"
+  }
+  ```
+
+### POST /api/health-plans/{health_plan}/approve
+- **Descrição**: Aprova um plano de saúde
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: approve health plans
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Plano de saúde aprovado com sucesso",
+    "data": {
+      "id": 5,
+      "name": "Plano Exemplo",
+      "status": "active",
+      "approved_at": "2023-07-21T15:30:00.000000Z",
+      "approved_by": {
+        "id": 1,
+        "name": "Administrador"
+      }
+    }
+  }
+  ```
+
+### POST /api/health-plans/{health_plan}/documents
+- **Descrição**: Faz upload de documentos para um plano de saúde
+- **Headers**: Authorization: Bearer {token}
+- **Request**: Multipart form data com documentos
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Documentos enviados com sucesso",
+    "data": [
+      {
+        "id": 5,
+        "name": "contrato_2023.pdf",
+        "path": "/storage/documents/health_plans/5/contrato_2023.pdf",
+        "mime_type": "application/pdf",
+        "size": 1024000,
+        "created_at": "2023-07-21T15:40:00.000000Z"
+      }
+    ]
+  }
+  ```
+
+## Clínicas
+
+### GET /api/clinics
+- **Descrição**: Lista todas as clínicas
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: page, per_page, sort, filter
+- **Response**: 
+  ```json
+  {
+    "data": [
+      {
+        "id": 1,
+        "name": "Clínica Central",
+        "status": "active",
+        "cnpj": "12.345.678/0001-90",
+        "email": "contato@clinicacentral.com",
+        "phone": "(11) 3333-4444",
+        "address": {
+          "city": "São Paulo",
+          "state": "SP"
+        },
+        "created_at": "2023-01-10T08:30:00.000000Z"
+      },
+      {...}
+    ],
+    "meta": {
+      "current_page": 1,
+      "total": 35,
+      "per_page": 15
+    }
+  }
+  ```
+
+### GET /api/clinics/{id}
+- **Descrição**: Obtém detalhes de uma clínica específica
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "id": 1,
+    "name": "Clínica Central",
+    "status": "active",
+    "cnpj": "12.345.678/0001-90",
+    "email": "contato@clinicacentral.com",
+    "phone": "(11) 3333-4444",
+    "address": {
+      "street": "Avenida Paulista",
+      "number": "1000",
+      "complement": "Conjunto 110",
+      "neighborhood": "Bela Vista",
+      "city": "São Paulo",
+      "state": "SP",
+      "zip_code": "01310-100"
+    },
+    "accepted_health_plans": [
+      {
+        "id": 1,
+        "name": "Plano Saúde Total"
+      },
+      {
+        "id": 3,
+        "name": "Plano Vida"
+      }
+    ],
+    "professionals": [
+      {
+        "id": 5,
+        "name": "Dr. João Silva",
+        "specialty": "Cardiologia"
+      }
+    ],
+    "created_at": "2023-01-10T08:30:00.000000Z",
+    "updated_at": "2023-06-15T11:20:00.000000Z"
+  }
+  ```
+
+### POST /api/clinics
+- **Descrição**: Cria uma nova clínica
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados da clínica
+- **Response**: Clínica criada
+
+### PUT /api/clinics/{id}
+- **Descrição**: Atualiza uma clínica existente
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados para atualização
+- **Response**: Clínica atualizada
+
+### DELETE /api/clinics/{id}
+- **Descrição**: Remove uma clínica
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Status 204 No Content
+
+### POST /api/clinics/{clinic}/approve
+- **Descrição**: Aprova uma clínica
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: approve clinics
+- **Response**: Status 200 OK
+
+### POST /api/clinics/{clinic}/documents
+- **Descrição**: Faz upload de documentos para uma clínica
+- **Headers**: Authorization: Bearer {token}
+- **Request**: Multipart form data com documentos
+- **Response**: Status 200 OK
+
+### GET /api/clinics/{clinic}/branches
+- **Descrição**: Lista as filiais de uma clínica
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Lista de filiais
+
+### PATCH /api/clinics/{clinic}/status
+- **Descrição**: Atualiza o status de uma clínica
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: edit clinics
+- **Request Body**: 
+  ```json
+  {
+    "status": "string"
+  }
+  ```
+- **Response**: Status atualizado
+
+## Profissionais
+
+### GET /api/professionals
+- **Descrição**: Lista todos os profissionais
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: page, per_page, sort, filter
+- **Response**: Lista paginada de profissionais
+
+### GET /api/professionals/{id}
+- **Descrição**: Obtém detalhes de um profissional específico
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Detalhes do profissional
+
+### POST /api/professionals
+- **Descrição**: Cadastra um novo profissional
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados do profissional
+- **Response**: Profissional criado
+
+### PUT /api/professionals/{id}
+- **Descrição**: Atualiza um profissional existente
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados para atualização
+- **Response**: Profissional atualizado
+
+### DELETE /api/professionals/{id}
+- **Descrição**: Remove um profissional
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Status 204 No Content
+
+### POST /api/professionals/{professional}/approve
+- **Descrição**: Aprova um profissional
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: approve professionals
+- **Response**: Status 200 OK
+
+### POST /api/professionals/{professional}/documents
+- **Descrição**: Faz upload de documentos para um profissional
+- **Headers**: Authorization: Bearer {token}
+- **Request**: Multipart form data com documentos
+- **Response**: Status 200 OK
+
+## Pacientes
+
+### GET /api/patients
+- **Descrição**: Lista todos os pacientes
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: page, per_page, sort, filter
+- **Response**: Lista paginada de pacientes
+
+### GET /api/patients/{id}
+- **Descrição**: Obtém detalhes de um paciente específico
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Detalhes do paciente
+
+### POST /api/patients
+- **Descrição**: Cadastra um novo paciente
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados do paciente
+- **Response**: Paciente criado
+
+### PUT /api/patients/{id}
+- **Descrição**: Atualiza um paciente existente
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados para atualização
+- **Response**: Paciente atualizado
+
+### DELETE /api/patients/{id}
+- **Descrição**: Remove um paciente
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Status 204 No Content
+
+## Solicitações
+
+### GET /api/solicitations
+- **Descrição**: Lista todas as solicitações
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: page, per_page, sort, filter
+- **Response**: 
+  ```json
+  {
+    "data": [
+      {
+        "id": 1,
+        "health_plan_id": 3,
+        "health_plan_name": "Plano Vida",
+        "patient_id": 42,
+        "patient_name": "Maria Silva",
+        "tuss_id": 123,
+        "tuss_code": "40304361",
+        "tuss_name": "Consulta em consultório",
+        "status": "pending",
+        "priority": "normal",
+        "preferred_date_start": "2023-08-10T14:00:00.000000Z",
+        "preferred_date_end": "2023-08-10T18:00:00.000000Z",
+        "created_at": "2023-07-28T10:15:00.000000Z"
+      },
+      {...}
+    ],
+    "meta": {
+      "current_page": 1,
+      "total": 120,
+      "per_page": 15
+    }
+  }
+  ```
+
+### GET /api/solicitations/{id}
+- **Descrição**: Obtém detalhes de uma solicitação específica
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "id": 1,
+    "health_plan_id": 3,
+    "health_plan": {
+      "id": 3,
+      "name": "Plano Vida",
+      "status": "active"
+    },
+    "patient_id": 42,
+    "patient": {
+      "id": 42,
+      "name": "Maria Silva",
+      "email": "maria@exemplo.com",
+      "phone": "(11) 98765-4321",
+      "health_card_number": "123456789"
+    },
+    "tuss_id": 123,
+    "tuss": {
+      "id": 123,
+      "code": "40304361",
+      "name": "Consulta em consultório"
+    },
+    "requested_by": {
+      "id": 5,
+      "name": "Atendente João"
+    },
+    "status": "pending",
+    "priority": "normal",
+    "notes": "Paciente solicitou horário no período da tarde",
+    "preferred_date_start": "2023-08-10T14:00:00.000000Z",
+    "preferred_date_end": "2023-08-10T18:00:00.000000Z",
+    "preferred_location_lat": -23.5505,
+    "preferred_location_lng": -46.6333,
+    "max_distance_km": 10,
+    "scheduled_automatically": false,
+    "created_at": "2023-07-28T10:15:00.000000Z",
+    "updated_at": "2023-07-28T10:15:00.000000Z"
+  }
+  ```
+
+### POST /api/solicitations
+- **Descrição**: Cria uma nova solicitação
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados da solicitação
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Solicitação criada com sucesso",
+    "data": {
+      "id": 121,
+      "health_plan_id": 3,
+      "patient_id": 42,
+      "tuss_id": 123,
+      "requested_by": 5,
+      "status": "pending",
+      "priority": "normal",
+      "notes": "Paciente solicitou horário no período da tarde",
+      "preferred_date_start": "2023-08-10T14:00:00.000000Z",
+      "preferred_date_end": "2023-08-10T18:00:00.000000Z",
+      "preferred_location_lat": -23.5505,
+      "preferred_location_lng": -46.6333,
+      "max_distance_km": 10,
+      "created_at": "2023-07-28T10:15:00.000000Z",
+      "updated_at": "2023-07-28T10:15:00.000000Z"
+    }
+  }
+  ```
+
+### PUT /api/solicitations/{id}
+- **Descrição**: Atualiza uma solicitação existente
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados para atualização
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Solicitação atualizada com sucesso",
+    "data": {
+      "id": 1,
+      "health_plan_id": 3,
+      "patient_id": 42,
+      "tuss_id": 123,
+      "requested_by": 5,
+      "status": "pending",
+      "priority": "high",
+      "notes": "Paciente solicitou horário no período da tarde. Atualizado: prioridade alta",
+      "preferred_date_start": "2023-08-11T14:00:00.000000Z",
+      "preferred_date_end": "2023-08-11T18:00:00.000000Z",
+      "preferred_location_lat": -23.5505,
+      "preferred_location_lng": -46.6333,
+      "max_distance_km": 5,
+      "updated_at": "2023-07-29T09:30:00.000000Z"
+    }
+  }
+  ```
+
+### DELETE /api/solicitations/{id}
+- **Descrição**: Remove uma solicitação
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Solicitação removida com sucesso"
+  }
+  ```
+
+### PATCH /api/solicitations/{solicitation}/cancel
+- **Descrição**: Cancela uma solicitação
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**:
+  ```json
+  {
+    "cancel_reason": "Paciente solicitou cancelamento"
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Solicitação cancelada com sucesso",
+    "data": {
+      "id": 1,
+      "status": "cancelled",
+      "cancel_reason": "Paciente solicitou cancelamento",
+      "cancelled_at": "2023-07-29T11:45:00.000000Z"
+    }
+  }
+  ```
+
+### POST /api/solicitations/{solicitation}/reschedule
+- **Descrição**: Reagenda uma solicitação
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**:
+  ```json
+  {
+    "preferred_date_start": "2023-08-15T10:00:00.000000Z",
+    "preferred_date_end": "2023-08-15T18:00:00.000000Z"
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Solicitação reagendada com sucesso",
+    "data": {
+      "id": 1,
+      "status": "pending",
+      "preferred_date_start": "2023-08-15T10:00:00.000000Z",
+      "preferred_date_end": "2023-08-15T18:00:00.000000Z",
+      "updated_at": "2023-07-29T14:20:00.000000Z"
+    }
+  }
+  ```
+
+### POST /api/solicitations/{solicitation}/auto-schedule
+- **Descrição**: Força o agendamento automático de uma solicitação
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Solicitação agendada automaticamente",
+    "data": {
+      "id": 1,
+      "status": "scheduled",
+      "scheduled_automatically": true,
+      "appointment": {
+        "id": 45,
+        "professional_id": 12,
+        "professional_name": "Dr. Carlos Mendes",
+        "clinic_id": 3,
+        "clinic_name": "Clínica Saúde Plena",
+        "scheduled_for": "2023-08-15T14:30:00.000000Z"
+      }
+    }
+  }
+  ```
+
+## Agendamentos
+
+### GET /api/appointments
+- **Descrição**: Lista todos os agendamentos
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: page, per_page, sort, filter
+- **Response**: Lista paginada de agendamentos
+
+### GET /api/appointments/{id}
+- **Descrição**: Obtém detalhes de um agendamento específico
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Detalhes do agendamento
+
+### POST /api/appointments
+- **Descrição**: Cria um novo agendamento
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados do agendamento
+- **Response**: Agendamento criado
+
+### PUT /api/appointments/{id}
+- **Descrição**: Atualiza um agendamento existente
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados para atualização
+- **Response**: Agendamento atualizado
+
+### DELETE /api/appointments/{id}
+- **Descrição**: Remove um agendamento
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Status 204 No Content
+
+### PATCH /api/appointments/{appointment}/confirm
+- **Descrição**: Confirma presença em um agendamento
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Status 200 OK
+
+### PATCH /api/appointments/{appointment}/complete
+- **Descrição**: Marca um agendamento como concluído
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Status 200 OK
+
+### PATCH /api/appointments/{appointment}/cancel
+- **Descrição**: Cancela um agendamento
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**:
+  ```json
+  {
+    "cancel_reason": "string"
+  }
+  ```
+- **Response**: Status 200 OK
+
+### PATCH /api/appointments/{appointment}/missed
+- **Descrição**: Marca um agendamento como perdido
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Status 200 OK
+
+## Contratos
+
+### GET /api/contracts
+- **Descrição**: Lista todos os contratos
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: page, per_page, sort, filter
+- **Response**: Lista paginada de contratos
+
+### GET /api/contracts/{id}
+- **Descrição**: Obtém detalhes de um contrato específico
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Detalhes do contrato
+
+### POST /api/contracts
+- **Descrição**: Cria um novo contrato
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados do contrato
+- **Response**: Contrato criado
+
+### PUT /api/contracts/{id}
+- **Descrição**: Atualiza um contrato existente
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**: Dados para atualização
+- **Response**: Contrato atualizado
+
+### DELETE /api/contracts/{id}
+- **Descrição**: Remove um contrato
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Status 204 No Content
+
+### GET /api/contracts/{contract}/download
+- **Descrição**: Baixa um contrato em formato PDF
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Arquivo PDF do contrato (octet-stream)
+
+### PATCH /api/contracts/{contract}/sign
+- **Descrição**: Assina um contrato
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**:
+  ```json
+  {
+    "signature": "base64encodeddatasignature..."
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Contrato assinado com sucesso",
+    "data": {
+      "id": 5,
+      "status": "signed",
+      "signed_at": "2023-07-30T10:25:00.000000Z",
+      "signed_by": {
+        "id": 42,
+        "name": "Maria Silva"
+      }
+    }
+  }
+  ```
+
+### POST /api/contracts/generate
+- **Descrição**: Gera um novo contrato a partir de um template
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**:
+  ```json
+  {
+    "template_id": "integer",
+    "entity_type": "string",
+    "entity_id": "integer",
+    "data": {}
+  }
+  ```
+- **Response**: Contrato gerado
+
+### POST /api/contracts/{contract}/regenerate
+- **Descrição**: Regenera um contrato existente
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Contrato regenerado
+
+## Pagamentos
+
+### GET /api/payments
+- **Descrição**: Lista todos os pagamentos
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: page, per_page, sort, filter
+- **Response**: Lista paginada de pagamentos
+
+### GET /api/payments/{id}
+- **Descrição**: Obtém detalhes de um pagamento específico
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Detalhes do pagamento
+
+### POST /api/payments/{payment}/process
+- **Descrição**: Processa um pagamento
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Status 200 OK
+
+### POST /api/payments/{payment}/apply-gloss
+- **Descrição**: Aplica glosa em um pagamento
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage financials
+- **Request Body**:
+  ```json
+  {
+    "amount": "decimal",
+    "reason": "string"
+  }
+  ```
+- **Response**: Status 200 OK
+
+### POST /api/payments/{payment}/refund
+- **Descrição**: Reembolsa um pagamento
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage financials
+- **Request Body**:
+  ```json
+  {
+    "amount": "decimal",
+    "reason": "string"
+  }
+  ```
+- **Response**: Status 200 OK
+
+### POST /api/payments/{payment}/glosses/{gloss}/revert
+- **Descrição**: Reverte uma glosa aplicada
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage financials
+- **Response**: Status 200 OK
+
+## Relatórios
+
+### GET /api/reports/appointments
+- **Descrição**: Relatório de agendamentos
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: start_date, end_date, filter
+- **Response**: Dados do relatório
+
+### GET /api/reports/financials
+- **Descrição**: Relatório financeiro
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: view financial reports
+- **Query Parameters**: start_date, end_date, filter
+- **Response**: Dados do relatório financeiro
+
+### GET /api/reports/performance
+- **Descrição**: Relatório de performance
+- **Headers**: Authorization: Bearer {token}
+- **Query Parameters**: start_date, end_date, filter
+- **Response**: Dados de performance
+
+### POST /api/reports/export
+- **Descrição**: Exporta relatórios em diferentes formatos
+- **Headers**: Authorization: Bearer {token}
+- **Request Body**:
+  ```json
+  {
+    "report_type": "string",
+    "format": "string",
+    "filters": {}
+  }
+  ```
+- **Response**: Arquivo exportado
+
+## Configurações do Sistema
+
+### GET /api/system-settings
+- **Descrição**: Lista todas as configurações do sistema
+- **Headers**: Authorization: Bearer {token}
+- **Response**: Lista de configurações
+
+### POST /api/system-settings
+- **Descrição**: Atualiza múltiplas configurações
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: edit settings
+- **Request Body**: 
+  ```json
+  {
+    "app.name": "Conecta Saúde",
+    "app.logo_url": "https://example.com/logo.png",
+    "scheduling.auto_scheduling": true
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Configurações atualizadas com sucesso",
+    "data": {
+      "updated": [
+        "app.name",
+        "app.logo_url",
+        "scheduling.auto_scheduling"
+      ]
+    }
+  }
+  ```
+
+### POST /api/system-settings/create
+- **Descrição**: Cria uma nova configuração
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: edit settings
+- **Request Body**:
+  ```json
+  {
+    "key": "notification.sms_enabled",
+    "value": true,
+    "group": "notification"
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Configuração criada com sucesso",
+    "data": {
+      "key": "notification.sms_enabled",
+      "value": true,
+      "group": "notification",
+      "created_at": "2023-07-30T16:20:00.000000Z"
+    }
+  }
+  ```
+
+### GET /api/system-settings/group/{group}
+- **Descrição**: Obtém configurações por grupo
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": {
+      "group": "notification",
+      "settings": [
+        {
+          "key": "notification.email_enabled",
+          "value": true,
+          "description": "Habilita notificações por e-mail"
+        },
+        {
+          "key": "notification.sms_enabled",
+          "value": true,
+          "description": "Habilita notificações por SMS"
+        },
+        {
+          "key": "notification.push_enabled",
+          "value": false,
+          "description": "Habilita notificações push"
+        }
+      ]
+    }
+  }
+  ```
+
+### GET /api/system-settings/{key}
+- **Descrição**: Obtém uma configuração específica
+- **Headers**: Authorization: Bearer {token}
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": {
+      "key": "notification.email_enabled",
+      "value": true,
+      "group": "notification",
+      "description": "Habilita notificações por e-mail",
+      "created_at": "2023-06-15T09:30:00.000000Z",
+      "updated_at": "2023-07-20T14:15:00.000000Z"
+    }
+  }
+  ```
+
+### PUT /api/system-settings/{key}
+- **Descrição**: Atualiza uma configuração específica
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: edit settings
+- **Request Body**:
+  ```json
+  {
+    "value": false
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Configuração atualizada com sucesso",
+    "data": {
+      "key": "notification.email_enabled",
+      "value": false,
+      "updated_at": "2023-07-30T16:45:00.000000Z"
+    }
+  }
+  ```
+
+### DELETE /api/system-settings/{key}
+- **Descrição**: Remove uma configuração
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: edit settings
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Configuração removida com sucesso"
+  }
+  ```
+
+## Dashboard do Profissional
+
+### GET /api/professional/dashboard
+- **Descrição**: Dashboard do profissional
+- **Headers**: Authorization: Bearer {token}
+- **Role**: professional
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": {
+      "professional": {
+        "id": 12,
+        "name": "Dr. Carlos Mendes",
+        "specialty": "Cardiologia"
+      },
+      "stats": {
+        "today_appointments": 5,
+        "pending_appointments": 12,
+        "completed_appointments": 120
+      },
+      "upcoming_appointments": [
+        {
+          "id": 45,
+          "patient_name": "Maria Silva",
+          "scheduled_for": "2023-08-15T14:30:00.000000Z",
+          "status": "confirmed"
+        },
+        {
+          "id": 46,
+          "patient_name": "João Pereira",
+          "scheduled_for": "2023-08-15T15:30:00.000000Z",
+          "status": "pending"
+        }
+      ]
+    }
+  }
+  ```
+
+### GET /api/professional/dashboard/appointments
+- **Descrição**: Agendamentos do profissional
+- **Headers**: Authorization: Bearer {token}
+- **Role**: professional
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": {
+      "current": [
+        {
+          "id": 45,
+          "patient": {
+            "id": 42,
+            "name": "Maria Silva",
+            "health_plan": "Plano Vida"
+          },
+          "scheduled_for": "2023-08-15T14:30:00.000000Z",
+          "status": "confirmed",
+          "procedure": "Consulta em consultório"
+        }
+      ],
+      "upcoming": [
+        {
+          "id": 46,
+          "patient": {
+            "id": 43,
+            "name": "João Pereira",
+            "health_plan": "Plano Saúde Total"
+          },
+          "scheduled_for": "2023-08-15T15:30:00.000000Z",
+          "status": "pending",
+          "procedure": "Consulta em consultório"
+        }
+      ],
+      "past": [
+        {
+          "id": 40,
+          "patient": {
+            "id": 38,
+            "name": "Ana Souza",
+            "health_plan": "Plano Vida"
+          },
+          "scheduled_for": "2023-08-10T10:30:00.000000Z",
+          "status": "completed",
+          "procedure": "Consulta em consultório"
+        }
+      ]
+    }
+  }
+  ```
+
+### GET /api/professional/dashboard/profile
+- **Descrição**: Perfil do profissional
+- **Headers**: Authorization: Bearer {token}
+- **Role**: professional
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 12,
+      "name": "Dr. Carlos Mendes",
+      "specialty": "Cardiologia",
+      "crm": "12345-SP",
+      "email": "carlos.mendes@exemplo.com",
+      "phone": "(11) 98888-7777",
+      "address": {
+        "street": "Avenida Paulista",
+        "number": "1000",
+        "complement": "Conjunto 110",
+        "neighborhood": "Bela Vista",
+        "city": "São Paulo",
+        "state": "SP",
+        "zip_code": "01310-100"
+      },
+      "clinics": [
+        {
+          "id": 3,
+          "name": "Clínica Saúde Plena"
+        }
+      ],
+      "accepted_health_plans": [
+        {
+          "id": 1,
+          "name": "Plano Saúde Total"
+        },
+        {
+          "id": 3,
+          "name": "Plano Vida"
+        }
+      ],
+      "available_procedures": [
+        {
+          "id": 123,
+          "code": "40304361",
+          "name": "Consulta em consultório"
+        }
+      ]
+    }
+  }
+  ```
+
+### GET /api/professional/dashboard/stats
+- **Descrição**: Estatísticas do profissional
+- **Headers**: Authorization: Bearer {token}
+- **Role**: professional
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": {
+      "appointments": {
+        "total": 150,
+        "completed": 120,
+        "cancelled": 10,
+        "missed": 5,
+        "pending": 15
+      },
+      "performance": {
+        "average_rating": 4.7,
+        "total_reviews": 98,
+        "completion_rate": 92.5
+      },
+      "financial": {
+        "total_revenue": 15000.00,
+        "pending_payment": 2500.00,
+        "last_month_revenue": 3200.00
+      },
+      "monthly_stats": [
+        {
+          "month": "Janeiro",
+          "appointments": 18,
+          "revenue": 1800.00
+        },
+        {
+          "month": "Fevereiro",
+          "appointments": 20,
+          "revenue": 2000.00
+        }
+      ]
+    }
+  }
+  ```
+
+## Templates de Contrato
+
+### GET /api/contract-templates
+- **Descrição**: Lista todos os templates de contrato
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage contracts
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 1,
+        "name": "Contrato Padrão - Clínicas",
+        "description": "Template padrão para contratos com clínicas",
+        "entity_type": "clinic",
+        "created_at": "2023-05-10T09:30:00.000000Z",
+        "updated_at": "2023-06-15T11:20:00.000000Z"
+      },
+      {
+        "id": 2,
+        "name": "Contrato Padrão - Profissionais",
+        "description": "Template padrão para contratos com profissionais",
+        "entity_type": "professional",
+        "created_at": "2023-05-10T09:35:00.000000Z",
+        "updated_at": "2023-06-15T11:25:00.000000Z"
+      }
+    ]
+  }
+  ```
+
+### POST /api/contract-templates
+- **Descrição**: Cria um novo template de contrato
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage contracts
+- **Request Body**: 
+  ```json
+  {
+    "name": "Contrato Especial - Clínicas Premium",
+    "description": "Template para contratos com clínicas do plano premium",
+    "entity_type": "clinic",
+    "content": "<html><body><h1>CONTRATO DE PRESTAÇÃO DE SERVIÇOS</h1><p>Entre {{clinic.name}}, CNPJ {{clinic.cnpj}} e Conecta Saúde...</p></body></html>"
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Template de contrato criado com sucesso",
+    "data": {
+      "id": 3,
+      "name": "Contrato Especial - Clínicas Premium",
+      "description": "Template para contratos com clínicas do plano premium",
+      "entity_type": "clinic",
+      "created_at": "2023-07-30T17:15:00.000000Z",
+      "updated_at": "2023-07-30T17:15:00.000000Z"
+    }
+  }
+  ```
+
+### GET /api/contract-templates/{id}
+- **Descrição**: Obtém um template específico
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage contracts
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": {
+      "id": 1,
+      "name": "Contrato Padrão - Clínicas",
+      "description": "Template padrão para contratos com clínicas",
+      "entity_type": "clinic",
+      "content": "<html><body><h1>CONTRATO DE PRESTAÇÃO DE SERVIÇOS</h1><p>Entre {{clinic.name}}, CNPJ {{clinic.cnpj}} e Conecta Saúde...</p></body></html>",
+      "created_at": "2023-05-10T09:30:00.000000Z",
+      "updated_at": "2023-06-15T11:20:00.000000Z"
+    }
+  }
+  ```
+
+### PUT /api/contract-templates/{id}
+- **Descrição**: Atualiza um template existente
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage contracts
+- **Request Body**: 
+  ```json
+  {
+    "name": "Contrato Padrão - Clínicas (Atualizado)",
+    "content": "<html><body><h1>CONTRATO DE PRESTAÇÃO DE SERVIÇOS</h1><p>Entre {{clinic.name}}, CNPJ {{clinic.cnpj}} e Conecta Saúde... Versão atualizada</p></body></html>"
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Template de contrato atualizado com sucesso",
+    "data": {
+      "id": 1,
+      "name": "Contrato Padrão - Clínicas (Atualizado)",
+      "description": "Template padrão para contratos com clínicas",
+      "entity_type": "clinic",
+      "updated_at": "2023-07-30T17:30:00.000000Z"
+    }
+  }
+  ```
+
+### DELETE /api/contract-templates/{id}
+- **Descrição**: Remove um template
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage contracts
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "message": "Template de contrato removido com sucesso"
+  }
+  ```
+
+### POST /api/contract-templates/{id}/preview
+- **Descrição**: Pré-visualiza um template
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage contracts
+- **Request Body**: 
+  ```json
+  {
+    "entity_id": 3,
+    "data": {
+      "custom_field": "Valor personalizado"
+    }
+  }
+  ```
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": {
+      "html": "<html><body><h1>CONTRATO DE PRESTAÇÃO DE SERVIÇOS</h1><p>Entre Clínica Saúde Plena, CNPJ 12.345.678/0001-90 e Conecta Saúde... Valor personalizado</p></body></html>"
+    }
+  }
+  ```
+
+### GET /api/contract-templates/placeholders/{entityType}
+- **Descrição**: Obtém placeholders disponíveis para um tipo de entidade
+- **Headers**: Authorization: Bearer {token}
+- **Permissão**: manage contracts
+- **Response**: 
+  ```json
+  {
+    "success": true,
+    "data": {
+      "entity": "clinic",
+      "placeholders": [
+        {
+          "key": "{{clinic.name}}",
+          "description": "Nome da clínica"
+        },
+        {
+          "key": "{{clinic.cnpj}}",
+          "description": "CNPJ da clínica"
+        },
+        {
+          "key": "{{clinic.address}}",
+          "description": "Endereço completo da clínica"
+        },
+        {
+          "key": "{{clinic.representative}}",
+          "description": "Nome do representante legal"
+        },
+        {
+          "key": "{{system.current_date}}",
+          "description": "Data atual"
+        }
+      ]
+    }
+  }
+  ``` 
