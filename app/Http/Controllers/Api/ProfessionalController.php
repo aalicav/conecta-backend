@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use App\Http\Controllers\Api\NegotiationController;
 use App\Services\NotificationService;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Mail;
 
 class ProfessionalController extends Controller
 {
@@ -135,7 +137,7 @@ class ProfessionalController extends Controller
                 'phones.*.type' => 'required|string',
                 'create_user' => 'nullable|boolean',
                 'email' => 'required_if:create_user,true|email|unique:users,email',
-                'password' => 'required_if:create_user,true|min:8',
+                'password' => 'nullable|min:8',
                 'specialties' => 'sometimes|array',
                 'specialties.*.name' => 'required|string',
                 'specialties.*.description' => 'nullable|string',
@@ -148,6 +150,7 @@ class ProfessionalController extends Controller
                 'documents.*.file' => 'required|file|max:10240',
                 'documents.*.type' => 'required|string',
                 'documents.*.description' => 'nullable|string',
+                'send_welcome_email' => 'sometimes|boolean',
             ]);
 
             if ($validator->fails()) {
@@ -167,7 +170,7 @@ class ProfessionalController extends Controller
             }
 
             // Create professional
-            $professionalData = $request->except(['phones', 'create_user', 'email', 'password', 'photo', 'specialties', 'procedures', 'documents']);
+            $professionalData = $request->except(['phones', 'create_user', 'email', 'password', 'photo', 'specialties', 'procedures', 'documents', 'send_welcome_email']);
             $professionalData['photo'] = $photoPath;
             $professionalData['status'] = 'pending';
             
@@ -266,11 +269,18 @@ class ProfessionalController extends Controller
             }
 
             // Create user account if requested
+            $userCreated = false;
+            $plainPassword = '';
+            $professionalUser = null;
+            
             if ($request->boolean('create_user')) {
+                // Generate a random password if not provided
+                $plainPassword = $request->password ?? Str::random(10);
+                
                 $professionalUser = User::create([
                     'name' => $professional->name,
                     'email' => $request->email,
-                    'password' => bcrypt($request->password),
+                    'password' => bcrypt($plainPassword),
                     'entity_id' => $professional->id,
                     'entity_type' => Professional::class,
                     'is_active' => false,
@@ -281,6 +291,43 @@ class ProfessionalController extends Controller
                 if ($role) {
                     $professionalUser->assignRole($role);
                 }
+                
+                $userCreated = true;
+            }
+
+            // Send welcome email with password
+            $sendEmail = $request->has('send_welcome_email') ? $request->boolean('send_welcome_email') : true;
+            if ($sendEmail && $userCreated && $professionalUser) {
+                // Get company data from config
+                $companyName = config('app.name');
+                $companyAddress = config('app.address', 'Address not available');
+                $companyCity = config('app.city', 'City not available');
+                $companyState = config('app.state', 'State not available');
+                $supportEmail = config('app.support_email', 'support@example.com');
+                $supportPhone = config('app.support_phone', '(00) 0000-0000');
+                $socialMedia = [
+                    'Facebook' => 'https://facebook.com/' . config('app.social.facebook', ''),
+                    'Instagram' => 'https://instagram.com/' . config('app.social.instagram', ''),
+                ];
+                
+                // Send welcome email
+                Mail::send('emails.welcome_user', [
+                    'user' => $professionalUser,
+                    'password' => $plainPassword,
+                    'loginUrl' => config('app.frontend_url') . '/login',
+                    'companyName' => $companyName,
+                    'companyAddress' => $companyAddress,
+                    'companyCity' => $companyCity,
+                    'companyState' => $companyState,
+                    'supportEmail' => $supportEmail,
+                    'supportPhone' => $supportPhone,
+                    'socialMedia' => $socialMedia,
+                    'entityType' => 'Profissional',
+                    'professional' => $professional
+                ], function ($message) use ($professionalUser) {
+                    $message->to($professionalUser->email, $professionalUser->name)
+                            ->subject('Bem-vindo ao ' . config('app.name') . ' - Detalhes da sua conta');
+                });
             }
 
             DB::commit();

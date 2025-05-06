@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\Mail;
 
 class UserController extends Controller
 {
@@ -110,7 +111,8 @@ class UserController extends Controller
                 'entity_type' => 'nullable|string',
                 'entity_id' => 'nullable|integer',
                 'phone' => 'nullable|string|max:20',
-                'is_active' => 'boolean'
+                'is_active' => 'boolean',
+                'send_welcome_email' => 'sometimes|boolean'
             ]);
 
             if ($validator->fails()) {
@@ -144,6 +146,41 @@ class UserController extends Controller
             // Assign roles if provided
             if ($request->has('roles') && is_array($request->roles)) {
                 $user->assignRole($request->roles);
+            }
+
+            // Send welcome email with password if requested
+            $sendEmail = $request->has('send_welcome_email') ? $request->boolean('send_welcome_email') : true;
+            if ($sendEmail) {
+                $plainPassword = $request->password;
+                
+                // Get company data from config
+                $companyName = config('app.name');
+                $companyAddress = config('app.address', 'Address not available');
+                $companyCity = config('app.city', 'City not available');
+                $companyState = config('app.state', 'State not available');
+                $supportEmail = config('app.support_email', 'support@example.com');
+                $supportPhone = config('app.support_phone', '(00) 0000-0000');
+                $socialMedia = [
+                    'Facebook' => 'https://facebook.com/' . config('app.social.facebook', ''),
+                    'Instagram' => 'https://instagram.com/' . config('app.social.instagram', ''),
+                ];
+                
+                // Send welcome email
+                Mail::send('emails.welcome_user', [
+                    'user' => $user,
+                    'password' => $plainPassword,
+                    'loginUrl' => config('app.frontend_url') . '/login',
+                    'companyName' => $companyName,
+                    'companyAddress' => $companyAddress,
+                    'companyCity' => $companyCity,
+                    'companyState' => $companyState,
+                    'supportEmail' => $supportEmail,
+                    'supportPhone' => $supportPhone,
+                    'socialMedia' => $socialMedia,
+                ], function ($message) use ($user) {
+                    $message->to($user->email, $user->name)
+                            ->subject('Bem-vindo ao ' . config('app.name') . ' - Detalhes da sua conta');
+                });
             }
 
             DB::commit();

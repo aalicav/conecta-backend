@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Str;
+use Illuminate\Support\Facades\Mail;
 
 class HealthPlanController extends Controller
 {
@@ -147,6 +148,7 @@ class HealthPlanController extends Controller
                 'procedures.*.status' => 'sometimes|nullable|string',
                 'procedures.*.notes' => 'nullable|string',
                 'auto_approve' => 'sometimes|nullable|string|in:true,false,1,0',
+                'send_welcome_email' => 'sometimes|boolean',
             ]);
 
             if ($validator->fails()) {
@@ -166,14 +168,17 @@ class HealthPlanController extends Controller
             }
 
             // Create health plan
-            $healthPlan = new HealthPlan($request->except('logo', 'phones', 'documents', 'procedures', 'auto_approve'));
+            $healthPlan = new HealthPlan($request->except('logo', 'phones', 'documents', 'procedures', 'auto_approve', 'send_welcome_email'));
             $healthPlan->logo = $logoPath;
             $healthPlan->user_id = Auth::id();
 
+            // Generate a random password for the new user
+            $plainPassword = Str::random(10);
+            
             $user = User::factory()->create([
                 'name' => $request->name,
                 'email' => $request->email,
-                'password' => Hash::make(Str::random(10)),
+                'password' => Hash::make($plainPassword),
                 'profile_photo' => $logoPath,
                 'entity_id' => $healthPlan->id,
                 'entity_type' => 'App\\Models\\HealthPlan',
@@ -299,6 +304,40 @@ class HealthPlanController extends Controller
                     Log::warning('Failed to create initial negotiation for health plan: ' . $healthPlan->id);
                     Log::warning(json_encode($negotiationResult->getData()));
                 }
+            }
+
+            // Send welcome email with password
+            $sendEmail = $request->has('send_welcome_email') ? $request->boolean('send_welcome_email') : true;
+            if ($sendEmail) {
+                // Get company data from config
+                $companyName = config('app.name');
+                $companyAddress = config('app.address', 'Address not available');
+                $companyCity = config('app.city', 'City not available');
+                $companyState = config('app.state', 'State not available');
+                $supportEmail = config('app.support_email', 'support@example.com');
+                $supportPhone = config('app.support_phone', '(00) 0000-0000');
+                $socialMedia = [
+                    'Facebook' => 'https://facebook.com/' . config('app.social.facebook', ''),
+                    'Instagram' => 'https://instagram.com/' . config('app.social.instagram', ''),
+                ];
+                
+                // Send welcome email
+                Mail::send('emails.welcome_user', [
+                    'user' => $user,
+                    'password' => $plainPassword,
+                    'loginUrl' => config('app.frontend_url') . '/login',
+                    'companyName' => $companyName,
+                    'companyAddress' => $companyAddress,
+                    'companyCity' => $companyCity,
+                    'companyState' => $companyState,
+                    'supportEmail' => $supportEmail,
+                    'supportPhone' => $supportPhone,
+                    'socialMedia' => $socialMedia,
+                    'entityType' => 'Plano de Saúde'
+                ], function ($message) use ($user) {
+                    $message->to($user->email, $user->name)
+                            ->subject('Bem-vindo ao ' . config('app.name') . ' - Detalhes da sua conta');
+                });
             }
 
             DB::commit();

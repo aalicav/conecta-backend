@@ -3,165 +3,131 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bem-vindo ao Sistema</title>
+    <title>Bem-vindo ao {{ $companyName }}</title>
     <style>
         body {
             font-family: 'Helvetica Neue', Arial, sans-serif;
             line-height: 1.6;
             color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
             max-width: 600px;
             margin: 0 auto;
             padding: 20px;
         }
         .header {
+            background-color: #1e88e5;
+            color: white;
+            padding: 20px;
             text-align: center;
-            padding: 20px 0;
-            border-bottom: 1px solid #eaeaea;
+            border-radius: 5px 5px 0 0;
+        }
+        .content {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-top: none;
+            padding: 20px;
+            border-radius: 0 0 5px 5px;
         }
         .logo {
             max-width: 150px;
             margin-bottom: 15px;
         }
-        .content {
-            padding: 20px 0;
-        }
-        .welcome-card {
+        .credentials {
             background-color: #f9f9f9;
-            border-radius: 8px;
-            padding: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
             margin: 20px 0;
-            border-left: 4px solid #6610f2;
-        }
-        .feature-item {
-            margin-bottom: 15px;
-            display: flex;
-            align-items: flex-start;
-        }
-        .feature-icon {
-            width: 24px;
-            margin-right: 10px;
-            display: inline-block;
-        }
-        .feature-text {
-            flex: 1;
+            border-radius: 5px;
         }
         .button {
             display: inline-block;
-            background-color: #6610f2;
-            color: #ffffff !important;
+            background-color: #1e88e5;
+            color: white;
             text-decoration: none;
-            padding: 12px 24px;
-            border-radius: 4px;
-            font-weight: bold;
-            margin-top: 15px;
-        }
-        .button:hover {
-            background-color: #520dc2;
+            padding: 12px 25px;
+            border-radius: 5px;
+            margin: 20px 0;
         }
         .footer {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #eaeaea;
             text-align: center;
+            margin-top: 30px;
             font-size: 12px;
             color: #777;
         }
-        .address {
-            margin-top: 10px;
-        }
-        .social-media {
+        .social {
             margin-top: 15px;
         }
-        .social-media a {
-            margin: 0 10px;
+        .social a {
+            display: inline-block;
+            margin: 0 5px;
+            color: #1e88e5;
             text-decoration: none;
         }
-        @media only screen and (max-width: 480px) {
-            body {
-                padding: 10px;
-            }
-            .welcome-card {
-                padding: 15px;
-            }
+        .info {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 13px;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <img src="{{ $message->embed(public_path('images/logo.png')) }}" alt="Logo" class="logo">
-        <h1>Bem-vindo(a) ao {{ $companyName }}!</h1>
-    </div>
-
-    <div class="content">
-        <p>Olá, {{ $user->name }}!</p>
+    <div class="container">
+        <div class="header">
+            <h1>Bem-vindo ao {{ $companyName }}</h1>
+        </div>
         
-        <p>É com grande satisfação que damos as boas-vindas ao nosso sistema de saúde. Sua conta foi criada com sucesso e você já pode começar a utilizar nossa plataforma.</p>
-
-        <div class="welcome-card">
-            <h2>Informações da sua conta</h2>
-            <p><strong>Email:</strong> {{ $user->email }}</p>
-            <p><strong>Perfil:</strong> {{ $user->role }}</p>
+        <div class="content">
+            <h2>Olá, {{ $user->name }}!</h2>
             
-            @if($tempPassword)
-            <p><strong>Senha temporária:</strong> {{ $tempPassword }}</p>
-            <p><em>Importante: Recomendamos que você altere sua senha temporária no primeiro acesso.</em></p>
-            @endif
-        </div>
-
-        <h3>O que você pode fazer na nossa plataforma:</h3>
-        
-        <div class="feature-item">
-            <span class="feature-icon">✅</span>
-            <div class="feature-text">
-                <strong>Agendar consultas</strong> com profissionais de saúde de forma rápida e eficiente
+            <p>Ficamos felizes em tê-lo conosco! Sua conta foi criada com sucesso no sistema {{ $companyName }}.</p>
+            
+            @isset($entityType)
+                <p>Você foi registrado como <strong>{{ $entityType }}</strong> em nossa plataforma.</p>
+            @endisset
+            
+            <div class="credentials">
+                <h3>Suas informações de acesso:</h3>
+                <p><strong>E-mail:</strong> {{ $user->email }}</p>
+                <p><strong>Senha temporária:</strong> {{ $password }}</p>
+                <p><strong>Importante:</strong> Por questões de segurança, recomendamos alterar sua senha após o primeiro acesso.</p>
+            </div>
+            
+            <p>Para acessar a plataforma, clique no botão abaixo:</p>
+            
+            <div style="text-align: center;">
+                <a href="{{ $loginUrl }}" class="button">Acessar o Sistema</a>
+            </div>
+            
+            <p>Se você estiver tendo problemas com o botão acima, copie e cole o link abaixo em seu navegador:</p>
+            <p style="word-break: break-all;">{{ $loginUrl }}</p>
+            
+            <div class="info">
+                <p>Se você não solicitou esta conta ou acredita que recebeu este e-mail por engano, por favor entre em contato com nosso suporte.</p>
+                
+                <p>
+                    <strong>Suporte:</strong><br>
+                    E-mail: {{ $supportEmail }}<br>
+                    Telefone: {{ $supportPhone }}
+                </p>
             </div>
         </div>
         
-        <div class="feature-item">
-            <span class="feature-icon">✅</span>
-            <div class="feature-text">
-                <strong>Acessar seu histórico médico</strong> e acompanhar seus atendimentos anteriores
-            </div>
-        </div>
-        
-        <div class="feature-item">
-            <span class="feature-icon">✅</span>
-            <div class="feature-text">
-                <strong>Verificar resultados de exames</strong> diretamente pela plataforma
-            </div>
-        </div>
-        
-        <div class="feature-item">
-            <span class="feature-icon">✅</span>
-            <div class="feature-text">
-                <strong>Receber lembretes</strong> de consultas e procedimentos
-            </div>
-        </div>
-
-        <p>Para começar a utilizar nossos serviços, clique no botão abaixo para acessar a plataforma:</p>
-
-        <a href="{{ $loginUrl }}" class="button">Acessar o Sistema</a>
-        
-        <p style="margin-top: 30px;">Se você tiver qualquer dúvida ou precisar de assistência, nossa equipe de suporte está disponível para ajudar:</p>
-        <ul>
-            <li>Email: {{ $supportEmail }}</li>
-            <li>Telefone: {{ $supportPhone }}</li>
-        </ul>
-    </div>
-
-    <div class="footer">
-        <p>Esta mensagem foi enviada automaticamente. Por favor, não responda a este email.</p>
-        <div class="address">
-            {{ $companyName }} &bull; {{ $companyAddress }} &bull; {{ $companyCity }}/{{ $companyState }}
-        </div>
-        <div class="social-media">
-            @if(isset($socialMedia))
-                @foreach($socialMedia as $name => $url)
-                    <a href="{{ $url }}">{{ $name }}</a>
+        <div class="footer">
+            <p>&copy; {{ date('Y') }} {{ $companyName }}. Todos os direitos reservados.</p>
+            <p>{{ $companyAddress }}, {{ $companyCity }} - {{ $companyState }}</p>
+            
+            <div class="social">
+                @foreach($socialMedia as $platform => $url)
+                    @if($url)
+                        <a href="{{ $url }}">{{ $platform }}</a>
+                    @endif
                 @endforeach
-            @endif
+            </div>
         </div>
-        <p>&copy; {{ date('Y') }} {{ $companyName }}. Todos os direitos reservados.</p>
     </div>
 </body>
 </html> 
