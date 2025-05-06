@@ -22,8 +22,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RolesAndPermissionsSeeder::class,
             SystemSettingSeeder::class,
-            TussProcedureSeeder::class,
-            ContractTemplateSeeder::class,
+            // TussProcedureSeeder::class,
+            // ContractTemplateSeeder::class,
             // NegotiationExampleSeeder::class,
         ]);        
         
