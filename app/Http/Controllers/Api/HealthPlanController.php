@@ -43,74 +43,133 @@ class HealthPlanController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = HealthPlan::with(['phones', 'approver', 'contract']);
-        
-        // If user has health plan role, only show their own plan
-        if (Auth::user()->hasRole('plan_admin') || Auth::user()->hasRole('plan_admin')) {
-            $healthPlanId = Auth::user()->entity_id;
-            $query->where('id', $healthPlanId);
-        }
-        
-        // Search by name or CNPJ if search parameter is provided
-        if ($request->has('search')) {
-            $searchTerm = $request->search;
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('name', 'like', "%{$searchTerm}%")
-                  ->orWhere('cnpj', 'like', "%{$searchTerm}%");
+        try {
+            $query = HealthPlan::with(['phones', 'approver', 'contract', 'user']);
+            
+            // If user has health plan role, only show their own plan
+            if (Auth::user()->hasRole('plan_admin') || Auth::user()->hasRole('plan_admin')) {
+                $healthPlanId = Auth::user()->entity_id;
+                $query->where('id', $healthPlanId);
+            }
+            
+            // Search by name or CNPJ if search parameter is provided
+            if ($request->has('search') && $request->search) {
+                $searchTerm = $request->search;
+                $query->where(function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', "%{$searchTerm}%")
+                      ->orWhere('cnpj', 'like', "%{$searchTerm}%")
+                      ->orWhere('municipal_registration', 'like', "%{$searchTerm}%")
+                      ->orWhere('ans_code', 'like', "%{$searchTerm}%");
+                });
+            } else {
+                // Individual filters if search parameter is not used
+                
+                // Filter by name if provided
+                if ($request->has('name') && $request->name) {
+                    $query->where('name', 'like', "%{$request->name}%");
+                }
+                
+                // Filter by CNPJ if provided
+                if ($request->has('cnpj') && $request->cnpj) {
+                    $query->where('cnpj', 'like', "%{$request->cnpj}%");
+                }
+
+                // Filter by municipal registration if provided
+                if ($request->has('municipal_registration') && $request->municipal_registration) {
+                    $query->where('municipal_registration', 'like', "%{$request->municipal_registration}%");
+                }
+
+                // Filter by ANS code if provided
+                if ($request->has('ans_code') && $request->ans_code) {
+                    $query->where('ans_code', 'like', "%{$request->ans_code}%");
+                }
+            }
+            
+            // Filter by status if provided
+            if ($request->has('status') && $request->status) {
+                if (is_array($request->status)) {
+                    $query->whereIn('status', $request->status);
+                } else {
+                    $query->where('status', $request->status);
+                }
+            }
+
+            // Filter by city if provided
+            if ($request->has('city') && $request->city) {
+                $query->where('city', 'like', "%{$request->city}%");
+            }
+
+            // Filter by state if provided
+            if ($request->has('state') && $request->state) {
+                $query->where('state', $request->state);
+            }
+            
+            // Filter by contract status if provided
+            if ($request->has('has_signed_contract')) {
+                $hasContract = filter_var($request->has_signed_contract, FILTER_VALIDATE_BOOLEAN);
+                $query->where('has_signed_contract', $hasContract);
+            }
+            
+            // Filter by parent_id or parent-only status
+            if ($request->has('parent_id') && $request->parent_id) {
+                $query->where('parent_id', $request->parent_id);
+            } elseif ($request->has('is_parent')) {
+                $isParent = filter_var($request->is_parent, FILTER_VALIDATE_BOOLEAN);
+                if ($isParent) {
+                    $query->whereNull('parent_id');
+                } else {
+                    $query->whereNotNull('parent_id');
+                }
+            }
+
+            // Filter by date range if provided
+            if ($request->has('date_start') && $request->date_start) {
+                $query->whereDate('created_at', '>=', $request->date_start);
+            }
+            if ($request->has('date_end') && $request->date_end) {
+                $query->whereDate('created_at', '<=', $request->date_end);
+            }
+            
+            // Apply sorting
+            $sortField = $request->input('sort_by', 'created_at');
+            $sortDirection = $request->input('sort_direction', 'desc');
+            
+            // Validate sort field to prevent SQL injection
+            $allowedSortFields = [
+                'name', 'cnpj', 'municipal_registration', 'ans_code', 
+                'city', 'state', 'status', 'created_at'
+            ];
+            
+            if (in_array($sortField, $allowedSortFields)) {
+                $query->orderBy($sortField, $sortDirection === 'asc' ? 'asc' : 'desc');
+            } else {
+                $query->orderBy('created_at', 'desc');
+            }
+
+            // Get paginated results
+            $perPage = $request->input('per_page', 15);
+            $healthPlans = $query->paginate($perPage);
+            
+            // Add logo URLs and format data
+            $healthPlans->getCollection()->transform(function ($healthPlan) {
+                if ($healthPlan->logo) {
+                    $healthPlan->logo_url = Storage::disk('public')->url($healthPlan->logo);
+                }
+                return $healthPlan;
             });
-        } else {
-            // Fallback to individual filters if search parameter is not used
             
-            // Filter by name if provided
-            if ($request->has('name')) {
-                $query->where('name', 'like', "%{$request->name}%");
-            }
+            return HealthPlanResource::collection($healthPlans);
             
-            // Filter by CNPJ if provided
-            if ($request->has('cnpj')) {
-                $query->where('cnpj', 'like', "%{$request->cnpj}%");
-            }
-
-            // Filter by municipal registration if provided
-            if ($request->has('municipal_registration')) {
-                $query->where('municipal_registration', 'like', "%{$request->municipal_registration}%");
-            }
+        } catch (\Exception $e) {
+            Log::error('Error fetching health plans: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch health plans',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
-        // Filter by status if provided
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-
-        // Filter by ANS code if provided
-        if ($request->has('ans_code')) {
-            $query->where('ans_code', 'like', "%{$request->ans_code}%");
-        }
-        
-        // Filter by contract status if provided
-        if ($request->has('has_signed_contract')) {
-            $query->where('has_signed_contract', $request->has_signed_contract == 'true' ? true : false);
-        }
-        
-        // Filter by parent_id or parent-only status
-        if ($request->has('parent_id')) {
-            $query->where('parent_id', $request->parent_id);
-        } elseif ($request->has('is_parent')) {
-            if ($request->is_parent === 'true' || $request->is_parent === '1') {
-                $query->whereNull('parent_id');
-            } elseif ($request->is_parent === 'false' || $request->is_parent === '0') {
-                $query->whereNotNull('parent_id');
-            }
-        }
-        
-        // Apply sorting
-        $sortField = $request->sort_by ?? 'created_at';
-        $sortDirection = $request->sort_direction ?? 'desc';
-        $query->orderBy($sortField, $sortDirection);
-        
-        $healthPlans = $query->paginate($request->per_page ?? 15);
-        
-        return HealthPlanResource::collection($healthPlans);
     }
 
     /**
