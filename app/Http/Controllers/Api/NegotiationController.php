@@ -58,6 +58,40 @@ class NegotiationController extends Controller
                       ->where('negotiable_id', $request->health_plan_id);
             }
         }
+
+        // Filter negotiations based on user role
+        $user = Auth::user();
+        
+        if (!$user->hasRole('admin')) {
+            $query->where(function($q) use ($user) {
+                // Creator can see their own negotiations
+                $q->where('creator_id', $user->id);
+                
+                // Health plan admin can see negotiations for their plan
+                if ($user->hasRole('plan_admin')) {
+                    $q->orWhere(function($subQ) use ($user) {
+                        $subQ->where('negotiable_type', HealthPlan::class)
+                             ->where('negotiable_id', $user->entity_id);
+                    });
+                }
+                
+                // Professional can see negotiations for their profile
+                if ($user->hasRole('professional')) {
+                    $q->orWhere(function($subQ) use ($user) {
+                        $subQ->where('negotiable_type', Professional::class)
+                             ->where('negotiable_id', $user->entity_id);
+                    });
+                }
+                
+                // Clinic admin can see negotiations for their clinic
+                if ($user->hasRole('clinic_admin')) {
+                    $q->orWhere(function($subQ) use ($user) {
+                        $subQ->where('negotiable_type', Clinic::class)
+                             ->where('negotiable_id', $user->entity_id);
+                    });
+                }
+            });
+        }
         
         if ($request->has('search')) {
             $search = $request->search;

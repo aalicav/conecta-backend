@@ -258,15 +258,14 @@ class HealthPlanController extends Controller
 
             // Process documents if provided
             $uploadedDocuments = [];
-            if ($request->hasFile('documents')) {
-                foreach ($request->file('documents') as $index => $documentFile) {
-                    // Get the corresponding document data
-                    $fileData = $request->input("documents.$index");
-                    
-                    if (!$documentFile || !$fileData) {
+            if ($request->has('documents') && is_array($request->documents)) {
+                foreach ($request->documents as $documentData) {
+                    if (!isset($documentData['file']) || !$documentData['file']->isValid()) {
                         continue;
                     }
 
+                    $documentFile = $documentData['file'];
+                    
                     // Get file extension and check allowed types
                     $extension = $documentFile->getClientOriginalExtension();
                     $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
@@ -286,14 +285,14 @@ class HealthPlanController extends Controller
                         if ($filePath) {
                             // Create document record
                             $document = $healthPlan->documents()->create([
-                                'type' => $fileData['type'],
-                                'description' => $fileData['description'],
+                                'type' => $documentData['type'],
+                                'description' => $documentData['description'],
                                 'file_path' => $filePath,
                                 'file_name' => $documentFile->getClientOriginalName(),
                                 'file_type' => $documentFile->getClientMimeType(),
                                 'file_size' => $documentFile->getSize(),
-                                'reference_date' => $fileData['reference_date'] ?? null,
-                                'expiration_date' => $fileData['expiration_date'] ?? null,
+                                'reference_date' => $documentData['reference_date'] ?? null,
+                                'expiration_date' => $documentData['expiration_date'] ?? null,
                                 'uploaded_by' => Auth::id(),
                                 'user_id' => $healthPlan->user_id,
                             ]);
@@ -608,15 +607,14 @@ class HealthPlanController extends Controller
             }
 
             // Handle document uploads if provided
-            if ($request->hasFile('documents')) {
-                foreach ($request->file('documents') as $index => $documentFile) {
-                    // Get the corresponding document data
-                    $fileData = $request->input("documents.$index");
-                    
-                    if (!$documentFile || !$fileData) {
+            if ($request->has('documents') && is_array($request->documents)) {
+                foreach ($request->documents as $documentData) {
+                    if (!isset($documentData['file']) || !$documentData['file']->isValid()) {
                         continue;
                     }
 
+                    $documentFile = $documentData['file'];
+                    
                     // Get file extension and check allowed types
                     $extension = $documentFile->getClientOriginalExtension();
                     $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
@@ -636,14 +634,14 @@ class HealthPlanController extends Controller
                         if ($filePath) {
                             // Create document record
                             $document = $health_plan->documents()->create([
-                                'type' => $fileData['type'],
-                                'description' => $fileData['description'],
+                                'type' => $documentData['type'],
+                                'description' => $documentData['description'],
                                 'file_path' => $filePath,
                                 'file_name' => $documentFile->getClientOriginalName(),
                                 'file_type' => $documentFile->getClientMimeType(),
                                 'file_size' => $documentFile->getSize(),
-                                'reference_date' => $fileData['reference_date'] ?? null,
-                                'expiration_date' => $fileData['expiration_date'] ?? null,
+                                'reference_date' => $documentData['reference_date'] ?? null,
+                                'expiration_date' => $documentData['expiration_date'] ?? null,
                                 'uploaded_by' => Auth::id(),
                                 'user_id' => $health_plan->user_id,
                             ]);
