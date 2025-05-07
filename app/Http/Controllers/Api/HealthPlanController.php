@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Str;
 use Illuminate\Support\Facades\Mail;
+use App\Notifications\HealthPlanCreated;
+use Illuminate\Support\Facades\Notification;
 
 class HealthPlanController extends Controller
 {
@@ -357,19 +359,67 @@ class HealthPlanController extends Controller
 
             DB::commit();
 
-            // Load relationships
+            // Send notifications
+            try {
+                // Notify admins
+                $admins = User::role('admin')->get();
+                Notification::send($admins, new HealthPlanCreated($healthPlan));
+
+                // Notify the health plan user
+                if ($user) {
+                    $user->notify(new HealthPlanCreated($healthPlan));
+                }
+
+                // Log the notification
+                Log::info('Health plan creation notifications sent', [
+                    'health_plan_id' => $healthPlan->id,
+                    'admin_count' => $admins->count(),
+                    'user_notified' => $user ? $user->id : null
+                ]);
+            } catch (\Exception $e) {
+                // Log notification error but don't fail the request
+                Log::error('Failed to send health plan creation notifications', [
+                    'health_plan_id' => $healthPlan->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            // Add audit log
+            activity()
+                ->performedOn($healthPlan)
+                ->causedBy(Auth::user())
+                ->withProperties([
+                    'health_plan_id' => $healthPlan->id,
+                    'health_plan_name' => $healthPlan->name,
+                    'created_by' => Auth::id(),
+                    'user_email' => $request->email,
+                    'has_documents' => isset($uploadedDocuments) && count($uploadedDocuments) > 0,
+                    'documents_count' => isset($uploadedDocuments) ? count($uploadedDocuments) : 0,
+                    'has_procedures' => isset($negotiationData) && count($negotiationData['items'] ?? []) > 0,
+                    'procedures_count' => isset($negotiationData) ? count($negotiationData['items'] ?? []) : 0,
+                ])
+                ->log('created');
+
+            // Load relationships for response
             $healthPlan->load(['phones', 'user', 'documents']);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Health plan created successfully',
                 'data' => new HealthPlanResource($healthPlan),
-                'documents_count' => count($uploadedDocuments)
+                'documents_count' => isset($uploadedDocuments) ? count($uploadedDocuments) : 0
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error creating health plan: ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
+            
+            // Log detailed error
+            Log::error('Error creating health plan', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->except(['password', 'documents']),
+                'user_id' => Auth::id()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create health plan',
@@ -607,6 +657,20 @@ class HealthPlanController extends Controller
 
             DB::commit();
 
+            // Add audit log for update
+            activity()
+                ->performedOn($health_plan)
+                ->causedBy(Auth::user())
+                ->withProperties([
+                    'health_plan_id' => $health_plan->id,
+                    'health_plan_name' => $health_plan->name,
+                    'updated_by' => Auth::id(),
+                    'updated_fields' => array_keys($request->except(['_method', 'documents'])),
+                    'has_new_documents' => $request->hasFile('documents'),
+                    'documents_count' => $request->hasFile('documents') ? count($request->file('documents')) : 0,
+                ])
+                ->log('updated');
+
             // Load relationships
             $health_plan->load(['phones', 'documents', 'approver', 'user', 'pricingContracts.procedure']);
             
@@ -622,8 +686,16 @@ class HealthPlanController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error updating health plan: ' . $e->getMessage());
-            Log::error($e->getTraceAsString());
+            
+            // Log detailed error
+            Log::error('Error updating health plan', [
+                'health_plan_id' => $health_plan->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->except(['password', 'documents']),
+                'user_id' => Auth::id()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update health plan',

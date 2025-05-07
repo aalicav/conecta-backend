@@ -9,10 +9,12 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use OwenIt\Auditing\Contracts\Auditable;
+use OwenIt\Auditing\Auditable as AuditableTrait;
 
-class HealthPlan extends Model
+class HealthPlan extends Model implements Auditable
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, AuditableTrait;
 
     /**
      * The attributes that are mass assignable.
@@ -51,6 +53,57 @@ class HealthPlan extends Model
         'approved_at' => 'datetime',
         'has_signed_contract' => 'boolean',
     ];
+
+    /**
+     * Attributes to include in the Audit.
+     *
+     * @var array
+     */
+    protected $auditInclude = [
+        'name',
+        'cnpj',
+        'municipal_registration',
+        'ans_code',
+        'description',
+        'legal_representative_name',
+        'legal_representative_cpf',
+        'legal_representative_position',
+        'address',
+        'city',
+        'state',
+        'postal_code',
+        'status',
+        'has_signed_contract',
+        'approved_at',
+        'approved_by'
+    ];
+
+    /**
+     * Attributes to exclude from the Audit.
+     *
+     * @var array
+     */
+    protected $auditExclude = [
+        'created_at',
+        'updated_at',
+        'deleted_at'
+    ];
+
+    /**
+     * Custom audit messages
+     */
+    public function transformAudit(array $data): array
+    {
+        if ($data['event'] === 'created') {
+            $data['custom_message'] = 'Plano de saúde criado: ' . $this->name;
+        } elseif ($data['event'] === 'updated') {
+            $data['custom_message'] = 'Plano de saúde atualizado: ' . $this->name;
+        } elseif ($data['event'] === 'deleted') {
+            $data['custom_message'] = 'Plano de saúde excluído: ' . $this->name;
+        }
+
+        return $data;
+    }
 
     /**
      * Get the parent health plan.
