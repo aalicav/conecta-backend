@@ -45,6 +45,12 @@ class HealthPlanController extends Controller
     {
         $query = HealthPlan::with(['phones', 'approver', 'contract']);
         
+        // If user has health plan role, only show their own plan
+        if (Auth::user()->hasRole('plan_admin') || Auth::user()->hasRole('plan_admin')) {
+            $healthPlanId = Auth::user()->entity_id;
+            $query->where('id', $healthPlanId);
+        }
+        
         // Search by name or CNPJ if search parameter is provided
         if ($request->has('search')) {
             $searchTerm = $request->search;
@@ -372,6 +378,15 @@ class HealthPlanController extends Controller
     public function show(HealthPlan $health_plan)
     {
         try {
+            // Check if user is restricted to viewing only their own health plan
+            if ((Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin')) 
+                && Auth::user()->entity_id != $health_plan->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to view this health plan'
+                ], 403);
+            }
+            
             // Load all necessary relationships for editing
             $health_plan->load([
                 'phones', 

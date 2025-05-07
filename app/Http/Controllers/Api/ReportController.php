@@ -19,7 +19,7 @@ class ReportController extends Controller
 
     public function __construct(ReportService $reportService)
     {
-        $this->middleware('auth:api');
+        $this->middleware('auth:sanctum');
         $this->reportService = $reportService;
     }
 
@@ -53,8 +53,19 @@ class ReportController extends Controller
                 $query->where('created_by', $request->input('created_by'));
             }
             
-            // Access control - non-admins can only see their own reports and public reports
-            if (!Auth::user()->hasRole('admin')) {
+            // Access control based on user role
+            if (Auth::user()->hasRole(['health_plan', 'plan_admin'])) {
+                // Health plan users can only see reports they created or ones that are marked public
+                // and those that contain data related to their health plan
+                $healthPlanId = Auth::user()->entity_id;
+                $query->where(function ($q) use ($healthPlanId) {
+                    $q->where('created_by', Auth::id())
+                      ->orWhere('is_public', true)
+                      ->orWhereJsonContains('parameters->health_plan_id', $healthPlanId);
+                });
+            }
+            // Non-admins can only see their own reports and public reports
+            elseif (!Auth::user()->hasRole('admin')) {
                 $query->where(function ($q) {
                     $q->where('created_by', Auth::id())
                       ->orWhere('is_public', true);
@@ -531,6 +542,12 @@ class ReportController extends Controller
                 'include_summary' => 'nullable|boolean'
             ]);
             
+            // Restrict health plan users to only their own data
+            if (Auth::user()->hasRole(['health_plan', 'plan_admin'])) {
+                $healthPlanId = Auth::user()->entity_id;
+                $parameters['health_plan_id'] = $healthPlanId;
+            }
+            
             // Use the report service to get financial data
             $reportData = $this->reportService->getFinancialReportData($parameters);
             
@@ -580,6 +597,12 @@ class ReportController extends Controller
                 'include_summary' => 'nullable|boolean'
             ]);
             
+            // Restrict health plan users to only their own data
+            if (Auth::user()->hasRole(['health_plan', 'plan_admin'])) {
+                $healthPlanId = Auth::user()->entity_id;
+                $parameters['health_plan_id'] = $healthPlanId;
+            }
+            
             // Use the report service to get appointments data
             $reportData = $this->reportService->getAppointmentReportData($parameters);
             
@@ -622,9 +645,16 @@ class ReportController extends Controller
                 'end_date' => 'nullable|date|after_or_equal:start_date',
                 'professional_id' => 'nullable|integer|exists:professionals,id',
                 'clinic_id' => 'nullable|integer|exists:clinics,id',
+                'health_plan_id' => 'nullable|integer|exists:health_plans,id',
                 'state' => 'nullable|string|max:2',
                 'city' => 'nullable|string|max:100'
             ]);
+            
+            // Restrict health plan users to only their own data
+            if (Auth::user()->hasRole(['health_plan', 'plan_admin'])) {
+                $healthPlanId = Auth::user()->entity_id;
+                $parameters['health_plan_id'] = $healthPlanId;
+            }
             
             // Use the report service to get performance data
             $reportData = $this->reportService->getPerformanceReportData($parameters);
@@ -671,6 +701,17 @@ class ReportController extends Controller
                 'description' => 'nullable|string',
                 'save_as_report' => 'boolean'
             ]);
+            
+            // Restrict health plan users to only their own data in parameters
+            if (Auth::user()->hasRole(['health_plan', 'plan_admin'])) {
+                $healthPlanId = Auth::user()->entity_id;
+                
+                if (!isset($validated['parameters'])) {
+                    $validated['parameters'] = [];
+                }
+                
+                $validated['parameters']['health_plan_id'] = $healthPlanId;
+            }
             
             // Create a temporary report for export
             $report = new Report([

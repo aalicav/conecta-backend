@@ -15,7 +15,7 @@ class PatientController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('auth:api');
+        $this->middleware('auth:sanctum');
     }
 
     /**
@@ -28,6 +28,12 @@ class PatientController extends Controller
     {
         try {
             $query = Patient::query();
+
+            // If user has health plan role, only show patients from their health plan
+            if (Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin')) {
+                $healthPlanId = Auth::user()->entity_id;
+                $query->where('health_plan_id', $healthPlanId);
+            }
 
             // Apply filters if provided
             if ($request->has('search')) {
@@ -96,6 +102,12 @@ class PatientController extends Controller
                 'phones.*.type' => 'required|string|in:mobile,landline,whatsapp,fax',
             ]);
 
+            // If user has health plan role, ensure the patient is created with their health plan ID
+            if (Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin')) {
+                $healthPlanId = Auth::user()->entity_id;
+                $validated['health_plan_id'] = $healthPlanId;
+            }
+
             DB::beginTransaction();
             
             $patient = Patient::create($validated);
@@ -150,6 +162,17 @@ class PatientController extends Controller
         try {
             $patient = Patient::with(['phones', 'healthPlan'])->findOrFail($id);
 
+            // If user has health plan role, verify that patient belongs to their health plan
+            if ((Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin'))) {
+                $healthPlanId = Auth::user()->entity_id;
+                if ($patient->health_plan_id != $healthPlanId) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Unauthorized to view this patient'
+                    ], 403);
+                }
+            }
+
             return response()->json([
                 'status' => 'success',
                 'data' => new PatientResource($patient)
@@ -180,6 +203,25 @@ class PatientController extends Controller
     {
         try {
             $patient = Patient::findOrFail($id);
+
+            // If user has health plan role, verify that patient belongs to their health plan
+            if (Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin')) {
+                $healthPlanId = Auth::user()->entity_id;
+                if ($patient->health_plan_id != $healthPlanId) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Unauthorized to update this patient'
+                    ], 403);
+                }
+                
+                // Ensure health_plan_id isn't changed to a different plan
+                if ($request->has('health_plan_id') && $request->health_plan_id != $healthPlanId) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Cannot change patient to a different health plan'
+                    ], 403);
+                }
+            }
 
             $validated = $request->validate([
                 'name' => 'sometimes|required|string|max:255',
@@ -255,6 +297,17 @@ class PatientController extends Controller
     {
         try {
             $patient = Patient::findOrFail($id);
+
+            // If user has health plan role, verify that patient belongs to their health plan
+            if (Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin')) {
+                $healthPlanId = Auth::user()->entity_id;
+                if ($patient->health_plan_id != $healthPlanId) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Unauthorized to delete this patient'
+                    ], 403);
+                }
+            }
 
             DB::beginTransaction();
             

@@ -311,8 +311,6 @@ Route::middleware(['auth:sanctum'])->prefix('dashboard')->group(function () {
     Route::get('/stats', [DashboardController::class, 'getStats']);
     Route::get('/appointments/upcoming', [DashboardController::class, 'getUpcomingAppointments']);
     Route::get('/appointments/today', [DashboardController::class, 'getTodayAppointments']);
-    Route::get('/notifications', [DashboardController::class, 'getRecentNotifications']);
-    Route::put('/notifications/{id}/mark-read', [DashboardController::class, 'markNotificationAsRead']);
     Route::get('/suri/stats', [DashboardController::class, 'getSuriStats']);
 });
 

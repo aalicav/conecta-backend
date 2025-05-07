@@ -7,7 +7,6 @@ use Illuminate\Http\Request;
 use App\Models\Appointment;
 use App\Models\Patient;
 use App\Models\Solicitation;
-use App\Models\Notification;
 use App\Models\Payment;
 use App\Models\Contract;
 use App\Models\Professional;
@@ -16,6 +15,7 @@ use App\Models\SuriChat;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+
 
 class DashboardController extends Controller
 {
@@ -183,71 +183,6 @@ class DashboardController extends Controller
         return response()->json([
             'success' => true,
             'data' => $formattedAppointments
-        ]);
-    }
-
-    /**
-     * Get recent notifications
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function getRecentNotifications(Request $request)
-    {
-        $limit = $request->input('limit', 5);
-        $user = Auth::user();
-
-        $notifications = Notification::where('user_id', $user->id)
-            ->orderBy('created_at', 'desc')
-            ->take($limit)
-            ->get();
-
-        // Format the response
-        $formattedNotifications = $notifications->map(function ($notification) {
-            // Calculate relative time
-            $relativeTime = Carbon::parse($notification->created_at)->diffForHumans();
-            
-            return [
-                'id' => $notification->id,
-                'sender' => $notification->sender,
-                'content' => $notification->content,
-                'time' => $relativeTime,
-                'unread' => !$notification->read,
-            ];
-        });
-
-        return response()->json([
-            'success' => true,
-            'data' => $formattedNotifications
-        ]);
-    }
-
-    /**
-     * Mark a notification as read
-     *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function markNotificationAsRead($id)
-    {
-        $user = Auth::user();
-        
-        $notification = Notification::where('id', $id)
-            ->where('user_id', $user->id)
-            ->first();
-            
-        if (!$notification) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Notification not found'
-            ], 404);
-        }
-        
-        $notification->read = true;
-        $notification->save();
-        
-        return response()->json([
-            'success' => true
         ]);
     }
 

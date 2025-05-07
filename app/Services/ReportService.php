@@ -459,8 +459,13 @@ class ReportService
             : Carbon::now();
         
         // Base query for professionals
-        $professionalQuery = Professional::with(['appointments' => function ($query) use ($startDate, $endDate) {
+        $professionalQuery = Professional::with(['appointments' => function ($query) use ($startDate, $endDate, $parameters) {
             $query->whereBetween('scheduled_at', [$startDate, $endDate]);
+            
+            // Filter appointments by health plan if provided
+            if (isset($parameters['health_plan_id']) && $parameters['health_plan_id']) {
+                $query->where('health_plan_id', $parameters['health_plan_id']);
+            }
         }, 'clinics']);
         
         // Apply professional filter if provided
@@ -485,6 +490,13 @@ class ReportService
         if (isset($parameters['city']) && $parameters['city']) {
             $professionalQuery->whereHas('clinics', function ($q) use ($parameters) {
                 $q->where('city', $parameters['city']);
+            });
+        }
+        
+        // Only include professionals that have appointments with the specified health plan
+        if (isset($parameters['health_plan_id']) && $parameters['health_plan_id']) {
+            $professionalQuery->whereHas('appointments', function ($q) use ($parameters) {
+                $q->where('health_plan_id', $parameters['health_plan_id']);
             });
         }
         
@@ -639,11 +651,17 @@ class ReportService
             ? Carbon::parse($parameters['end_date']) 
             : Carbon::now();
         
-        $results = DB::table('appointments')
+        $query = DB::table('appointments')
             ->join('patients', 'appointments.patient_id', '=', 'patients.id')
             ->select('patients.id', 'patients.name', DB::raw('COUNT(appointments.id) as appointment_count'))
-            ->whereBetween('appointments.scheduled_at', [$startDate, $endDate])
-            ->groupBy('patients.id', 'patients.name')
+            ->whereBetween('appointments.scheduled_at', [$startDate, $endDate]);
+            
+        // Filter by health plan if provided
+        if (isset($parameters['health_plan_id']) && $parameters['health_plan_id']) {
+            $query->where('appointments.health_plan_id', $parameters['health_plan_id']);
+        }
+        
+        $results = $query->groupBy('patients.id', 'patients.name')
             ->orderByDesc('appointment_count')
             ->limit(isset($parameters['limit']) ? $parameters['limit'] : 100)
             ->get();
@@ -677,7 +695,7 @@ class ReportService
             ? Carbon::parse($parameters['end_date']) 
             : Carbon::now();
         
-        $results = DB::table('payments')
+        $query = DB::table('payments')
             ->join('appointments', function ($join) {
                 $join->on('payments.payable_id', '=', 'appointments.id')
                     ->where('payments.payable_type', '=', 'App\\Models\\Appointment');
@@ -685,8 +703,14 @@ class ReportService
             ->join('clinics', 'appointments.clinic_id', '=', 'clinics.id')
             ->select('clinics.id', 'clinics.name', DB::raw('SUM(payments.total_amount) as total_revenue'))
             ->whereBetween('payments.created_at', [$startDate, $endDate])
-            ->where('payments.status', 'completed')
-            ->groupBy('clinics.id', 'clinics.name')
+            ->where('payments.status', 'completed');
+            
+        // Filter by health plan if provided
+        if (isset($parameters['health_plan_id']) && $parameters['health_plan_id']) {
+            $query->where('appointments.health_plan_id', $parameters['health_plan_id']);
+        }
+        
+        $results = $query->groupBy('clinics.id', 'clinics.name')
             ->orderByDesc('total_revenue')
             ->get();
         
@@ -710,10 +734,16 @@ class ReportService
      */
     public function getProfessionalAvailabilityData(array $parameters): array
     {
-        // This would be more complex in a real implementation
-        // For now, we'll return a placeholder result
+        $professionalQuery = Professional::query();
         
-        $professionals = Professional::all();
+        // Only include professionals that have appointments with the specified health plan
+        if (isset($parameters['health_plan_id']) && $parameters['health_plan_id']) {
+            $professionalQuery->whereHas('appointments', function ($q) use ($parameters) {
+                $q->where('health_plan_id', $parameters['health_plan_id']);
+            });
+        }
+        
+        $professionals = $professionalQuery->get();
         
         $reportData = [];
         foreach ($professionals as $professional) {

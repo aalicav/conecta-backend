@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 
 class HealthPlanDashboardController extends Controller
 {
@@ -50,63 +51,123 @@ class HealthPlanDashboardController extends Controller
                     $startDate = now()->subMonth();
             }
 
-            // Contagem de planos por status
-            $totalPlans = HealthPlan::count();
-            $approvedPlans = HealthPlan::where('status', 'approved')->count();
-            $pendingPlans = HealthPlan::where('status', 'pending')->count();
-            $rejectedPlans = HealthPlan::where('status', 'rejected')->count();
-            
-            // Contagem de planos com e sem contrato
-            $plansWithContract = HealthPlan::where('has_signed_contract', true)->count();
-            $plansWithoutContract = HealthPlan::where('has_signed_contract', false)->orWhereNull('has_signed_contract')->count();
-            
-            // Contagem de procedimentos
-            $totalProcedures = DB::table('health_plan_procedures')
-                ->where('is_active', true)
-                ->count();
-            
-            // Estatísticas de solicitações e consultas
-            $totalSolicitations = DB::table('solicitations')
-                ->whereNotNull('health_plan_id')
-                ->when($startDate, function ($query) use ($startDate) {
-                    return $query->where('created_at', '>=', $startDate);
-                })
-                ->count();
+            // Check if user is a health plan user
+            $isHealthPlanUser = Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin');
+            $healthPlanId = $isHealthPlanUser ? Auth::user()->entity_id : null;
+
+            // For health plan users, only show their own data
+            if ($isHealthPlanUser) {
+                // Get info for a single health plan
+                $plan = HealthPlan::find($healthPlanId);
                 
-            $totalAppointments = DB::table('appointments')
-                ->whereIn('solicitation_id', function ($query) {
-                    $query->select('id')->from('solicitations')->whereNotNull('health_plan_id');
-                })
-                ->when($startDate, function ($query) use ($startDate) {
-                    return $query->where('created_at', '>=', $startDate);
-                })
-                ->count();
-            
-            // Estatísticas financeiras
-            $totalRevenue = DB::table('payments')
-                ->where('status', 'paid')
-                ->whereIn('entity_type', ['App\\Models\\HealthPlan'])
-                ->when($startDate, function ($query) use ($startDate) {
-                    return $query->where('created_at', '>=', $startDate);
-                })
-                ->sum('amount');
-            
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'total_plans' => $totalPlans,
-                    'approved_plans' => $approvedPlans,
-                    'pending_plans' => $pendingPlans,
-                    'rejected_plans' => $rejectedPlans,
-                    'has_contract' => $plansWithContract,
-                    'missing_contract' => $plansWithoutContract,
-                    'total_procedures' => $totalProcedures,
-                    'total_solicitations' => $totalSolicitations,
-                    'total_appointments' => $totalAppointments,
-                    'total_revenue' => $totalRevenue,
-                    'time_range' => $range
-                ]
-            ]);
+                if (!$plan) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Health plan not found'
+                    ], 404);
+                }
+                
+                $totalProcedures = DB::table('health_plan_procedures')
+                    ->where('health_plan_id', $healthPlanId)
+                    ->where('is_active', true)
+                    ->count();
+                
+                $totalSolicitations = DB::table('solicitations')
+                    ->where('health_plan_id', $healthPlanId)
+                    ->when($startDate, function ($query) use ($startDate) {
+                        return $query->where('created_at', '>=', $startDate);
+                    })
+                    ->count();
+                    
+                $totalAppointments = DB::table('appointments')
+                    ->whereIn('solicitation_id', function ($query) use ($healthPlanId) {
+                        $query->select('id')->from('solicitations')->where('health_plan_id', $healthPlanId);
+                    })
+                    ->when($startDate, function ($query) use ($startDate) {
+                        return $query->where('created_at', '>=', $startDate);
+                    })
+                    ->count();
+                
+                $totalRevenue = DB::table('payments')
+                    ->where('status', 'paid')
+                    ->where('entity_type', 'App\\Models\\HealthPlan')
+                    ->where('entity_id', $healthPlanId)
+                    ->when($startDate, function ($query) use ($startDate) {
+                        return $query->where('created_at', '>=', $startDate);
+                    })
+                    ->sum('amount');
+                
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'total_plans' => 1,
+                        'approved_plans' => $plan->status === 'approved' ? 1 : 0,
+                        'pending_plans' => $plan->status === 'pending' ? 1 : 0,
+                        'rejected_plans' => $plan->status === 'rejected' ? 1 : 0,
+                        'has_contract' => $plan->has_signed_contract ? 1 : 0,
+                        'missing_contract' => $plan->has_signed_contract ? 0 : 1,
+                        'total_procedures' => $totalProcedures,
+                        'total_solicitations' => $totalSolicitations,
+                        'total_appointments' => $totalAppointments,
+                        'total_revenue' => $totalRevenue,
+                        'time_range' => $range
+                    ]
+                ]);
+            } else {
+                // Original code for admin/staff users - show all health plans data
+                $totalPlans = HealthPlan::count();
+                $approvedPlans = HealthPlan::where('status', 'approved')->count();
+                $pendingPlans = HealthPlan::where('status', 'pending')->count();
+                $rejectedPlans = HealthPlan::where('status', 'rejected')->count();
+                
+                $plansWithContract = HealthPlan::where('has_signed_contract', true)->count();
+                $plansWithoutContract = HealthPlan::where('has_signed_contract', false)->orWhereNull('has_signed_contract')->count();
+                
+                $totalProcedures = DB::table('health_plan_procedures')
+                    ->where('is_active', true)
+                    ->count();
+                
+                $totalSolicitations = DB::table('solicitations')
+                    ->whereNotNull('health_plan_id')
+                    ->when($startDate, function ($query) use ($startDate) {
+                        return $query->where('created_at', '>=', $startDate);
+                    })
+                    ->count();
+                    
+                $totalAppointments = DB::table('appointments')
+                    ->whereIn('solicitation_id', function ($query) {
+                        $query->select('id')->from('solicitations')->whereNotNull('health_plan_id');
+                    })
+                    ->when($startDate, function ($query) use ($startDate) {
+                        return $query->where('created_at', '>=', $startDate);
+                    })
+                    ->count();
+                
+                $totalRevenue = DB::table('payments')
+                    ->where('status', 'paid')
+                    ->whereIn('entity_type', ['App\\Models\\HealthPlan'])
+                    ->when($startDate, function ($query) use ($startDate) {
+                        return $query->where('created_at', '>=', $startDate);
+                    })
+                    ->sum('amount');
+                
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'total_plans' => $totalPlans,
+                        'approved_plans' => $approvedPlans,
+                        'pending_plans' => $pendingPlans,
+                        'rejected_plans' => $rejectedPlans,
+                        'has_contract' => $plansWithContract,
+                        'missing_contract' => $plansWithoutContract,
+                        'total_procedures' => $totalProcedures,
+                        'total_solicitations' => $totalSolicitations,
+                        'total_appointments' => $totalAppointments,
+                        'total_revenue' => $totalRevenue,
+                        'time_range' => $range
+                    ]
+                ]);
+            }
         } catch (\Exception $e) {
             Log::error('Error getting dashboard stats: ' . $e->getMessage());
             return response()->json([
@@ -125,11 +186,22 @@ class HealthPlanDashboardController extends Controller
     public function getProcedures(): JsonResponse
     {
         try {
-            // Obter as estatísticas de procedimentos mais usados e suas faixas de preço
-            $procedures = DB::table('health_plan_procedures as hpp')
+            // Check if user is a health plan user
+            $isHealthPlanUser = Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin');
+            $healthPlanId = $isHealthPlanUser ? Auth::user()->entity_id : null;
+            
+            // Build query
+            $query = DB::table('health_plan_procedures as hpp')
                 ->join('tuss_procedures as tp', 'hpp.tuss_procedure_id', '=', 'tp.id')
-                ->where('hpp.is_active', true)
-                ->select(
+                ->where('hpp.is_active', true);
+                
+            // Filter by health plan ID for health plan users
+            if ($isHealthPlanUser) {
+                $query->where('hpp.health_plan_id', $healthPlanId);
+            }
+            
+            // Get procedures statistics
+            $procedures = $query->select(
                     'tp.id as procedure_id',
                     'tp.name as procedure_name',
                     'tp.code as procedure_code',
@@ -166,6 +238,10 @@ class HealthPlanDashboardController extends Controller
     public function getFinancial(Request $request): JsonResponse
     {
         try {
+            // Check if user is a health plan user
+            $isHealthPlanUser = Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin');
+            $healthPlanId = $isHealthPlanUser ? Auth::user()->entity_id : null;
+            
             // Determine time range
             $range = $request->input('range', 'month');
             $startDate = null;
@@ -202,12 +278,19 @@ class HealthPlanDashboardController extends Controller
                 $dateFormat = '%Y-%m'; // Ano-Mês
             }
             
-            // Obter dados agrupados pelo intervalo definido
-            $financialData = DB::table('payments')
+            // Build query
+            $query = DB::table('payments')
                 ->where('status', 'paid')
-                ->whereIn('entity_type', ['App\\Models\\HealthPlan'])
-                ->where('created_at', '>=', $startDate)
-                ->select(
+                ->where('entity_type', 'App\\Models\\HealthPlan')
+                ->where('created_at', '>=', $startDate);
+                
+            // Filter by health plan ID for health plan users
+            if ($isHealthPlanUser) {
+                $query->where('entity_id', $healthPlanId);
+            }
+            
+            // Get grouped financial data
+            $financialData = $query->select(
                     DB::raw("DATE_FORMAT(created_at, '$dateFormat') as period"),
                     DB::raw("SUM(amount) as revenue"),
                     DB::raw("COUNT(*) as payments")
@@ -216,7 +299,7 @@ class HealthPlanDashboardController extends Controller
                 ->orderBy('period')
                 ->get();
             
-            // Formatar para ficar mais amigável para o frontend
+            // Format for frontend display
             $formattedData = $financialData->map(function ($item) use ($interval) {
                 $periodLabel = $item->period;
                 
@@ -277,17 +360,28 @@ class HealthPlanDashboardController extends Controller
     public function getRecentPlans(): JsonResponse
     {
         try {
-            // Buscar os planos mais recentes com contagem de procedimentos
-            $recentPlans = HealthPlan::select(
+            // Check if user is a health plan user
+            $isHealthPlanUser = Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin');
+            $healthPlanId = $isHealthPlanUser ? Auth::user()->entity_id : null;
+            
+            // Build query
+            $query = HealthPlan::select(
                     'health_plans.id',
                     'health_plans.name',
                     'health_plans.status',
                     'health_plans.created_at',
                     DB::raw('(SELECT COUNT(*) FROM health_plan_procedures WHERE health_plan_procedures.health_plan_id = health_plans.id AND health_plan_procedures.is_active = 1) as procedures_count')
-                )
-                ->orderBy('health_plans.created_at', 'desc')
-                ->limit(10)
-                ->get();
+                );
+                
+            // Filter by health plan ID for health plan users
+            if ($isHealthPlanUser) {
+                $query->where('id', $healthPlanId);
+            } else {
+                $query->orderBy('health_plans.created_at', 'desc')
+                    ->limit(10);
+            }
+            
+            $recentPlans = $query->get();
             
             return response()->json([
                 'success' => true,
@@ -311,8 +405,12 @@ class HealthPlanDashboardController extends Controller
     public function getRecentSolicitations(): JsonResponse
     {
         try {
-            // Buscar solicitações recentes relacionadas a planos de saúde
-            $recentSolicitations = DB::table('solicitations as s')
+            // Check if user is a health plan user
+            $isHealthPlanUser = Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin');
+            $healthPlanId = $isHealthPlanUser ? Auth::user()->entity_id : null;
+            
+            // Build query
+            $query = DB::table('solicitations as s')
                 ->join('health_plans as hp', 's.health_plan_id', '=', 'hp.id')
                 ->join('patients as p', 's.patient_id', '=', 'p.id')
                 ->join('tuss_procedures as tp', 's.procedure_id', '=', 'tp.id')
@@ -324,8 +422,14 @@ class HealthPlanDashboardController extends Controller
                     's.status',
                     's.created_at'
                 )
-                ->whereNotNull('s.health_plan_id')
-                ->orderBy('s.created_at', 'desc')
+                ->whereNotNull('s.health_plan_id');
+                
+            // Filter by health plan ID for health plan users
+            if ($isHealthPlanUser) {
+                $query->where('s.health_plan_id', $healthPlanId);
+            }
+            
+            $recentSolicitations = $query->orderBy('s.created_at', 'desc')
                 ->limit(10)
                 ->get();
             
