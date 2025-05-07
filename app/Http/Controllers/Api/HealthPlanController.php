@@ -141,21 +141,12 @@ class HealthPlanController extends Controller
                 'phones' => 'sometimes|array',
                 'phones.*.number' => 'required|string|max:20',
                 'phones.*.type' => 'required|string|in:mobile,landline,whatsapp,fax',
-                // Document validation
                 'documents' => 'sometimes|array',
-                'documents.*.file' => 'required|file|max:10240', // 10MB max
+                'documents.*.file' => 'sometimes|file|max:10240',
                 'documents.*.type' => 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other',
                 'documents.*.description' => 'required|string|max:255',
                 'documents.*.reference_date' => 'nullable|date',
                 'documents.*.expiration_date' => 'nullable|date|after:reference_date',
-                // Procedures validation for negotiation
-                'procedures' => 'sometimes|array',
-                'procedures.*.tuss_id' => 'required|exists:tuss_procedures,id',
-                'procedures.*.proposed_value' => 'required|numeric|min:0',
-                'procedures.*.status' => 'sometimes|nullable|string',
-                'procedures.*.notes' => 'nullable|string',
-                'auto_approve' => 'sometimes|nullable|string|in:true,false,1,0',
-                'send_welcome_email' => 'sometimes|boolean',
             ]);
 
             if ($validator->fails()) {
@@ -178,6 +169,7 @@ class HealthPlanController extends Controller
             $healthPlan = new HealthPlan($request->except('logo', 'phones', 'documents', 'procedures', 'auto_approve', 'send_welcome_email'));
             $healthPlan->logo = $logoPath;
             $healthPlan->user_id = Auth::id();
+            $healthPlan->save();
 
             // Generate a random password for the new user if not provided
             $plainPassword = $request->input('password', Str::random(10));
@@ -192,27 +184,6 @@ class HealthPlanController extends Controller
             ]);
     
             $user->assignRole('plan_admin');
-            
-            // Set auto approval status if requested
-            // Check if auto_approve is true (can be "true" string, "1", or true boolean)
-            $autoApprove = $request->auto_approve;
-            if ($autoApprove === "true" || $autoApprove === "1" || $autoApprove === true) {
-                // Check if user has permission to approve health plans
-                if (!Auth::user()->can('approve health plans')) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'You do not have permission to auto-approve health plans'
-                    ], 403);
-                }
-                
-                $healthPlan->status = 'approved';
-                $healthPlan->approved_at = now();
-                $healthPlan->approved_by = Auth::id();
-                $healthPlan->has_signed_contract = true;
-            }
-            
-            $healthPlan->save();
 
             // Add phones if provided
             if ($request->has('phones') && is_array($request->phones)) {
@@ -228,53 +199,50 @@ class HealthPlanController extends Controller
             $uploadedDocuments = [];
             if ($request->hasFile('documents')) {
                 foreach ($request->file('documents') as $index => $documentFile) {
-                    $fileData = $request->input('documents')[$index];
+                    // Get the corresponding document data
+                    $fileData = $request->input("documents.$index");
                     
+                    if (!$documentFile || !$fileData) {
+                        continue;
+                    }
+
                     // Get file extension and check allowed types
                     $extension = $documentFile->getClientOriginalExtension();
                     $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
                     if (!in_array(strtolower($extension), $allowedTypes)) {
-                        DB::rollBack();
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Invalid file type. Allowed types: ' . implode(', ', $allowedTypes)
-                        ], 422);
-                    }
-                    
-                    // Create directory if it doesn't exist
-                    $directory = storage_path('app/public/health_plans/documents/' . $healthPlan->id);
-                    if (!file_exists($directory)) {
-                        mkdir($directory, 0755, true);
-                    }
-                    
-                    // Store file with original name
-                    $fileName = time() . '_' . $documentFile->getClientOriginalName();
-                    $filePath = $documentFile->storeAs(
-                        'health_plans/documents/' . $healthPlan->id,
-                        $fileName,
-                        'public'
-                    );
-                    
-                    if (!$filePath) {
-                        Log::error('Failed to store file: ' . $fileName);
                         continue;
                     }
-                    
-                    // Create document record
-                    $document = $healthPlan->documents()->create([
-                        'type' => $fileData['type'],
-                        'description' => $fileData['description'],
-                        'file_path' => $filePath,
-                        'file_name' => $documentFile->getClientOriginalName(),
-                        'file_type' => $documentFile->getClientMimeType(),
-                        'file_size' => $documentFile->getSize(),
-                        'reference_date' => $fileData['reference_date'] ?? null,
-                        'expiration_date' => $fileData['expiration_date'] ?? null,
-                        'uploaded_by' => Auth::id(),
-                        'user_id' => $healthPlan->user_id,
-                    ]);
 
-                    $uploadedDocuments[] = $document;
+                    try {
+                        // Create directory if it doesn't exist
+                        $directory = 'health_plans/documents/' . $healthPlan->id;
+                        Storage::disk('public')->makeDirectory($directory);
+                        
+                        // Store file with timestamp and original name
+                        $fileName = time() . '_' . $documentFile->getClientOriginalName();
+                        $filePath = $documentFile->storeAs($directory, $fileName, 'public');
+                        
+                        if ($filePath) {
+                            // Create document record
+                            $document = $healthPlan->documents()->create([
+                                'type' => $fileData['type'],
+                                'description' => $fileData['description'],
+                                'file_path' => $filePath,
+                                'file_name' => $documentFile->getClientOriginalName(),
+                                'file_type' => $documentFile->getClientMimeType(),
+                                'file_size' => $documentFile->getSize(),
+                                'reference_date' => $fileData['reference_date'] ?? null,
+                                'expiration_date' => $fileData['expiration_date'] ?? null,
+                                'uploaded_by' => Auth::id(),
+                                'user_id' => $healthPlan->user_id,
+                            ]);
+
+                            $uploadedDocuments[] = $document;
+                        }
+                    } catch (\Exception $e) {
+                        Log::error('Error uploading document: ' . $e->getMessage());
+                        continue;
+                    }
                 }
             }
 
@@ -294,7 +262,7 @@ class HealthPlanController extends Controller
                 ];
                 
                 // Set auto approved status if requested
-                if ($autoApprove === "true" || $autoApprove === "1" || $autoApprove === true) {
+                if ($request->auto_approve === "true" || $request->auto_approve === true) {
                     $negotiationData['status'] = 'approved';
                 }
                 
@@ -308,7 +276,7 @@ class HealthPlanController extends Controller
                         ];
                         
                         // If auto-approve, set the status and approved value
-                        if ($autoApprove === "true" || $autoApprove === "1" || $autoApprove === true) {
+                        if ($request->auto_approve === "true" || $request->auto_approve === true) {
                             $item['status'] = 'approved';
                             $item['approved_value'] = $procedure['proposed_value'];
                         }
@@ -323,44 +291,9 @@ class HealthPlanController extends Controller
                 
                 // Check if negotiation was created successfully
                 if ($negotiationResult->getStatusCode() !== 201) {
-                    // Log the error but don't fail the health plan creation
                     Log::warning('Failed to create initial negotiation for health plan: ' . $healthPlan->id);
                     Log::warning(json_encode($negotiationResult->getData()));
                 }
-            }
-
-            // Send welcome email with password
-            $sendEmail = $request->has('send_welcome_email') ? $request->boolean('send_welcome_email') : true;
-            if ($sendEmail) {
-                // Get company data from config
-                $companyName = config('app.name');
-                $companyAddress = config('app.address', 'Address not available');
-                $companyCity = config('app.city', 'City not available');
-                $companyState = config('app.state', 'State not available');
-                $supportEmail = config('app.support_email', 'support@example.com');
-                $supportPhone = config('app.support_phone', '(00) 0000-0000');
-                $socialMedia = [
-                    'Facebook' => 'https://facebook.com/' . config('app.social.facebook', ''),
-                    'Instagram' => 'https://instagram.com/' . config('app.social.instagram', ''),
-                ];
-                
-                // Send welcome email
-                Mail::send('emails.welcome_user', [
-                    'user' => $user,
-                    'password' => $plainPassword,
-                    'loginUrl' => config('app.frontend_url') . '/login',
-                    'companyName' => $companyName,
-                    'companyAddress' => $companyAddress,
-                    'companyCity' => $companyCity,
-                    'companyState' => $companyState,
-                    'supportEmail' => $supportEmail,
-                    'supportPhone' => $supportPhone,
-                    'socialMedia' => $socialMedia,
-                    'entityType' => 'Plano de Saúde'
-                ], function ($message) use ($user) {
-                    $message->to($user->email, $user->name)
-                            ->subject('Bem-vindo ao ' . config('app.name') . ' - Detalhes da sua conta');
-                });
             }
 
             DB::commit();
@@ -469,7 +402,14 @@ class HealthPlanController extends Controller
                 'phones.*.id' => 'sometimes|exists:phones,id',
                 'phones.*.number' => 'required|string|max:20',
                 'phones.*.type' => 'required|string|in:mobile,landline,whatsapp,fax',
-                'email' => 'sometimes|email|unique:users,email,' . ($health_plan->user ? $health_plan->user->id : '')
+                'email' => 'sometimes|email|unique:users,email,' . ($health_plan->user ? $health_plan->user->id : ''),
+                'password' => 'sometimes|string|min:8',
+                'documents' => 'sometimes|array',
+                'documents.*.file' => 'sometimes|file|max:10240',
+                'documents.*.type' => 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other',
+                'documents.*.description' => 'required|string|max:255',
+                'documents.*.reference_date' => 'nullable|date',
+                'documents.*.expiration_date' => 'nullable|date|after:reference_date',
             ]);
 
             if ($validator->fails()) {
@@ -498,26 +438,30 @@ class HealthPlanController extends Controller
                 }
             }
 
-            // Update health plan - specify individual fields to prevent mass assignment issues
-            $health_plan->name = $request->input('name', $health_plan->name);
-            $health_plan->cnpj = $request->input('cnpj', $health_plan->cnpj);
-            $health_plan->municipal_registration = $request->input('municipal_registration', $health_plan->municipal_registration);
-            $health_plan->ans_code = $request->input('ans_code', $health_plan->ans_code);
-            $health_plan->description = $request->input('description', $health_plan->description);
-            $health_plan->legal_representative_name = $request->input('legal_representative_name', $health_plan->legal_representative_name);
-            $health_plan->legal_representative_cpf = $request->input('legal_representative_cpf', $health_plan->legal_representative_cpf);
-            $health_plan->legal_representative_position = $request->input('legal_representative_position', $health_plan->legal_representative_position);
-            $health_plan->address = $request->input('address', $health_plan->address);
-            $health_plan->city = $request->input('city', $health_plan->city);
-            $health_plan->state = $request->input('state', $health_plan->state);
-            $health_plan->postal_code = $request->input('postal_code', $health_plan->postal_code);
+            // Update health plan fields
+            $health_plan->fill($request->only([
+                'name', 'cnpj', 'municipal_registration', 'ans_code', 'description',
+                'legal_representative_name', 'legal_representative_cpf', 'legal_representative_position',
+                'address', 'city', 'state', 'postal_code'
+            ]));
             
             $health_plan->save();
 
-            // Update associated user email if provided
-            if ($request->has('email') && $health_plan->user) {
-                $health_plan->user->email = $request->input('email');
-                $health_plan->user->save();
+            // Update associated user email and password if provided
+            if ($health_plan->user) {
+                $userUpdates = [];
+                
+                if ($request->has('email')) {
+                    $userUpdates['email'] = $request->input('email');
+                }
+                
+                if ($request->has('password')) {
+                    $userUpdates['password'] = Hash::make($request->input('password'));
+                }
+                
+                if (!empty($userUpdates)) {
+                    $health_plan->user->update($userUpdates);
+                }
             }
 
             // Update phones if provided
@@ -551,6 +495,54 @@ class HealthPlanController extends Controller
                 $phonesToDelete = array_diff($existingPhoneIds, $newPhoneIds);
                 if (!empty($phonesToDelete)) {
                     $health_plan->phones()->whereIn('id', $phonesToDelete)->delete();
+                }
+            }
+
+            // Handle document uploads if provided
+            if ($request->hasFile('documents')) {
+                foreach ($request->file('documents') as $index => $documentFile) {
+                    // Get the corresponding document data
+                    $fileData = $request->input("documents.$index");
+                    
+                    if (!$documentFile || !$fileData) {
+                        continue;
+                    }
+
+                    // Get file extension and check allowed types
+                    $extension = $documentFile->getClientOriginalExtension();
+                    $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
+                    if (!in_array(strtolower($extension), $allowedTypes)) {
+                        continue;
+                    }
+
+                    try {
+                        // Create directory if it doesn't exist
+                        $directory = 'health_plans/documents/' . $health_plan->id;
+                        Storage::disk('public')->makeDirectory($directory);
+                        
+                        // Store file with timestamp and original name
+                        $fileName = time() . '_' . $documentFile->getClientOriginalName();
+                        $filePath = $documentFile->storeAs($directory, $fileName, 'public');
+                        
+                        if ($filePath) {
+                            // Create document record
+                            $document = $health_plan->documents()->create([
+                                'type' => $fileData['type'],
+                                'description' => $fileData['description'],
+                                'file_path' => $filePath,
+                                'file_name' => $documentFile->getClientOriginalName(),
+                                'file_type' => $documentFile->getClientMimeType(),
+                                'file_size' => $documentFile->getSize(),
+                                'reference_date' => $fileData['reference_date'] ?? null,
+                                'expiration_date' => $fileData['expiration_date'] ?? null,
+                                'uploaded_by' => Auth::id(),
+                                'user_id' => $health_plan->user_id,
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        Log::error('Error uploading document: ' . $e->getMessage());
+                        continue;
+                    }
                 }
             }
 

@@ -21,6 +21,7 @@ class HealthPlanResource extends JsonResource
             'cnpj' => $this->cnpj,
             'ans_code' => $this->ans_code,
             'description' => $this->description,
+            'municipal_registration' => $this->municipal_registration,
             'legal_representative_name' => $this->legal_representative_name,
             'legal_representative_cpf' => $this->legal_representative_cpf,
             'legal_representative_position' => $this->legal_representative_position,
