@@ -480,7 +480,7 @@ class NotificationService
     protected function getUsersToNotifyForSolicitation(Solicitation $solicitation)
     {
         // Notify health plan admins and super admins
-        $healthPlanAdmins = User::role('health_plan_admin')
+        $healthPlanAdmins = User::role('plan_admin')
             ->where('health_plan_id', $solicitation->health_plan_id)
             ->where('is_active', true)
             ->get();

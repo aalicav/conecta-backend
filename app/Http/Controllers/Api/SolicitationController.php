@@ -176,6 +176,9 @@ class SolicitationController extends Controller
             // Set as processing immediately before scheduling attempt
             $solicitation->markAsProcessing();
 
+            // This will notify health plan admins and super admins
+            $this->notificationService->notifySolicitationCreated($solicitation);
+            
             // Attempt automatic scheduling and get the result
             $schedulingResult = $this->attemptAutoScheduling($solicitation);
             $appointmentInfo = null;
@@ -201,10 +204,7 @@ class SolicitationController extends Controller
                 }
             }
 
-            // Send solicitation created notification
-            // This will notify health plan admins and super admins
-            $this->notificationService->notifySolicitationCreated($solicitation);
-
+      
             DB::commit();
 
             return response()->json([
