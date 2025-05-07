@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('password_resets', function (Blueprint $table) {
+        Schema::create('password_resets', function (Blueprint $table) {
             $table->string('reset_code', 20)->nullable()->after('token');
         });
     }
@@ -21,8 +21,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('password_resets', function (Blueprint $table) {
-            $table->dropColumn('reset_code');
-        });
+        Schema::drop('password_resets');
     }
 };
