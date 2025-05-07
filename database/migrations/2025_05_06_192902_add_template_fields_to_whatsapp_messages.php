@@ -13,7 +13,6 @@ return new class extends Migration
     {
         Schema::table('whatsapp_messages', function (Blueprint $table) {
             // Adicionar campo para nome do template
-            $table->string('template_name')->nullable()->after('media_type');
             
             // Renomear campo message para content (se necessário)
             if (Schema::hasColumn('whatsapp_messages', 'message') && !Schema::hasColumn('whatsapp_messages', 'content')) {
@@ -30,7 +29,10 @@ return new class extends Migration
             // Adicionar campo para armazenar tipo de mídia
             if (!Schema::hasColumn('whatsapp_messages', 'media_type')) {
                 $table->string('media_type')->nullable()->after('media_url');
-            }
+            }            
+            
+            $table->string('template_name')->nullable()->after('media_type');
+
         });
     }
 
