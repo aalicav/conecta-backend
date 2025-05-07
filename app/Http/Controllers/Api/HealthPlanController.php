@@ -127,6 +127,7 @@ class HealthPlanController extends Controller
                 'cnpj' => 'required|string|max:18|unique:health_plans,cnpj',
                 'municipal_registration' => 'nullable|string|max:20',
                 'email' => 'required|email|unique:users,email',
+                'password' => 'sometimes|string|min:8',
                 'ans_code' => 'nullable|string|max:20',
                 'description' => 'nullable|string',
                 'legal_representative_name' => 'required|string|max:255',
@@ -178,8 +179,8 @@ class HealthPlanController extends Controller
             $healthPlan->logo = $logoPath;
             $healthPlan->user_id = Auth::id();
 
-            // Generate a random password for the new user
-            $plainPassword = Str::random(10);
+            // Generate a random password for the new user if not provided
+            $plainPassword = $request->input('password', Str::random(10));
             
             $user = User::factory()->create([
                 'name' => $request->name,
@@ -240,8 +241,24 @@ class HealthPlanController extends Controller
                         ], 422);
                     }
                     
-                    // Store file
-                    $filePath = $documentFile->store('health_plans/documents/' . $healthPlan->id, 'public');
+                    // Create directory if it doesn't exist
+                    $directory = storage_path('app/public/health_plans/documents/' . $healthPlan->id);
+                    if (!file_exists($directory)) {
+                        mkdir($directory, 0755, true);
+                    }
+                    
+                    // Store file with original name
+                    $fileName = time() . '_' . $documentFile->getClientOriginalName();
+                    $filePath = $documentFile->storeAs(
+                        'health_plans/documents/' . $healthPlan->id,
+                        $fileName,
+                        'public'
+                    );
+                    
+                    if (!$filePath) {
+                        Log::error('Failed to store file: ' . $fileName);
+                        continue;
+                    }
                     
                     // Create document record
                     $document = $healthPlan->documents()->create([
