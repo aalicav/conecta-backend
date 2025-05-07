@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('password_resets', function (Blueprint $table) {
-            $table->string('reset_code', 20)->nullable()->after('token');
+            $table->string('reset_code', 20)->nullable();
         });
     }
 
