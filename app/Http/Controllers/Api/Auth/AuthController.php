@@ -37,14 +37,14 @@ class AuthController extends Controller
         // Verifica se o usuário existe e a senha está correta
         if (!$user || !Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
+                'email' => ['Email ou senha estão incorretos  '],
             ]);
         }
         
         // Check if user is active
         if (!$user->is_active) {
             throw ValidationException::withMessages([
-                'email' => ['This account is not active. Please contact the administrator.'],
+                'email' => ['Este usuário não está ativo. Por favor, contate o administrador.'],
             ]);
         }
 
