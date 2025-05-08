@@ -13,6 +13,7 @@ use App\Services\SchedulingService;
 use App\Services\AppointmentScheduler;
 use App\Services\SchedulingConfigService;
 use App\Services\NotificationService;
+use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -27,9 +28,13 @@ class SolicitationController extends Controller
     /**
      * Create a new controller instance.
      */
-    public function __construct(protected SchedulingService $schedulingService, protected NotificationService $notificationService)
+    public function __construct()
     {
         $this->middleware('auth:sanctum');
+        $this->schedulingService = new SchedulingService();
+        $this->notificationService = new NotificationService(
+            new WhatsAppService()
+        );
     }
 
     /**

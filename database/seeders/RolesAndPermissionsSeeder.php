@@ -99,6 +99,10 @@ class RolesAndPermissionsSeeder extends Seeder
             // System settings permissions
             'view settings',
             'edit settings',
+
+            // Audit log permissions
+            'view audit logs',
+            'export audit logs',
         ];
 
         // Get existing permissions

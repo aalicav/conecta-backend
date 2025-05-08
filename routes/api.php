@@ -342,4 +342,12 @@ Route::group(['prefix' => 'auth', 'namespace' => 'Api\Auth'], function () {
     Route::post('/password/reset-request', 'AuthController@requestPasswordReset');
     Route::post('/password/validate-token', 'AuthController@validateResetToken');
     Route::post('/password/reset', 'AuthController@resetPassword');
+});
+
+// Audit Log routes
+Route::middleware(['auth:sanctum', 'permission:view audit logs'])->prefix('audit-logs')->group(function () {
+    Route::get('/', [App\Http\Controllers\Api\AuditController::class, 'index']);
+    Route::get('/statistics', [App\Http\Controllers\Api\AuditController::class, 'statistics']);
+    Route::get('/{id}', [App\Http\Controllers\Api\AuditController::class, 'show']);
+    Route::post('/model', [App\Http\Controllers\Api\AuditController::class, 'getModelAudit']);
 }); 
