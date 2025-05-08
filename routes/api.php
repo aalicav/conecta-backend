@@ -333,15 +333,15 @@ Route::middleware(['auth:sanctum'])->prefix('whatsapp')->group(function () {
 Route::post('/api/whatsapp/test/simple', [App\Http\Controllers\Api\WhatsappController::class, 'sendSimpleTest']);
 
 // Auth routes
-Route::group(['prefix' => 'auth', 'namespace' => 'Api\Auth'], function () {
-    Route::post('/login', 'AuthController@login');
-    Route::post('/logout', 'AuthController@logout')->middleware('auth:sanctum');
-    Route::get('/user', 'AuthController@user')->middleware('auth:sanctum');
+Route::group(['prefix' => 'auth'], function () {
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+    Route::get('/user', [AuthController::class, 'user'])->middleware('auth:sanctum');
     
     // Password reset routes
-    Route::post('/password/reset-request', 'AuthController@requestPasswordReset');
-    Route::post('/password/validate-token', 'AuthController@validateResetToken');
-    Route::post('/password/reset', 'AuthController@resetPassword');
+    Route::post('/password/reset-request', [AuthController::class, 'requestPasswordReset']);
+    Route::post('/password/validate-token', [AuthController::class, 'validateResetToken']);
+    Route::post('/password/reset', [AuthController::class, 'resetPassword']);
 });
 
 // Audit Log routes
