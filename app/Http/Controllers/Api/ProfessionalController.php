@@ -260,7 +260,8 @@ class ProfessionalController extends Controller
                     $path = $documentData['file']->store('professionals/documents', 'public');
                     
                     $document = $professional->documents()->create([
-                        'path' => $path,
+                        'name' => $documentData['type'] . ' - ' . $professional->name,
+                        'file_path' => $path,
                         'type' => $documentData['type'],
                         'description' => $documentData['description'] ?? null,
                         'uploaded_by' => Auth::id(),
@@ -509,7 +510,8 @@ class ProfessionalController extends Controller
                     $path = $documentData['file']->store('professionals/documents', 'public');
                     
                     $document = $professional->documents()->create([
-                        'path' => $path,
+                        'name' => $documentData['type'] . ' - ' . $professional->name,
+                        'file_path' => $path,
                         'type' => $documentData['type'],
                         'description' => $documentData['description'] ?? null,
                         'uploaded_by' => Auth::id(),
@@ -712,7 +714,8 @@ class ProfessionalController extends Controller
                 $path = $documentData['file']->store('professionals/documents', 'public');
                 
                 $document = $professional->documents()->create([
-                    'path' => $path,
+                    'name' => $documentData['type'] . ' - ' . $professional->name,
+                    'file_path' => $path,
                     'type' => $documentData['type'],
                     'description' => $documentData['description'] ?? null,
                     'uploaded_by' => Auth::id(),
@@ -1228,8 +1231,8 @@ class ProfessionalController extends Controller
             }
 
             // Delete the file from storage
-            if (Storage::disk('public')->exists($document->path)) {
-                Storage::disk('public')->delete($document->path);
+            if (Storage::disk('public')->exists($document->file_path)) {
+                Storage::disk('public')->delete($document->file_path);
             }
 
             // Delete the document record
