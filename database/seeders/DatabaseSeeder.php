@@ -6,6 +6,8 @@ use App\Models\User;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\App;
+
 class DatabaseSeeder extends Seeder
 {
     /**
@@ -15,18 +17,16 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-
-
-
-
         $this->call([
             RolesAndPermissionsSeeder::class,
+            EnhancedRolesAndPermissionsSeeder::class, // Dr. Ítalo's specified roles and permissions
             SystemSettingSeeder::class,
             // TussProcedureSeeder::class,
             // ContractTemplateSeeder::class,
             // NegotiationExampleSeeder::class,
         ]);        
         
+        // Create default admin user
         $user = User::factory()->create([
             'name' => 'Test User',
             'email' => 'test@example.com',
@@ -34,5 +34,10 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $user->assignRole('super_admin');
+        
+        // Only seed sample users in local or development environments
+        if (App::environment(['local', 'development'])) {
+            $this->call(SampleUsersSeeder::class);
+        }
     }
 }

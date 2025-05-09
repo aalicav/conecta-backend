@@ -96,10 +96,14 @@ class PatientController extends Controller
                 'state' => 'nullable|string|max:2',
                 'postal_code' => 'nullable|string|max:10',
                 'health_plan_id' => 'nullable|exists:health_plans,id',
-                'health_card_number' => 'nullable|string|max:50',
+                'health_card_number' => 'required|string|max:50',
+                'email' => 'required|email|max:255',
                 'phones' => 'nullable|array',
                 'phones.*.number' => 'required|string|max:20',
                 'phones.*.type' => 'required|string|in:mobile,landline,whatsapp,fax',
+                'secondary_contact_name' => $this->getSecondaryContactRule($request->birth_date),
+                'secondary_contact_phone' => $this->getSecondaryContactRule($request->birth_date),
+                'secondary_contact_relationship' => $this->getSecondaryContactRule($request->birth_date),
             ]);
 
             // If user has health plan role, ensure the patient is created with their health plan ID
@@ -223,6 +227,9 @@ class PatientController extends Controller
                 }
             }
 
+            // Determine birth date for validation
+            $birthDate = $request->birth_date ?? $patient->birth_date;
+
             $validated = $request->validate([
                 'name' => 'sometimes|required|string|max:255',
                 'cpf' => 'sometimes|required|string|max:14|unique:patients,cpf,' . $id,
@@ -233,10 +240,14 @@ class PatientController extends Controller
                 'state' => 'nullable|string|max:2',
                 'postal_code' => 'nullable|string|max:10',
                 'health_plan_id' => 'nullable|exists:health_plans,id',
-                'health_card_number' => 'nullable|string|max:50',
+                'health_card_number' => 'sometimes|required|string|max:50',
+                'email' => 'sometimes|required|email|max:255',
                 'phones' => 'nullable|array',
                 'phones.*.number' => 'required|string|max:20',
                 'phones.*.type' => 'required|string|in:mobile,landline,whatsapp,fax',
+                'secondary_contact_name' => $this->getSecondaryContactRule($birthDate),
+                'secondary_contact_phone' => $this->getSecondaryContactRule($birthDate),
+                'secondary_contact_relationship' => $this->getSecondaryContactRule($birthDate),
             ]);
 
             DB::beginTransaction();
@@ -333,6 +344,39 @@ class PatientController extends Controller
                 'message' => 'Failed to delete patient',
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
+        }
+    }
+
+    /**
+     * Determina a regra de validação para campos de contato secundário
+     * baseado na data de nascimento do paciente
+     * 
+     * Obrigatório para:
+     * - Crianças (menores de 18 anos)
+     * - Idosos (maiores de 65 anos)
+     * 
+     * @param string|null $birthDate
+     * @return string
+     */
+    private function getSecondaryContactRule($birthDate)
+    {
+        if (!$birthDate) {
+            return 'nullable|string|max:255';
+        }
+
+        try {
+            $birthDate = \Carbon\Carbon::parse($birthDate);
+            $age = $birthDate->age;
+
+            // Obrigatório para crianças e idosos
+            if ($age < 18 || $age >= 65) {
+                return 'required|string|max:255';
+            }
+            
+            return 'nullable|string|max:255';
+        } catch (\Exception $e) {
+            Log::error('Error parsing birth date for secondary contact validation: ' . $e->getMessage());
+            return 'nullable|string|max:255';
         }
     }
 } 

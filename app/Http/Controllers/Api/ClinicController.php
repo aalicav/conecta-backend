@@ -655,9 +655,6 @@ class ClinicController extends Controller
                 'procedures.*.tuss_id' => 'required|exists:tuss_procedures,id',
                 'procedures.*.value' => 'required|numeric|min:0',
                 'procedures.*.notes' => 'nullable|string',
-                'procedures.*.start_date' => 'nullable|date',
-                'skip_contract_update' => 'sometimes|boolean',
-                'delete_missing' => 'sometimes|boolean',
             ]);
 
             if ($validator->fails()) {
@@ -670,82 +667,38 @@ class ClinicController extends Controller
 
             DB::beginTransaction();
 
-            // Get current pricing contracts
-            $currentIds = $clinic->pricingContracts()->where('is_active', true)->pluck('tuss_procedure_id')->toArray();
-            $updatedIds = [];
-            $updatedContracts = [];
+            // Create specialty negotiation through proper channel
+            $specialtyNegotiationController = new SpecialtyNegotiationController(
+                app(\App\Services\NotificationService::class)
+            );
+            
+            // Prepare negotiation data
+            $negotiationData = [
+                'entity_type' => 'clinic',
+                'entity_id' => $clinic->id,
+                'title' => 'Negociação de Especialidades - ' . $clinic->name,
+                'description' => 'Atualização de valores para procedimentos da clínica ' . $clinic->name,
+                'items' => array_map(function($p) {
+                    return [
+                        'tuss_id' => $p['tuss_id'],
+                        'proposed_value' => $p['value'],
+                        'notes' => $p['notes'] ?? null,
+                    ];
+                }, $request->procedures)
+            ];
 
-            foreach ($request->procedures as $procedure) {
-                $tussId = $procedure['tuss_id'];
-                $updatedIds[] = $tussId;
-
-                $contract = $clinic->pricingContracts()->where('tuss_procedure_id', $tussId)->first();
-
-                if ($contract) {
-                    $contract->update([
-                        'price' => $procedure['value'],
-                        'notes' => $procedure['notes'] ?? null,
-                    ]);
-                } else {
-                    $contract = $clinic->pricingContracts()->create([
-                        'tuss_procedure_id' => $tussId,
-                        'price' => $procedure['value'],
-                        'notes' => $procedure['notes'] ?? null,
-                        'is_active' => true,
-                        'start_date' => $procedure['start_date'] ?? now(),
-                        'created_by' => Auth::id(),
-                    ]);
-                }
-
-                $updatedContracts[] = $contract;
-            }
-
-            // Handle deletion of missing
-            if ($request->delete_missing ?? true) {
-                $toDelete = array_diff($currentIds, $updatedIds);
-                if (!empty($toDelete)) {
-                    $clinic->pricingContracts()->whereIn('tuss_procedure_id', $toDelete)->update(['is_active' => false]);
-                }
-            }
-
-            // Optionally skip creating negotiation records
-            if (!($request->skip_contract_update ?? false)) {
-                // Create negotiation similar to HealthPlan
-                $negotiationData = [
-                    'entity_type' => Clinic::class,
-                    'entity_id' => $clinic->id,
-                    'title' => 'Negociação - ' . $clinic->name,
-                    'description' => 'Atualização de valores para clínica ' . $clinic->name,
-                    'start_date' => now()->format('Y-m-d'),
-                    'end_date' => now()->addMonths(3)->format('Y-m-d'),
-                    'status' => 'draft',
-                    'items' => array_map(function($p) {
-                        return [
-                            'tuss_id' => $p['tuss_id'],
-                            'proposed_value' => $p['value'],
-                            'notes' => $p['notes'] ?? null,
-                        ];
-                    }, $request->procedures)
-                ];
-
-                // Instantiate notification service and pass to the negotiation controller
-                $negotiationService = app(\App\Services\NotificationService::class);
-                $negotiationController = new NegotiationController($negotiationService);
-                $negReq = new Request($negotiationData);
-                $negotiationController->store($negReq);
-            }
+            $negReq = new Request($negotiationData);
+            $response = $specialtyNegotiationController->store($negReq);
+            $negotiation = json_decode($response->getContent(), true);
 
             DB::commit();
 
-            // Reload relationships
-            $clinic->load(['pricingContracts.procedure']);
-
             return response()->json([
                 'success' => true,
-                'message' => 'Procedures updated successfully',
+                'message' => 'Procedimentos enviados para negociação com sucesso',
                 'data' => [
                     'clinic' => new ClinicResource($clinic),
-                    'updated_count' => count($updatedContracts)
+                    'negotiation' => $negotiation['data'] ?? null
                 ]
             ]);
         } catch (\Exception $e) {

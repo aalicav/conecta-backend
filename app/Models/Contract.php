@@ -213,4 +213,20 @@ class Contract extends Model
         return $query->where('end_date', '>', now())
             ->where('end_date', '<', now()->addDays($days));
     }
+
+    /**
+     * Get the approval records for this contract.
+     */
+    public function approvals()
+    {
+        return $this->hasMany(ContractApproval::class);
+    }
+
+    /**
+     * Get extemporaneous negotiations related to this contract.
+     */
+    public function extemporaneousNegotiations()
+    {
+        return $this->hasMany(ExtemporaneousNegotiation::class);
+    }
 } 

@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\Validator;
+use App\Models\User;
+use App\Services\NotificationService;
 
 class NotificationController extends Controller
 {
@@ -128,18 +131,11 @@ class NotificationController extends Controller
     {
         try {
             Auth::user()->unreadNotifications->markAsRead();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'All notifications marked as read'
-            ]);
+            
+            return response()->json(['status' => 'success', 'message' => 'Marked all notifications as read']);
         } catch (\Exception $e) {
-            Log::error('Error marking all notifications as read: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to mark all notifications as read',
-                'error' => $e->getMessage()
-            ], 500);
+            Log::error('Failed to mark all notifications as read: ' . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Failed to mark all notifications as read'], 500);
         }
     }
 
@@ -257,6 +253,136 @@ class NotificationController extends Controller
                 'success' => false,
                 'message' => 'Failed to fetch notification settings',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Send a notification to all users with a specific role.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function sendToRole(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'role' => 'required|string',
+                'title' => 'required|string|max:255',
+                'body' => 'required|string',
+                'action_link' => 'nullable|string',
+                'icon' => 'nullable|string',
+                'priority' => 'nullable|in:low,normal,high',
+                'except_user_id' => 'nullable|exists:users,id',
+            ]);
+            
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error', 
+                    'message' => 'Validation failed', 
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            
+            // Use the notification service to send to role
+            app(NotificationService::class)->sendToRole(
+                $request->input('role'),
+                $request->only(['title', 'body', 'action_link', 'icon', 'priority']),
+                $request->input('except_user_id')
+            );
+            
+            return response()->json([
+                'status' => 'success', 
+                'message' => 'Notification sent to users with role: ' . $request->input('role')
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send notification to role: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error', 
+                'message' => 'Failed to send notification to role'
+            ], 500);
+        }
+    }
+    
+    /**
+     * Send a notification to a specific user.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function sendToUser(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'user_id' => 'required|exists:users,id',
+                'title' => 'required|string|max:255',
+                'body' => 'required|string',
+                'action_link' => 'nullable|string',
+                'icon' => 'nullable|string',
+                'priority' => 'nullable|in:low,normal,high',
+            ]);
+            
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error', 
+                    'message' => 'Validation failed', 
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+            
+            $user = User::find($request->input('user_id'));
+            
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error', 
+                    'message' => 'User not found'
+                ], 404);
+            }
+            
+            // Create the notification data
+            $notificationData = [
+                'title' => $request->input('title'),
+                'body' => $request->input('body'),
+                'action_url' => $request->input('action_link'),
+                'action_text' => $request->input('action_text', 'View'),
+                'icon' => $request->input('icon'),
+                'priority' => $request->input('priority', 'normal'),
+            ];
+            
+            $user->notify(new \Illuminate\Notifications\DatabaseNotification($notificationData));
+            
+            return response()->json([
+                'status' => 'success', 
+                'message' => 'Notification sent to user'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send notification to user: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error', 
+                'message' => 'Failed to send notification to user'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get count of unread notifications for the authenticated user.
+     *
+     * @return JsonResponse
+     */
+    public function unreadCount(): JsonResponse
+    {
+        try {
+            $count = Auth::user()->unreadNotifications()->count();
+            
+            return response()->json([
+                'status' => 'success',
+                'count' => $count
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get unread notifications count: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get unread notifications count'
             ], 500);
         }
     }

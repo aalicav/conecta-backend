@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\WhatsappController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Api\HealthPlanDashboardController;
+use App\Http\Controllers\Api\SchedulingExceptionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -119,6 +120,11 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/solicitations/{solicitation}/reschedule', [SolicitationController::class, 'reschedule']);
     Route::post('/solicitations/{solicitation}/auto-schedule', [SolicitationController::class, 'forceSchedule']);
     
+    // Scheduling Exceptions
+    Route::apiResource('scheduling-exceptions', SchedulingExceptionController::class)->only(['index', 'store', 'show']);
+    Route::post('/scheduling-exceptions/{scheduling_exception}/approve', [SchedulingExceptionController::class, 'approve'])->middleware('role:admin');
+    Route::post('/scheduling-exceptions/{scheduling_exception}/reject', [SchedulingExceptionController::class, 'reject'])->middleware('role:admin');
+    
     // Appointments
     Route::apiResource('appointments', AppointmentController::class);
     Route::post('/appointments/{appointment}/schedule', [AppointmentController::class, 'schedule']);
@@ -136,6 +142,7 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/contracts/preview', [ContractController::class, 'preview']);
     Route::post('/contracts/entity-data', [ContractController::class, 'getEntityData']);
     Route::post('/contracts/search-entities', [ContractController::class, 'searchEntities']);
+    Route::get('/contracts/approval-workflow', [ContractController::class, 'approvalWorkflow']);
     
     // Autentique Digital Signatures
     Route::post('/contracts/{contract}/send-for-signature', [ContractController::class, 'sendForSignature']);
@@ -174,6 +181,9 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::delete('/{id}', [NotificationController::class, 'destroy']);
         Route::post('/settings', [NotificationController::class, 'updateSettings']);
         Route::get('/settings', [NotificationController::class, 'getSettings']);
+        Route::post('/role', [NotificationController::class, 'sendToRole']);
+        Route::post('/user', [NotificationController::class, 'sendToUser']);
+        Route::get('/unread/count', [NotificationController::class, 'unreadCount']);
     });
 });
 
@@ -350,4 +360,46 @@ Route::middleware(['auth:sanctum', 'permission:view audit logs'])->prefix('audit
     Route::get('/statistics', [App\Http\Controllers\Api\AuditController::class, 'statistics']);
     Route::get('/{id}', [App\Http\Controllers\Api\AuditController::class, 'show']);
     Route::post('/model', [App\Http\Controllers\Api\AuditController::class, 'getModelAudit']);
+});
+
+// Contract Approval routes
+Route::prefix('contract-approvals')->group(function () {
+    Route::get('/', 'Api\ContractApprovalController@index');
+    Route::post('/{id}/submit', 'Api\ContractApprovalController@submitForApproval');
+    Route::post('/{id}/legal-review', 'Api\ContractApprovalController@legalReview');
+    Route::post('/{id}/commercial-review', 'Api\ContractApprovalController@commercialReview');
+    Route::post('/{id}/director-approval', 'Api\ContractApprovalController@directorApproval');
+    Route::get('/{id}/history', 'Api\ContractApprovalController@approvalHistory');
+});
+
+// Extemporaneous Negotiation routes
+Route::prefix('extemporaneous-negotiations')->group(function () {
+    Route::get('/', 'Api\ExtemporaneousNegotiationController@index');
+    Route::post('/', 'Api\ExtemporaneousNegotiationController@store');
+    Route::get('/{id}', 'Api\ExtemporaneousNegotiationController@show');
+    Route::post('/{id}/approve', 'Api\ExtemporaneousNegotiationController@approve');
+    Route::post('/{id}/reject', 'Api\ExtemporaneousNegotiationController@reject');
+    Route::post('/{id}/addendum', 'Api\ExtemporaneousNegotiationController@markAsAddendumIncluded');
+    Route::get('/contract/{contractId}', 'Api\ExtemporaneousNegotiationController@listByContract');
+});
+
+// Specialty Negotiation routes
+Route::middleware(['auth:sanctum'])->prefix('specialty-negotiations')->group(function () {
+    Route::get('/', [App\Http\Controllers\Api\SpecialtyNegotiationController::class, 'index']);
+    Route::post('/', [App\Http\Controllers\Api\SpecialtyNegotiationController::class, 'store'])->middleware('permission:create negotiations');
+    Route::get('/{id}', [App\Http\Controllers\Api\SpecialtyNegotiationController::class, 'show']);
+    Route::post('/{id}/submit', [App\Http\Controllers\Api\SpecialtyNegotiationController::class, 'submit'])->middleware('permission:create negotiations');
+    Route::post('/{id}/approve', [App\Http\Controllers\Api\SpecialtyNegotiationController::class, 'approve'])->middleware('permission:manage negotiations');
+    Route::post('/{id}/reject', [App\Http\Controllers\Api\SpecialtyNegotiationController::class, 'reject'])->middleware('permission:manage negotiations');
+    Route::get('/pricing/{entity_type}/{entity_id}', [App\Http\Controllers\Api\SpecialtyNegotiationController::class, 'getProcedurePricing']);
+});
+
+// Value Verification routes
+Route::middleware(['auth:sanctum'])->prefix('value-verifications')->group(function () {
+    Route::get('/', [App\Http\Controllers\Api\ValueVerificationController::class, 'index']);
+    Route::post('/', [App\Http\Controllers\Api\ValueVerificationController::class, 'store'])->middleware('permission:create value_verifications');
+    Route::get('/{id}', [App\Http\Controllers\Api\ValueVerificationController::class, 'show']);
+    Route::post('/{id}/verify', [App\Http\Controllers\Api\ValueVerificationController::class, 'verify'])->middleware('role:director,super_admin');
+    Route::post('/{id}/reject', [App\Http\Controllers\Api\ValueVerificationController::class, 'reject'])->middleware('role:director,super_admin');
+    Route::get('/pending/count', [App\Http\Controllers\Api\ValueVerificationController::class, 'getPendingCount']);
 }); 

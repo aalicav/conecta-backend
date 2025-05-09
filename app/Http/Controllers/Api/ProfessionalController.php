@@ -141,11 +141,6 @@ class ProfessionalController extends Controller
                 'specialties' => 'sometimes|array',
                 'specialties.*.name' => 'required|string',
                 'specialties.*.description' => 'nullable|string',
-                'procedures' => 'sometimes|array',
-                'procedures.*.tuss_id' => 'required|exists:tuss_procedures,id',
-                'procedures.*.value' => 'required|numeric|min:0',
-                'procedures.*.notes' => 'nullable|string',
-                'skip_contract_update' => 'sometimes|boolean',
                 'documents' => 'sometimes|array',
                 'documents.*.file' => 'required|file|max:10240',
                 'documents.*.type' => 'required|string',
@@ -170,7 +165,7 @@ class ProfessionalController extends Controller
             }
 
             // Create professional
-            $professionalData = $request->except(['phones', 'create_user', 'email', 'password', 'photo', 'specialties', 'procedures', 'documents', 'send_welcome_email']);
+            $professionalData = $request->except(['phones', 'create_user', 'email', 'password', 'photo', 'specialties', 'documents', 'send_welcome_email']);
             $professionalData['photo'] = $photoPath;
             $professionalData['status'] = 'pending';
             
@@ -197,61 +192,6 @@ class ProfessionalController extends Controller
 
                 // Additional specialties can be handled in the frontend display
                 // since we're using the main specialty field
-            }
-
-            // Create pricing contracts if procedures are provided
-            if ($request->has('procedures') && is_array($request->procedures) && count($request->procedures) > 0) {
-                foreach ($request->procedures as $procedure) {
-                    if (isset($procedure['tuss_id']) && isset($procedure['value'])) {
-                        $professional->pricingContracts()->create([
-                            'tuss_procedure_id' => $procedure['tuss_id'],
-                            'price' => $procedure['value'],
-                            'notes' => $procedure['notes'] ?? null,
-                            'is_active' => true,
-                            'start_date' => now(),
-                            'created_by' => Auth::id(),
-                        ]);
-                    }
-                }
-
-                // Gerar negociação se tiver procedimentos e não estiver configurado para pular
-                if (!($request->skip_contract_update ?? false)) {
-                    // Buscar modelo de contrato para profissionais
-                    $contractTemplate = \App\Models\ContractTemplate::where('entity_type', 'professional')
-                        ->where('is_active', true)
-                        ->first();
-                    
-                    if (!$contractTemplate) {
-                        // Fallback para um modelo genérico
-                        $contractTemplate = \App\Models\ContractTemplate::where('is_active', true)
-                            ->first();
-                    }
-                    
-                    // Criar negociação
-                    $negotiationData = [
-                        'entity_type' => Professional::class,
-                        'entity_id' => $professional->id,
-                        'title' => 'Negociação Inicial - ' . $professional->name,
-                        'description' => 'Cadastro inicial de procedimentos para o profissional ' . $professional->name,
-                        'start_date' => now()->format('Y-m-d'),
-                        'end_date' => now()->addMonths(3)->format('Y-m-d'),
-                        'status' => 'draft',
-                        'contract_template_id' => $contractTemplate->id ?? null,
-                        'items' => array_map(function($p) {
-                            return [
-                                'tuss_id' => $p['tuss_id'],
-                                'proposed_value' => $p['value'],
-                                'notes' => $p['notes'] ?? null,
-                            ];
-                        }, $request->procedures)
-                    ];
-                    
-                    // Instanciar serviço e controller para a negociação
-                    $negotiationService = app(NotificationService::class);
-                    $negotiationController = new NegotiationController($negotiationService);
-                    $negReq = new Request($negotiationData);
-                    $negotiationController->store($negReq);
-                }
             }
 
             // Create documents if provided
@@ -334,7 +274,7 @@ class ProfessionalController extends Controller
             DB::commit();
 
             // Load relationships
-            $professional->load(['phones', 'clinic', 'user', 'pricingContracts.procedure']);
+            $professional->load(['phones', 'clinic', 'user']);
 
             return response()->json([
                 'success' => true,
@@ -822,9 +762,6 @@ class ProfessionalController extends Controller
                 'procedures.*.tuss_id' => 'required|exists:tuss_procedures,id',
                 'procedures.*.value' => 'required|numeric|min:0',
                 'procedures.*.notes' => 'nullable|string',
-                'procedures.*.start_date' => 'nullable|date',
-                'skip_contract_update' => 'sometimes|boolean',
-                'delete_missing' => 'sometimes|boolean',
                 'main_specialty' => 'sometimes|string',
             ]);
 
@@ -838,103 +775,89 @@ class ProfessionalController extends Controller
 
             DB::beginTransaction();
 
-            // Atualizar especialidade principal se fornecida
+            // Update main specialty if provided (this is a qualification detail, not financial)
             if ($request->has('main_specialty')) {
                 $professional->update([
                     'specialty' => $request->main_specialty
                 ]);
             }
 
-            // Get current pricing contracts
-            $currentIds = $professional->pricingContracts()->where('is_active', true)->pluck('tuss_procedure_id')->toArray();
-            $updatedIds = [];
-            $updatedContracts = [];
-
-            foreach ($request->procedures as $procedure) {
-                $tussId = $procedure['tuss_id'];
-                $updatedIds[] = $tussId;
-
-                $contract = $professional->pricingContracts()->where('tuss_procedure_id', $tussId)->first();
-
-                if ($contract) {
-                    $contract->update([
-                        'price' => $procedure['value'],
-                        'notes' => $procedure['notes'] ?? null,
-                    ]);
-                } else {
-                    $contract = $professional->pricingContracts()->create([
-                        'tuss_procedure_id' => $tussId,
-                        'price' => $procedure['value'],
-                        'notes' => $procedure['notes'] ?? null,
-                        'is_active' => true,
-                        'start_date' => $procedure['start_date'] ?? now(),
-                        'created_by' => Auth::id(),
-                    ]);
-                }
-
-                $updatedContracts[] = $contract;
-            }
-
-            // Handle deletion of missing
-            if ($request->delete_missing ?? true) {
-                $toDelete = array_diff($currentIds, $updatedIds);
-                if (!empty($toDelete)) {
-                    $professional->pricingContracts()->whereIn('tuss_procedure_id', $toDelete)->update(['is_active' => false]);
-                }
-            }
-
-            // Optionally skip creating negotiation records
-            if (!($request->skip_contract_update ?? false)) {
-                // Buscar um modelo de contrato ativo para profissionais
-                $contractTemplate = \App\Models\ContractTemplate::where('entity_type', 'professional')
-                    ->where('is_active', true)
+            // Create negotiation for procedures through proper channel
+            $negotiationService = app(NotificationService::class);
+            $negotiationController = new NegotiationController($negotiationService);
+            
+            // Prepare negotiation data
+            $contractTemplate = \App\Models\ContractTemplate::where('entity_type', 'professional')
+                ->where('is_active', true)
+                ->first();
+            
+            if (!$contractTemplate) {
+                // Fallback to a generic template
+                $contractTemplate = \App\Models\ContractTemplate::where('is_active', true)
                     ->first();
-                
-                if (!$contractTemplate) {
-                    // Fallback to a generic contract template
-                    $contractTemplate = \App\Models\ContractTemplate::where('is_active', true)
-                        ->first();
-                }
-                
-                // Create negotiation
-                $negotiationData = [
-                    'entity_type' => Professional::class,
-                    'entity_id' => $professional->id,
-                    'title' => 'Negociação - ' . $professional->name,
-                    'description' => 'Atualização de valores para profissional ' . $professional->name,
-                    'start_date' => now()->format('Y-m-d'),
-                    'end_date' => now()->addMonths(3)->format('Y-m-d'),
-                    'status' => 'draft',
-                    'contract_template_id' => $contractTemplate->id ?? null,
-                    'items' => array_map(function($p) {
-                        return [
-                            'tuss_id' => $p['tuss_id'],
-                            'proposed_value' => $p['value'],
-                            'notes' => $p['notes'] ?? null,
-                        ];
-                    }, $request->procedures)
-                ];
+            }
+            
+            $negotiationData = [
+                'entity_type' => Professional::class,
+                'entity_id' => $professional->id,
+                'title' => 'Negociação - ' . $professional->name,
+                'description' => 'Atualização de valores para profissional ' . $professional->name,
+                'start_date' => now()->format('Y-m-d'),
+                'end_date' => now()->addMonths(3)->format('Y-m-d'),
+                'status' => 'draft',
+                'contract_template_id' => $contractTemplate->id ?? null,
+                'items' => array_map(function($p) {
+                    return [
+                        'tuss_id' => $p['tuss_id'],
+                        'proposed_value' => $p['value'],
+                        'notes' => $p['notes'] ?? null,
+                    ];
+                }, $request->procedures)
+            ];
 
-                // Instantiate notification service and pass to the negotiation controller
-                $negotiationService = app(NotificationService::class);
-                $negotiationController = new NegotiationController($negotiationService);
-                $negReq = new Request($negotiationData);
-                $negotiationController->store($negReq);
+            // Create the negotiation through the proper controller
+            $negReq = new Request($negotiationData);
+            $response = $negotiationController->store($negReq);
+            $negotiation = json_decode($response->getContent(), true);
+            
+            // Create a value verification for the negotiation if required
+            if ($request->has('procedures') && !empty($request->procedures)) {
+                $totalValue = array_sum(array_column($request->procedures, 'value'));
+                
+                if ($totalValue > 0) {
+                    $valueVerification = new \App\Models\ValueVerification([
+                        'entity_type' => 'negotiation',
+                        'entity_id' => $negotiation['data']['id'] ?? null,
+                        'original_value' => $totalValue,
+                        'notes' => "Valores propostos para procedimentos do profissional {$professional->name}",
+                        'requester_id' => Auth::id(),
+                        'status' => 'pending'
+                    ]);
+                    $valueVerification->save();
+                    
+                    // Notify directors about the new value verification
+                    $notificationService = app(NotificationService::class);
+                    $notificationService->sendToRole('director', [
+                        'title' => 'Nova Verificação de Valor',
+                        'body' => "Uma nova verificação de valor foi solicitada para negociação do profissional {$professional->name}.",
+                        'action_link' => "/value-verifications/{$valueVerification->id}",
+                        'icon' => 'dollar-sign',
+                        'channels' => ['system']
+                    ]);
+                }
             }
 
             DB::commit();
 
-            // Reload relationships
-            $professional->load(['pricingContracts.procedure']);
-
             return response()->json([
                 'success' => true,
-                'message' => 'Procedures and specialties updated successfully',
+                'message' => 'Procedimentos enviados para negociação com sucesso',
                 'data' => [
                     'professional' => new ProfessionalResource($professional),
-                    'updated_count' => count($updatedContracts)
+                    'negotiation' => $negotiation['data'] ?? null
                 ]
             ]);
+            
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error updating professional procedures: ' . $e->getMessage());

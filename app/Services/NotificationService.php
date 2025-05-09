@@ -572,18 +572,182 @@ class NotificationService
     public function notifySolicitationUpdated(Solicitation $solicitation, array $changes = []): void
     {
         try {
-            // Find super admin users to notify
-            $users = User::role('super_admin')->where('is_active', true)->get();
+            // Find users to notify
+            $users = $this->getUsersToNotifyForSolicitation($solicitation);
             
             if ($users->isEmpty()) {
                 return;
             }
             
-            // Send notification to super admins
             Notification::send($users, new SolicitationUpdated($solicitation, $changes));
-            Log::info("Sent solicitation updated notification for solicitation #{$solicitation->id} to " . $users->count() . " super admins");
+            Log::info("Sent solicitation updated notification for solicitation #{$solicitation->id} to " . $users->count() . " users");
         } catch (\Exception $e) {
             Log::error("Failed to send solicitation updated notification: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send notification for a new scheduling exception.
+     *
+     * @param \App\Models\SchedulingException $exception
+     * @return void
+     */
+    public function notifyNewSchedulingException($exception): void
+    {
+        try {
+            // Notificar admins sobre a nova exceção de agendamento
+            $superAdmins = User::role('super_admin')->where('is_active', true)->get();
+            
+            if ($superAdmins->isEmpty()) {
+                return;
+            }
+            
+            // Como essa classe SchedulingException é nova, precisamos verificar
+            // se a notificação correspondente já existe. Se não, usamos uma
+            // notificação genérica.
+            if (class_exists('App\\Notifications\\SchedulingExceptionCreated')) {
+                Notification::send($superAdmins, new \App\Notifications\SchedulingExceptionCreated($exception));
+            } else {
+                // Enviar uma notificação genérica usando arrays
+                $data = [
+                    'title' => 'Nova Exceção de Agendamento',
+                    'body' => "Uma exceção de agendamento foi solicitada para a Solicitação #{$exception->solicitation_id}",
+                    'action_url' => "/scheduling-exceptions/{$exception->id}",
+                    'action_text' => 'Ver Detalhes',
+                ];
+                
+                foreach ($superAdmins as $admin) {
+                    $admin->notify(new \Illuminate\Notifications\DatabaseNotification($data));
+                }
+            }
+            
+            Log::info("Enviada notificação de nova exceção de agendamento #{$exception->id} para " . $superAdmins->count() . " administradores");
+        } catch (\Exception $e) {
+            Log::error("Erro ao enviar notificação de nova exceção de agendamento: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Send notification for an approved scheduling exception.
+     *
+     * @param \App\Models\SchedulingException $exception
+     * @return void
+     */
+    public function notifySchedulingExceptionApproved($exception): void
+    {
+        try {
+            // Notificar o solicitante da exceção que foi aprovada
+            $requester = User::find($exception->requested_by);
+            
+            if (!$requester) {
+                return;
+            }
+            
+            // Como essa classe SchedulingException é nova, precisamos verificar
+            // se a notificação correspondente já existe. Se não, usamos uma
+            // notificação genérica.
+            if (class_exists('App\\Notifications\\SchedulingExceptionApproved')) {
+                $requester->notify(new \App\Notifications\SchedulingExceptionApproved($exception));
+            } else {
+                // Enviar uma notificação genérica
+                $data = [
+                    'title' => 'Exceção de Agendamento Aprovada',
+                    'body' => "Sua exceção de agendamento para a Solicitação #{$exception->solicitation_id} foi APROVADA",
+                    'action_url' => "/scheduling-exceptions/{$exception->id}",
+                    'action_text' => 'Ver Detalhes',
+                ];
+                
+                $requester->notify(new \Illuminate\Notifications\DatabaseNotification($data));
+            }
+            
+            Log::info("Enviada notificação de exceção de agendamento aprovada #{$exception->id} para usuário #{$requester->id}");
+        } catch (\Exception $e) {
+            Log::error("Erro ao enviar notificação de exceção de agendamento aprovada: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Send notification for a rejected scheduling exception.
+     *
+     * @param \App\Models\SchedulingException $exception
+     * @return void
+     */
+    public function notifySchedulingExceptionRejected($exception): void
+    {
+        try {
+            // Notificar o solicitante da exceção que foi rejeitada
+            $requester = User::find($exception->requested_by);
+            
+            if (!$requester) {
+                return;
+            }
+            
+            // Como essa classe SchedulingException é nova, precisamos verificar
+            // se a notificação correspondente já existe. Se não, usamos uma
+            // notificação genérica.
+            if (class_exists('App\\Notifications\\SchedulingExceptionRejected')) {
+                $requester->notify(new \App\Notifications\SchedulingExceptionRejected($exception));
+            } else {
+                // Enviar uma notificação genérica
+                $data = [
+                    'title' => 'Exceção de Agendamento Rejeitada',
+                    'body' => "Sua exceção de agendamento para a Solicitação #{$exception->solicitation_id} foi REJEITADA",
+                    'action_url' => "/scheduling-exceptions/{$exception->id}",
+                    'action_text' => 'Ver Detalhes',
+                ];
+                
+                $requester->notify(new \Illuminate\Notifications\DatabaseNotification($data));
+            }
+            
+            Log::info("Enviada notificação de exceção de agendamento rejeitada #{$exception->id} para usuário #{$requester->id}");
+        } catch (\Exception $e) {
+            Log::error("Erro ao enviar notificação de exceção de agendamento rejeitada: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Send notification to all users with a specific role.
+     *
+     * @param string $roleName The name of the role
+     * @param array $data The notification data (title, body, action_link, icon, etc.)
+     * @param string|null $exceptUserId User ID to exclude from notification
+     * @return void
+     */
+    public function sendToRole(string $roleName, array $data, string $exceptUserId = null): void
+    {
+        try {
+            // Find all users with the specified role
+            $query = User::role($roleName)->where('is_active', true);
+            
+            // Exclude specific user if provided
+            if ($exceptUserId) {
+                $query->where('id', '!=', $exceptUserId);
+            }
+            
+            $users = $query->get();
+            
+            if ($users->isEmpty()) {
+                Log::info("No users found with role '{$roleName}' to notify");
+                return;
+            }
+            
+            // Create a generic notification
+            foreach ($users as $user) {
+                $notificationData = [
+                    'title' => $data['title'] ?? 'Nova Notificação',
+                    'body' => $data['body'] ?? '',
+                    'action_url' => $data['action_link'] ?? null,
+                    'action_text' => $data['action_text'] ?? 'Ver Detalhes',
+                    'icon' => $data['icon'] ?? null,
+                    'priority' => $data['priority'] ?? 'normal',
+                ];
+                
+                $user->notify(new \Illuminate\Notifications\DatabaseNotification($notificationData));
+            }
+            
+            Log::info("Sent notification to {$users->count()} users with role '{$roleName}'");
+        } catch (\Exception $e) {
+            Log::error("Failed to send notification to role '{$roleName}': " . $e->getMessage());
         }
     }
 } 

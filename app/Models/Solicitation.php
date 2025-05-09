@@ -27,6 +27,7 @@ class Solicitation extends Model
         'status',
         'priority',
         'notes',
+        'description',
         'requested_by',
         'preferred_date_start',
         'preferred_date_end',

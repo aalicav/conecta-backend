@@ -122,8 +122,10 @@ class SolicitationController extends Controller
                 'health_plan_id' => 'required|exists:health_plans,id',
                 'patient_id' => 'required|exists:patients,id',
                 'tuss_id' => 'required|exists:tuss_procedures,id',
+                'procedure_id' => 'sometimes|exists:tuss_procedures,id', // ID do procedimento, se for diferente do TUSS
                 'priority' => 'required|in:low,normal,high,urgent',
                 'notes' => 'nullable|string',
+                'description' => 'required|string|min:10', // Descrição detalhada do procedimento - agora obrigatória
                 'preferred_date_start' => 'required|date|after_or_equal:today',
                 'preferred_date_end' => 'required|date|after_or_equal:preferred_date_start',
                 'preferred_location_lat' => 'nullable|numeric',
@@ -167,6 +169,7 @@ class SolicitationController extends Controller
                 'status' => Solicitation::STATUS_PENDING,
                 'priority' => $request->priority,
                 'notes' => $request->notes,
+                'description' => $request->description, // Armazena a descrição adicional
                 'requested_by' => Auth::id(),
                 'preferred_date_start' => $request->preferred_date_start,
                 'preferred_date_end' => $request->preferred_date_end,

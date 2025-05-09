@@ -18,7 +18,18 @@ class ContractTemplateController extends Controller
     public function __construct()
     {
         $this->middleware('auth:api');
-        // $this->middleware('permission:manage contracts')->except(['index', 'show']);
+        // Add middleware to restrict access to Commercial and Legal teams
+        $this->middleware(function ($request, $next) {
+            $user = Auth::user();
+            if (!$user->hasRole(['commercial', 'legal', 'admin', 'super_admin'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Unauthorized access. Only Commercial and Legal teams can access contract templates.'
+                ], 403);
+            }
+            return $next($request);
+        });
+        $this->middleware('permission:manage contracts')->except(['index', 'show', 'getPlaceholders', 'preview']);
     }
 
     /**

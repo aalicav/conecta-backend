@@ -33,6 +33,10 @@ class Patient extends Model
         'longitude',
         'location_consent',
         'photo',
+        'email',
+        'secondary_contact_name',
+        'secondary_contact_phone',
+        'secondary_contact_relationship',
     ];
 
     /**

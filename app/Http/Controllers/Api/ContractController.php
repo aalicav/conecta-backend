@@ -687,4 +687,116 @@ class ContractController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get approval workflow information
+     * 
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function approvalWorkflow()
+    {
+        try {
+            // Create a clear description of the approval workflow for frontend rendering
+            $workflowSteps = [
+                [
+                    'step' => 'submission',
+                    'label' => 'Submissão',
+                    'description' => 'O contrato é elaborado pela equipe comercial e submetido para aprovação.',
+                    'role' => 'commercial',
+                    'order' => 1,
+                    'profile' => [
+                        'name' => 'Equipe Comercial',
+                        'responsibility' => 'Responsável pela prospecção, negociação e formalização de contratos com Operadoras e Estabelecimentos de Saúde/Profissionais.',
+                        'actions' => 'Elabora o contrato, define os procedimentos TUS cobertos e submete para aprovação.',
+                        'key_personnel' => 'Mirelle e Time'
+                    ]
+                ],
+                [
+                    'step' => 'legal_review',
+                    'label' => 'Análise Jurídica',
+                    'description' => 'O jurídico analisa e valida os aspectos legais do contrato.',
+                    'role' => 'legal',
+                    'order' => 2,
+                    'profile' => [
+                        'name' => 'Equipe Jurídica',
+                        'responsibility' => 'Responsável pela análise e validação dos aspectos legais dos contratos.',
+                        'actions' => 'Analisa as cláusulas contratuais, sugere alterações e emite parecer sobre a conformidade legal.',
+                        'key_personnel' => 'Departamento Jurídico'
+                    ]
+                ],
+                [
+                    'step' => 'commercial_review',
+                    'label' => 'Liberação Comercial',
+                    'description' => 'A equipe comercial revisa o contrato após análise jurídica.',
+                    'role' => 'commercial',
+                    'order' => 3,
+                    'profile' => [
+                        'name' => 'Equipe Comercial',
+                        'responsibility' => 'Responsável por revisar o contrato após análise jurídica, garantindo que os termos comerciais estejam corretos.',
+                        'actions' => 'Valida os termos comerciais, verifica procedimentos TUS e valores após ajustes jurídicos.',
+                        'key_personnel' => 'Viviane e Time Comercial'
+                    ]
+                ],
+                [
+                    'step' => 'director_approval',
+                    'label' => 'Aprovação da Direção',
+                    'description' => 'Dr. Ítalo ou outro diretor dá a aprovação final do contrato.',
+                    'role' => 'director',
+                    'order' => 4,
+                    'profile' => [
+                        'name' => 'Direção',
+                        'responsibility' => 'Responsável pela decisão final sobre a aprovação dos contratos.',
+                        'actions' => 'Analisa todos os aspectos do contrato e fornece a aprovação final ou solicita ajustes.',
+                        'key_personnel' => 'Dr. Ítalo'
+                    ]
+                ],
+                [
+                    'step' => 'approved',
+                    'label' => 'Aprovado',
+                    'description' => 'O contrato está aprovado e pronto para assinatura.',
+                    'role' => null,
+                    'order' => 5,
+                    'profile' => [
+                        'name' => 'Status Final',
+                        'responsibility' => 'Contrato pronto para assinatura pelas partes.',
+                        'actions' => 'O contrato é disponibilizado para assinatura digital das partes envolvidas.',
+                        'key_personnel' => 'Equipe Comercial e Entidades Contratantes'
+                    ]
+                ]
+            ];
+            
+            // Add process information
+            $processDescription = "O fluxo de aprovação de contratos segue uma sequência rigorosa para garantir a " .
+                "conformidade legal e comercial. Após a elaboração pela equipe comercial, o contrato é enviado " .
+                "para análise do departamento jurídico, retorna para a liberação comercial e finaliza com a aprovação " .
+                "da direção (Dr. Ítalo). Apenas após completar todas estas etapas o contrato está pronto para assinatura.";
+            
+            // Add rejection flow information
+            $rejectionInfo = [
+                'legal_rejection' => 'Se rejeitado pelo jurídico, o contrato retorna para edição.',
+                'commercial_rejection' => 'Se rejeitado pela equipe comercial, o contrato retorna para edição.',
+                'director_rejection' => 'Se rejeitado pela direção, o contrato retorna para a análise comercial.'
+            ];
+            
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'process_description' => $processDescription,
+                    'workflow_steps' => $workflowSteps,
+                    'rejection_info' => $rejectionInfo
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch contract approval workflow: ' . $e->getMessage(), [
+                'exception' => $e,
+                'user_id' => Auth::id()
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch contract approval workflow',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 
