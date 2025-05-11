@@ -322,6 +322,7 @@ Route::middleware(['auth:sanctum'])->prefix('dashboard')->group(function () {
     Route::get('/appointments/upcoming', [DashboardController::class, 'getUpcomingAppointments']);
     Route::get('/appointments/today', [DashboardController::class, 'getTodayAppointments']);
     Route::get('/suri/stats', [DashboardController::class, 'getSuriStats']);
+    Route::get('/pending/items', [DashboardController::class, 'getPendingItems']);
 });
 
 // WhatsApp routes
