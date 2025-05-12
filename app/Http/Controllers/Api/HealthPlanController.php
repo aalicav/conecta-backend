@@ -384,20 +384,18 @@ class HealthPlanController extends Controller
             }
 
             // Add audit log
-            activity()
-                ->performedOn($healthPlan)
-                ->causedBy(Auth::user())
-                ->withProperties([
-                    'health_plan_id' => $healthPlan->id,
-                    'health_plan_name' => $healthPlan->name,
-                    'created_by' => Auth::id(),
-                    'user_email' => $request->email,
-                    'has_documents' => isset($uploadedDocuments) && count($uploadedDocuments) > 0,
-                    'documents_count' => isset($uploadedDocuments) ? count($uploadedDocuments) : 0,
-                    'has_procedures' => isset($negotiationData) && count($negotiationData['items'] ?? []) > 0,
-                    'procedures_count' => isset($negotiationData) ? count($negotiationData['items'] ?? []) : 0,
-                ])
-                ->log('created');
+            $healthPlan->audit()->create([
+                'event' => 'created',
+                'user_id' => Auth::id(),
+                'user_type' => get_class(Auth::user()),
+                'old_values' => [],
+                'new_values' => $healthPlan->toArray(),
+                'url' => request()->fullUrl(),
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'tags' => 'health_plan_creation',
+                'custom_message' => 'Plano de saúde criado: ' . $healthPlan->name
+            ]);
 
             // Load relationships for response
             $healthPlan->load(['phones', 'user', 'documents']);
@@ -656,18 +654,18 @@ class HealthPlanController extends Controller
             DB::commit();
 
             // Add audit log for update
-            activity()
-                ->performedOn($health_plan)
-                ->causedBy(Auth::user())
-                ->withProperties([
-                    'health_plan_id' => $health_plan->id,
-                    'health_plan_name' => $health_plan->name,
-                    'updated_by' => Auth::id(),
-                    'updated_fields' => array_keys($request->except(['_method', 'documents'])),
-                    'has_new_documents' => $request->hasFile('documents'),
-                    'documents_count' => $request->hasFile('documents') ? count($request->file('documents')) : 0,
-                ])
-                ->log('updated');
+            $health_plan->audit()->create([
+                'event' => 'updated',
+                'user_id' => Auth::id(),
+                'user_type' => get_class(Auth::user()),
+                'old_values' => [],
+                'new_values' => $health_plan->toArray(),
+                'url' => request()->fullUrl(),
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
+                'tags' => 'health_plan_update',
+                'custom_message' => 'Plano de saúde atualizado: ' . $health_plan->name
+            ]);
 
             // Load relationships
             $health_plan->load(['phones', 'documents', 'approver', 'user', 'pricingContracts.procedure']);
