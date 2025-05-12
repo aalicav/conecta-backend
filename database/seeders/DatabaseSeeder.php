@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             RolesAndPermissionsSeeder::class,
             EnhancedRolesAndPermissionsSeeder::class, // Dr. Ítalo's specified roles and permissions
             SystemSettingSeeder::class,
+            HealthPlanDocumentTypesSeeder::class,
             // TussProcedureSeeder::class,
             // ContractTemplateSeeder::class,
             // NegotiationExampleSeeder::class,
