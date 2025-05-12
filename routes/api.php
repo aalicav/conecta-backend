@@ -408,5 +408,8 @@ Route::middleware(['auth:sanctum'])->prefix('value-verifications')->group(functi
 
 // Entity Document Types
 Route::middleware(['auth:sanctum'])->group(function () {
-    Route::apiResource('entity-document-types', EntityDocumentTypeController::class);
+    Route::get('/entity-document-types', [EntityDocumentTypeController::class, 'index']);
+    Route::post('/entity-document-types', [EntityDocumentTypeController::class, 'store']);
+    Route::put('/entity-document-types/{documentType}', [EntityDocumentTypeController::class, 'update']);
+    Route::delete('/entity-document-types/{documentType}', [EntityDocumentTypeController::class, 'destroy']);
 }); 
