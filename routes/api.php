@@ -404,4 +404,9 @@ Route::middleware(['auth:sanctum'])->prefix('value-verifications')->group(functi
     Route::post('/{id}/verify', [App\Http\Controllers\Api\ValueVerificationController::class, 'verify'])->middleware('role:director,super_admin');
     Route::post('/{id}/reject', [App\Http\Controllers\Api\ValueVerificationController::class, 'reject'])->middleware('role:director,super_admin');
     Route::get('/pending/count', [App\Http\Controllers\Api\ValueVerificationController::class, 'getPendingCount']);
+});
+
+// Entity Document Types
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::apiResource('entity-document-types', EntityDocumentTypeController::class);
 }); 
