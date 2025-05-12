@@ -26,6 +26,12 @@ class RolesAndPermissionsSeeder extends Seeder
             'edit health plans',
             'delete health plans',
             'approve health plans',
+            'view health plan details',
+            'view health plan documents',
+            'view health plan contracts',
+            'view health plan procedures',
+            'view health plan solicitations',
+            'view health plan financial data',
 
             // Clinic permissions
             'view clinics',
@@ -120,6 +126,12 @@ class RolesAndPermissionsSeeder extends Seeder
         
         $this->createOrUpdateRole('plan_admin', [
             'view health plans',
+            'view health plan details',
+            'view health plan documents',
+            'view health plan contracts',
+            'view health plan procedures',
+            'view health plan solicitations',
+            'view health plan financial data',
             'view patients',
             'create patients',
             'edit patients',
@@ -138,6 +150,30 @@ class RolesAndPermissionsSeeder extends Seeder
             'submit negotiations',
             'cancel negotiations',
             'generate contracts from negotiations',
+        ]);
+
+        // Legal Representative Role
+        $this->createOrUpdateRole('legal_representative', [
+            'view health plan details',
+            'view health plan documents',
+            'view health plan contracts',
+            'view health plan financial data',
+            'view contracts',
+            'sign contracts',
+            'view negotiations',
+            'view payments',
+        ]);
+
+        // Operational Representative Role
+        $this->createOrUpdateRole('operational_representative', [
+            'view health plan details',
+            'view health plan documents',
+            'view health plan procedures',
+            'view health plan solicitations',
+            'view solicitations',
+            'view appointments',
+            'view contracts',
+            'view negotiations',
         ]);
         
         $this->createOrUpdateRole('clinic_admin', [

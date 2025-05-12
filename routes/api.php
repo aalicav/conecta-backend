@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\WhatsappController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Api\HealthPlanDashboardController;
 use App\Http\Controllers\Api\SchedulingExceptionController;
+use App\Http\Controllers\Api\EntityDocumentTypeController;
 
 /*
 |--------------------------------------------------------------------------

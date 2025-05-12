@@ -30,11 +30,36 @@ class HealthPlanController extends Controller
     public function __construct()
     {
         $this->middleware(middleware: 'auth:sanctum');
-        $this->middleware('permission:view health plans')->only(['index', 'show']);
+        
+        // Permissões para visualização
+        $this->middleware('permission:view health plans|view health plan details')->only(['index', 'show']);
+        
+        // Permissões para criação
         $this->middleware('permission:create health plans')->only(['store']);
+        
+        // Permissões para edição
         $this->middleware('permission:edit health plans')->only(['update']);
+        
+        // Permissões para exclusão
         $this->middleware('permission:delete health plans')->only(['destroy']);
+        
+        // Permissões para aprovação
         $this->middleware('permission:approve health plans')->only(['approve']);
+        
+        // Permissões para documentos
+        $this->middleware('permission:view health plan documents')->only(['uploadDocuments']);
+        
+        // Permissões para procedimentos
+        $this->middleware('permission:view health plan procedures')->only(['getProcedures', 'updateProcedures']);
+        
+        // Permissões para contratos
+        $this->middleware('permission:view health plan contracts')->only(['getContracts']);
+        
+        // Permissões para solicitações
+        $this->middleware('permission:view health plan solicitations')->only(['getSolicitations']);
+        
+        // Permissões para dados financeiros
+        $this->middleware('permission:view health plan financial data')->only(['getFinancialData']);
     }
 
     /**
@@ -191,23 +216,36 @@ class HealthPlanController extends Controller
                 'password' => 'sometimes|string|min:8',
                 'ans_code' => 'nullable|string|max:20',
                 'description' => 'nullable|string',
+                // Legal Representative
                 'legal_representative_name' => 'required|string|max:255',
                 'legal_representative_cpf' => 'required|string|max:14',
                 'legal_representative_position' => 'required|string|max:255',
+                'legal_representative_email' => 'required|email|unique:users,email',
+                'legal_representative_password' => 'required|string|min:8',
+                // Operational Representative
+                'operational_representative_name' => 'required|string|max:255',
+                'operational_representative_cpf' => 'required|string|max:14',
+                'operational_representative_position' => 'required|string|max:255',
+                'operational_representative_email' => 'required|email|unique:users,email',
+                'operational_representative_password' => 'required|string|min:8',
+                // Address
                 'address' => 'required|string|max:255',
                 'city' => 'required|string|max:100',
                 'state' => 'required|string|max:2',
                 'postal_code' => 'required|string|max:10',
                 'logo' => 'nullable|image|max:2048',
+                // Contacts
                 'phones' => 'sometimes|array',
                 'phones.*.number' => 'required|string|max:20',
                 'phones.*.type' => 'required|string|in:mobile,landline,whatsapp,fax',
+                // Documents
                 'documents' => 'sometimes|array',
                 'documents.*.file' => 'sometimes|file|max:10240',
                 'documents.*.type' => 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other',
                 'documents.*.description' => 'required|string|max:255',
                 'documents.*.reference_date' => 'nullable|date',
                 'documents.*.expiration_date' => 'nullable|date|after:reference_date',
+                'documents.*.contract_expiration_alert_days' => 'nullable|integer|min:1|max:365',
             ]);
 
             if ($validator->fails()) {
@@ -230,12 +268,21 @@ class HealthPlanController extends Controller
             $healthPlan = new HealthPlan($request->except('logo', 'phones', 'documents', 'procedures', 'auto_approve', 'send_welcome_email'));
             $healthPlan->logo = $logoPath;
             $healthPlan->user_id = Auth::id();
+            
+            // Add operational representative info
+            $healthPlan->operational_representative_name = $request->operational_representative_name;
+            $healthPlan->operational_representative_cpf = $request->operational_representative_cpf;
+            $healthPlan->operational_representative_position = $request->operational_representative_position;
+            $healthPlan->operational_representative_email = $request->operational_representative_email;
+            $healthPlan->operational_representative_phone = $request->operational_representative_phone;
+            
             $healthPlan->save();
 
             // Generate a random password for the new user if not provided
             $plainPassword = $request->input('password', Str::random(10));
             
-            $user = User::factory()->create([
+            // Create main health plan admin user
+            $admin = User::factory()->create([
                 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($plainPassword),
@@ -243,8 +290,33 @@ class HealthPlanController extends Controller
                 'entity_id' => $healthPlan->id,
                 'entity_type' => 'App\\Models\\HealthPlan',
             ]);
-    
-            $user->assignRole('plan_admin');
+            $admin->assignRole('plan_admin');
+
+            // Create legal representative user
+            $legalRep = User::factory()->create([
+                'name' => $request->legal_representative_name,
+                'email' => $request->legal_representative_email,
+                'password' => Hash::make($request->legal_representative_password),
+                'entity_id' => $healthPlan->id,
+                'entity_type' => 'App\\Models\\HealthPlan',
+            ]);
+            $legalRep->assignRole('legal_representative');
+
+            // Send welcome email
+            $legalRep->notify(new \App\Notifications\WelcomeNotification($legalRep, $healthPlan, false));
+
+            // Create operational representative user
+            $opRep = User::factory()->create([
+                'name' => $request->operational_representative_name,
+                'email' => $request->operational_representative_email,
+                'password' => Hash::make($request->operational_representative_password),
+                'entity_id' => $healthPlan->id,
+                'entity_type' => 'App\\Models\\HealthPlan',
+            ]);
+            $opRep->assignRole('operational_representative');
+
+            // Send welcome email
+            $opRep->notify(new \App\Notifications\WelcomeNotification($opRep, $healthPlan, false));
 
             // Add phones if provided
             if ($request->has('phones') && is_array($request->phones)) {
@@ -293,9 +365,15 @@ class HealthPlanController extends Controller
                                 'file_size' => $documentFile->getSize(),
                                 'reference_date' => $documentData['reference_date'] ?? null,
                                 'expiration_date' => $documentData['expiration_date'] ?? null,
+                                'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? 90, // Default to 90 days
                                 'uploaded_by' => Auth::id(),
                                 'user_id' => $healthPlan->user_id,
                             ]);
+
+                            // If this is a contract document, schedule expiration alerts
+                            if ($document->type === 'contract' && $document->expiration_date) {
+                                $this->scheduleContractExpirationAlerts($document);
+                            }
 
                             $uploadedDocuments[] = $document;
                         }
@@ -365,15 +443,15 @@ class HealthPlanController extends Controller
                 Notification::send($admins, new HealthPlanCreated($healthPlan));
 
                 // Notify the health plan user
-                if ($user) {
-                    $user->notify(new HealthPlanCreated($healthPlan));
+                if ($admin) {
+                    $admin->notify(new HealthPlanCreated($healthPlan));
                 }
 
                 // Log the notification
                 Log::info('Health plan creation notifications sent', [
                     'health_plan_id' => $healthPlan->id,
                     'admin_count' => $admins->count(),
-                    'user_notified' => $user ? $user->id : null
+                    'user_notified' => $admin ? $admin->id : null
                 ]);
             } catch (\Exception $e) {
                 // Log notification error but don't fail the request
@@ -1608,6 +1686,33 @@ class HealthPlanController extends Controller
                 'message' => 'Failed to get recent solicitations',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Schedule contract expiration alerts
+     *
+     * @param Document $document
+     * @return void
+     */
+    private function scheduleContractExpirationAlerts(Document $document): void
+    {
+        try {
+            $alertDays = $document->contract_expiration_alert_days ?? 90;
+            $expirationDate = \Carbon\Carbon::parse($document->expiration_date);
+            $alertDate = $expirationDate->subDays($alertDays);
+
+            // Schedule the initial alert
+            \App\Jobs\ContractExpirationAlert::dispatch($document)
+                ->delay($alertDate);
+
+            // Schedule recurring alerts if contract is not renewed
+            $recurringAlert = new \App\Jobs\RecurringContractExpirationAlert($document);
+            $recurringAlert->dispatch($document)
+                ->delay($expirationDate);
+
+        } catch (\Exception $e) {
+            Log::error('Error scheduling contract expiration alerts: ' . $e->getMessage());
         }
     }
 } 
