@@ -116,6 +116,14 @@ class HealthPlan extends Model implements Auditable
     }
 
     /**
+     * Get the audit logs for the health plan.
+     */
+    public function audit(): MorphMany
+    {
+        return $this->morphMany(\OwenIt\Auditing\Models\Audit::class, 'auditable');
+    }
+
+    /**
      * Get the parent health plan.
      */
     public function parent(): BelongsTo
