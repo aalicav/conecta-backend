@@ -30,6 +30,11 @@ class HealthPlan extends Model implements Auditable
         'legal_representative_name',
         'legal_representative_cpf',
         'legal_representative_position',
+        'legal_representative_id',
+        'operational_representative_name',
+        'operational_representative_cpf',
+        'operational_representative_position',
+        'operational_representative_id',
         'address',
         'city',
         'state',
@@ -68,6 +73,11 @@ class HealthPlan extends Model implements Auditable
         'legal_representative_name',
         'legal_representative_cpf',
         'legal_representative_position',
+        'legal_representative_id',
+        'operational_representative_name',
+        'operational_representative_cpf',
+        'operational_representative_position',
+        'operational_representative_id',
         'address',
         'city',
         'state',
@@ -240,6 +250,22 @@ class HealthPlan extends Model implements Auditable
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the legal representative user.
+     */
+    public function legalRepresentative(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'legal_representative_id');
+    }
+
+    /**
+     * Get the operational representative user.
+     */
+    public function operationalRepresentative(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'operational_representative_id');
     }
 
     /**

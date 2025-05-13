@@ -269,13 +269,6 @@ class HealthPlanController extends Controller
             $healthPlan->logo = $logoPath;
             $healthPlan->user_id = Auth::id();
             
-            // Add operational representative info
-            $healthPlan->operational_representative_name = $request->operational_representative_name;
-            $healthPlan->operational_representative_cpf = $request->operational_representative_cpf;
-            $healthPlan->operational_representative_position = $request->operational_representative_position;
-            $healthPlan->operational_representative_email = $request->operational_representative_email;
-            $healthPlan->operational_representative_phone = $request->operational_representative_phone;
-            
             $healthPlan->save();
 
             // Generate a random password for the new user if not provided
@@ -301,6 +294,9 @@ class HealthPlanController extends Controller
                 'entity_type' => 'App\\Models\\HealthPlan',
             ]);
             $legalRep->assignRole('legal_representative');
+            
+            // Atualizar o health_plan com o ID do representante legal
+            $healthPlan->legal_representative_id = $legalRep->id;
 
             // Send welcome email
             $legalRep->notify(new \App\Notifications\WelcomeNotification($legalRep, $healthPlan, false));
@@ -314,6 +310,10 @@ class HealthPlanController extends Controller
                 'entity_type' => 'App\\Models\\HealthPlan',
             ]);
             $opRep->assignRole('operational_representative');
+            
+            // Atualizar o health_plan com o ID do representante operacional
+            $healthPlan->operational_representative_id = $opRep->id;
+            $healthPlan->save();
 
             // Send welcome email
             $opRep->notify(new \App\Notifications\WelcomeNotification($opRep, $healthPlan, false));
@@ -527,6 +527,8 @@ class HealthPlanController extends Controller
                 'documents', 
                 'approver',
                 'user',
+                'legalRepresentative',
+                'operationalRepresentative',
                 'contract', 
                 'pricingContracts.procedure', // Explicitly load procedures relationship
                 'parent',
@@ -577,6 +579,11 @@ class HealthPlanController extends Controller
                 'legal_representative_name' => 'sometimes|string|max:255',
                 'legal_representative_cpf' => 'sometimes|string|max:14',
                 'legal_representative_position' => 'sometimes|string|max:255',
+                'legal_representative_email' => 'sometimes|email|unique:users,email,' . ($health_plan->legal_representative_id ?? ''),
+                'operational_representative_name' => 'sometimes|string|max:255',
+                'operational_representative_cpf' => 'sometimes|string|max:14',
+                'operational_representative_position' => 'sometimes|string|max:255',
+                'operational_representative_email' => 'sometimes|email|unique:users,email,' . ($health_plan->operational_representative_id ?? ''),
                 'address' => 'sometimes|string|max:255',
                 'city' => 'sometimes|string|max:100',
                 'state' => 'sometimes|string|max:2',
@@ -626,27 +633,45 @@ class HealthPlanController extends Controller
             $health_plan->fill($request->only([
                 'name', 'cnpj', 'municipal_registration', 'ans_code', 'description',
                 'legal_representative_name', 'legal_representative_cpf', 'legal_representative_position',
+                'operational_representative_name', 'operational_representative_cpf', 'operational_representative_position',
                 'address', 'city', 'state', 'postal_code'
             ]));
             
-            $health_plan->save();
-
-            // Update associated user email and password if provided
-            if ($health_plan->user) {
-                $userUpdates = [];
-                
-                if ($request->has('email')) {
-                    $userUpdates['email'] = $request->input('email');
-                }
-                
-                if ($request->has('password')) {
-                    $userUpdates['password'] = Hash::make($request->input('password'));
-                }
-                
-                if (!empty($userUpdates)) {
-                    $health_plan->user->update($userUpdates);
+            // Atualizar dados do representante legal
+            if ($request->has('legal_representative_email') && $health_plan->legal_representative_id) {
+                $legalRep = User::find($health_plan->legal_representative_id);
+                if ($legalRep) {
+                    $legalRepUpdates = [
+                        'name' => $request->legal_representative_name,
+                        'email' => $request->legal_representative_email
+                    ];
+                    
+                    if ($request->has('legal_representative_password')) {
+                        $legalRepUpdates['password'] = Hash::make($request->legal_representative_password);
+                    }
+                    
+                    $legalRep->update($legalRepUpdates);
                 }
             }
+            
+            // Atualizar dados do representante operacional
+            if ($request->has('operational_representative_email') && $health_plan->operational_representative_id) {
+                $opRep = User::find($health_plan->operational_representative_id);
+                if ($opRep) {
+                    $opRepUpdates = [
+                        'name' => $request->operational_representative_name,
+                        'email' => $request->operational_representative_email
+                    ];
+                    
+                    if ($request->has('operational_representative_password')) {
+                        $opRepUpdates['password'] = Hash::make($request->operational_representative_password);
+                    }
+                    
+                    $opRep->update($opRepUpdates);
+                }
+            }
+            
+            $health_plan->save();
 
             // Update phones if provided
             if ($request->has('phones') && is_array($request->phones)) {
