@@ -197,6 +197,9 @@ class NegotiationController extends Controller
             
             DB::commit();
             
+            // Enviar notificação para a entidade envolvida
+            $this->sendNegotiationCreatedNotification($negotiation);
+
             return response()->json([
                 'message' => 'Negotiation created successfully',
                 'data' => new NegotiationResource($negotiation->load(['negotiable', 'creator', 'items.tuss'])),
@@ -348,7 +351,8 @@ class NegotiationController extends Controller
             $negotiation->status = 'submitted';
             $negotiation->save();
             
-            // TODO: Notify entity representatives
+            // Notificar representantes da entidade
+            $this->sendNegotiationSubmittedNotification($negotiation);
             
             return response()->json([
                 'message' => 'Negotiation submitted successfully',
@@ -374,6 +378,9 @@ class NegotiationController extends Controller
         try {
             $negotiation->status = 'cancelled';
             $negotiation->save();
+            
+            // Notificar todas as partes envolvidas
+            $this->sendNegotiationCancelledNotification($negotiation);
             
             return response()->json([
                 'message' => 'Negotiation cancelled successfully',
@@ -450,6 +457,9 @@ class NegotiationController extends Controller
             
             DB::commit();
             
+            // Notificar o criador da negociação sobre a resposta
+            $this->sendItemResponseNotification($item);
+
             return response()->json([
                 'message' => 'Response recorded successfully',
                 'data' => new NegotiationItemResource($item->fresh(['tuss'])),
@@ -488,12 +498,314 @@ class NegotiationController extends Controller
                 'notes' => $validated['notes'] ?? $item->notes,
             ]);
             
+            // Notificar o criador sobre a contra-oferta
+            $this->sendCounterOfferNotification($item);
+            
             return response()->json([
                 'message' => 'Counter offer submitted successfully',
                 'data' => new NegotiationItemResource($item->fresh(['tuss'])),
             ]);
         } catch (\Exception $e) {
             return response()->json(['message' => 'Failed to submit counter offer', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Send notification when a negotiation is created
+     * 
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    private function sendNegotiationCreatedNotification(Negotiation $negotiation)
+    {
+        try {
+            // Determinar os usuários a serem notificados com base no tipo de entidade
+            $entityType = $negotiation->negotiable_type;
+            $entityId = $negotiation->negotiable_id;
+            
+            // Buscar usuários associados à entidade
+            $recipients = User::where(function($query) use ($entityType, $entityId) {
+                    $query->where('entity_type', $entityType)
+                          ->where('entity_id', $entityId);
+                })
+                ->where('is_active', true)
+                ->get();
+            
+            if ($recipients->isEmpty()) {
+                Log::info('No recipients found for negotiation creation notification', [
+                    'negotiation_id' => $negotiation->id,
+                    'entity_type' => $entityType,
+                    'entity_id' => $entityId,
+                ]);
+                return;
+            }
+            
+            foreach ($recipients as $recipient) {
+                // Enviar somente para usuários com os papéis relevantes
+                if ($entityType === HealthPlan::class && !$recipient->hasRole('plan_admin')) {
+                    continue;
+                } elseif ($entityType === Professional::class && !$recipient->hasRole('professional')) {
+                    continue;
+                } elseif ($entityType === Clinic::class && !$recipient->hasRole('clinic_admin')) {
+                    continue;
+                }
+                
+                $this->notificationService->create(
+                    userId: $recipient->id,
+                    title: 'Nova Negociação Criada',
+                    body: "Uma nova negociação foi criada: {$negotiation->title}",
+                    type: 'negotiation_created',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'created_by' => $negotiation->creator->name,
+                    ]
+                );
+            }
+        } catch (\Exception $e) {
+            Log::error('Error sending negotiation created notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
+            ]);
+        }
+    }
+
+    /**
+     * Send notification when a negotiation is submitted for review
+     * 
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    private function sendNegotiationSubmittedNotification(Negotiation $negotiation)
+    {
+        try {
+            // Determinar os usuários a serem notificados com base no tipo de entidade
+            $entityType = $negotiation->negotiable_type;
+            $entityId = $negotiation->negotiable_id;
+            
+            // Buscar usuários associados à entidade
+            $recipients = User::where(function($query) use ($entityType, $entityId) {
+                    $query->where('entity_type', $entityType)
+                          ->where('entity_id', $entityId);
+                })
+                ->where('is_active', true)
+                ->get();
+            
+            if ($recipients->isEmpty()) {
+                Log::info('No recipients found for negotiation submission notification', [
+                    'negotiation_id' => $negotiation->id,
+                ]);
+                return;
+            }
+            
+            // Contar os itens na negociação
+            $itemCount = $negotiation->items()->count();
+            
+            foreach ($recipients as $recipient) {
+                // Enviar somente para usuários com os papéis relevantes
+                if ($entityType === HealthPlan::class && !$recipient->hasRole('plan_admin')) {
+                    continue;
+                } elseif ($entityType === Professional::class && !$recipient->hasRole('professional')) {
+                    continue;
+                } elseif ($entityType === Clinic::class && !$recipient->hasRole('clinic_admin')) {
+                    continue;
+                }
+                
+                $this->notificationService->create(
+                    userId: $recipient->id,
+                    title: 'Negociação Submetida para Revisão',
+                    body: "A negociação '{$negotiation->title}' foi submetida para sua revisão, com {$itemCount} procedimentos.",
+                    type: 'negotiation_submitted',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'item_count' => $itemCount,
+                        'submitted_by' => $negotiation->creator->name,
+                    ]
+                );
+            }
+        } catch (\Exception $e) {
+            Log::error('Error sending negotiation submitted notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
+            ]);
+        }
+    }
+
+    /**
+     * Send notification when a negotiation is cancelled
+     * 
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    private function sendNegotiationCancelledNotification(Negotiation $negotiation)
+    {
+        try {
+            // Notificar todas as partes envolvidas
+
+            // 1. Notificar o criador da negociação (se não for o usuário atual)
+            $currentUserId = Auth::id();
+            $creator = $negotiation->creator;
+            
+            if ($creator->id !== $currentUserId) {
+                $this->notificationService->create(
+                    userId: $creator->id,
+                    title: 'Negociação Cancelada',
+                    body: "A negociação '{$negotiation->title}' foi cancelada.",
+                    type: 'negotiation_cancelled',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                    ]
+                );
+            }
+            
+            // 2. Notificar os representantes da entidade
+            $entityType = $negotiation->negotiable_type;
+            $entityId = $negotiation->negotiable_id;
+            
+            $entityUsers = User::where(function($query) use ($entityType, $entityId) {
+                    $query->where('entity_type', $entityType)
+                          ->where('entity_id', $entityId);
+                })
+                ->where('is_active', true)
+                ->where('id', '!=', $currentUserId) // Não notificar o usuário atual
+                ->get();
+            
+            foreach ($entityUsers as $user) {
+                // Enviar somente para usuários com os papéis relevantes
+                if ($entityType === HealthPlan::class && !$user->hasRole('plan_admin')) {
+                    continue;
+                } elseif ($entityType === Professional::class && !$user->hasRole('professional')) {
+                    continue;
+                } elseif ($entityType === Clinic::class && !$user->hasRole('clinic_admin')) {
+                    continue;
+                }
+                
+                $this->notificationService->create(
+                    userId: $user->id,
+                    title: 'Negociação Cancelada',
+                    body: "A negociação '{$negotiation->title}' foi cancelada.",
+                    type: 'negotiation_cancelled',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'cancelled_by' => Auth::user()->name,
+                    ]
+                );
+            }
+        } catch (\Exception $e) {
+            Log::error('Error sending negotiation cancelled notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
+            ]);
+        }
+    }
+
+    /**
+     * Send notification when an item receives a response
+     * 
+     * @param NegotiationItem $item
+     * @return void
+     */
+    private function sendItemResponseNotification(NegotiationItem $item)
+    {
+        try {
+            $negotiation = $item->negotiation;
+            $creator = $negotiation->creator;
+            $currentUserId = Auth::id();
+            
+            // Não enviar notificação se o criador é quem está respondendo
+            if ($creator->id === $currentUserId) {
+                return;
+            }
+            
+            // Obter informação do item e do procedimento TUSS
+            $tuss = $item->tuss;
+            $tussName = $tuss ? $tuss->name : 'Procedimento';
+            $statusText = match($item->status) {
+                'approved' => 'aprovado',
+                'rejected' => 'rejeitado',
+                default => 'respondido'
+            };
+            
+            // Mensagem personalizada baseada no status
+            $body = "O procedimento '{$tussName}' foi {$statusText}";
+            if ($item->status === 'approved' && $item->approved_value) {
+                $formattedValue = 'R$ ' . number_format($item->approved_value, 2, ',', '.');
+                $body .= " com valor de {$formattedValue}";
+            }
+            if ($item->notes) {
+                $body .= ". Observação: {$item->notes}";
+            }
+            
+            // Enviar notificação para o criador da negociação
+            $this->notificationService->create(
+                userId: $creator->id,
+                title: 'Resposta em Item da Negociação',
+                body: $body,
+                type: 'item_response',
+                data: [
+                    'negotiation_id' => $negotiation->id,
+                    'item_id' => $item->id,
+                    'tuss_id' => $item->tuss_id,
+                    'tuss_name' => $tussName,
+                    'status' => $item->status,
+                    'approved_value' => $item->approved_value,
+                    'negotiation_title' => $negotiation->title,
+                ]
+            );
+        } catch (\Exception $e) {
+            Log::error('Error sending item response notification', [
+                'error' => $e->getMessage(),
+                'item_id' => $item->id,
+            ]);
+        }
+    }
+
+    /**
+     * Send notification when an item receives a counter offer
+     * 
+     * @param NegotiationItem $item
+     * @return void
+     */
+    private function sendCounterOfferNotification(NegotiationItem $item)
+    {
+        try {
+            $negotiation = $item->negotiation;
+            $creator = $negotiation->creator;
+            $currentUserId = Auth::id();
+            
+            // Não enviar notificação se o criador é quem está enviando a contra-oferta
+            if ($creator->id === $currentUserId) {
+                return;
+            }
+            
+            // Obter informação do item e do procedimento TUSS
+            $tuss = $item->tuss;
+            $tussName = $tuss ? $tuss->name : 'Procedimento';
+            $formattedValue = 'R$ ' . number_format($item->approved_value, 2, ',', '.');
+            
+            // Enviar notificação para o criador da negociação
+            $this->notificationService->create(
+                userId: $creator->id,
+                title: 'Contra-proposta Recebida',
+                body: "Uma contra-proposta foi feita para o procedimento '{$tussName}' com valor de {$formattedValue}.",
+                type: 'counter_offer',
+                data: [
+                    'negotiation_id' => $negotiation->id,
+                    'item_id' => $item->id,
+                    'tuss_id' => $item->tuss_id,
+                    'tuss_name' => $tussName,
+                    'counter_value' => $item->approved_value,
+                    'negotiation_title' => $negotiation->title,
+                ]
+            );
+        } catch (\Exception $e) {
+            Log::error('Error sending counter offer notification', [
+                'error' => $e->getMessage(),
+                'item_id' => $item->id,
+            ]);
         }
     }
 } 
