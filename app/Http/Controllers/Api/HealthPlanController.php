@@ -330,116 +330,212 @@ class HealthPlanController extends Controller
 
             // Process documents if provided
             $uploadedDocuments = [];
-            if ($request->has('documents') && is_array($request->documents)) {
+            if ($request->has('documents')) {
                 Log::info('Processando documentos', [
-                    'quantidade' => count($request->documents),
+                    'quantidade' => $request->hasFile('documents') ? count($request->file('documents')) : 'documents existe mas não tem arquivos',
                     'health_plan_id' => $healthPlan->id
                 ]);
                 
-                foreach ($request->documents as $index => $documentData) {
-                    Log::info('Processando documento ' . ($index + 1), [
-                        'documentData' => array_keys($documentData),
-                        'has_file' => isset($documentData['file']),
-                        'type' => $documentData['type'] ?? 'não informado'
-                    ]);
-                    
-                    if (!isset($documentData['file'])) {
-                        Log::warning('Documento sem arquivo', ['index' => $index]);
-                        continue;
-                    }
-                    
-                    if (!$documentData['file']->isValid()) {
-                        Log::warning('Arquivo inválido', [
-                            'index' => $index,
-                            'error' => $documentData['file']->getError(),
-                            'errorMessage' => $documentData['file']->getErrorMessage()
+                if ($request->hasFile('documents')) {
+                    // Handle documents submitted as files (multipart/form-data)
+                    foreach ($request->file('documents') as $index => $documentFile) {
+                        if (!$documentFile->isValid()) {
+                            Log::warning('Arquivo inválido', [
+                                'index' => $index,
+                                'error' => $documentFile->getError(),
+                                'errorMessage' => $documentFile->getErrorMessage()
+                            ]);
+                            continue;
+                        }
+                        
+                        // Get the matching document data if available
+                        $documentData = $request->input('documents')[$index] ?? [];
+                        Log::info('Arquivo do documento', [
+                            'name' => $documentFile->getClientOriginalName(),
+                            'size' => $documentFile->getSize(),
+                            'mime' => $documentFile->getClientMimeType(),
+                            'extension' => $documentFile->getClientOriginalExtension(),
+                            'documentData' => $documentData
                         ]);
-                        continue;
-                    }
+                        
+                        // Get file extension and check allowed types
+                        $extension = $documentFile->getClientOriginalExtension();
+                        $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
+                        if (!in_array(strtolower($extension), $allowedTypes)) {
+                            Log::warning('Tipo de arquivo não permitido', [
+                                'extensão' => $extension,
+                                'tipos_permitidos' => $allowedTypes
+                            ]);
+                            continue;
+                        }
 
-                    $documentFile = $documentData['file'];
-                    Log::info('Arquivo do documento', [
-                        'name' => $documentFile->getClientOriginalName(),
-                        'size' => $documentFile->getSize(),
-                        'mime' => $documentFile->getClientMimeType(),
-                        'extension' => $documentFile->getClientOriginalExtension()
-                    ]);
-                    
-                    // Get file extension and check allowed types
-                    $extension = $documentFile->getClientOriginalExtension();
-                    $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
-                    if (!in_array(strtolower($extension), $allowedTypes)) {
-                        Log::warning('Tipo de arquivo não permitido', [
-                            'extensão' => $extension,
-                            'tipos_permitidos' => $allowedTypes
-                        ]);
-                        continue;
-                    }
-
-                    try {
-                        // Create directory if it doesn't exist
-                        $directory = 'health_plans/documents/' . $healthPlan->id;
-                        Storage::disk('public')->makeDirectory($directory);
-                        Log::info('Diretório criado', ['path' => $directory]);
-                        
-                        // Store file with timestamp and original name
-                        $fileName = time() . '_' . $documentFile->getClientOriginalName();
-                        $filePath = $documentFile->storeAs($directory, $fileName, 'public');
-                        
-                        Log::info('Arquivo salvo', [
-                            'fileName' => $fileName,
-                            'filePath' => $filePath,
-                            'resultado' => $filePath ? 'sucesso' : 'falha'
-                        ]);
-                        
-                        if ($filePath) {
-                            // Create document record
-                            $document = $healthPlan->documents()->create([
-                                'type' => $documentData['type'],
-                                'description' => $documentData['description'],
-                                'file_path' => $filePath,
-                                'file_name' => $documentFile->getClientOriginalName(),
-                                'file_type' => $documentFile->getClientMimeType(),
-                                'file_size' => $documentFile->getSize(),
-                                'reference_date' => $documentData['reference_date'] ?? null,
-                                'expiration_date' => $documentData['expiration_date'] ?? null,
-                                'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? 90, // Default to 90 days
-                                'uploaded_by' => Auth::id(),
-                                'user_id' => $healthPlan->user_id,
+                        try {
+                            // Create directory if it doesn't exist
+                            $directory = 'health_plans/documents/' . $healthPlan->id;
+                            Storage::disk('public')->makeDirectory($directory);
+                            
+                            // Store file with timestamp and original name
+                            $fileName = time() . '_' . $documentFile->getClientOriginalName();
+                            $filePath = $documentFile->storeAs($directory, $fileName, 'public');
+                            
+                            Log::info('Arquivo salvo', [
+                                'fileName' => $fileName,
+                                'filePath' => $filePath,
+                                'resultado' => $filePath ? 'sucesso' : 'falha'
                             ]);
                             
-                            Log::info('Documento criado no banco', [
-                                'document_id' => $document->id,
-                                'type' => $document->type,
-                                'file_name' => $document->file_name
-                            ]);
+                            if ($filePath) {
+                                // Get document type and description from the data array
+                                $type = $documentData['type'] ?? 'other';
+                                $description = $documentData['description'] ?? $documentFile->getClientOriginalName();
+                                
+                                // Create document record
+                                $document = $healthPlan->documents()->create([
+                                    'type' => $type,
+                                    'description' => $description,
+                                    'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
+                                    'file_path' => $filePath,
+                                    'file_name' => $documentFile->getClientOriginalName(),
+                                    'file_type' => $documentFile->getClientMimeType(),
+                                    'file_size' => $documentFile->getSize(),
+                                    'reference_date' => $documentData['reference_date'] ?? null,
+                                    'expiration_date' => $documentData['expiration_date'] ?? null,
+                                    'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? 90,
+                                    'uploaded_by' => Auth::id(),
+                                    'user_id' => $healthPlan->user_id,
+                                ]);
+                                
+                                Log::info('Documento criado no banco', [
+                                    'document_id' => $document->id,
+                                    'type' => $document->type,
+                                    'file_name' => $document->file_name
+                                ]);
 
-                            // If this is a contract document, schedule expiration alerts
-                            if ($document->type === 'contract' && $document->expiration_date) {
-                                $this->scheduleContractExpirationAlerts($document);
+                                // If this is a contract document, schedule expiration alerts
+                                if ($document->type === 'contract' && $document->expiration_date) {
+                                    $this->scheduleContractExpirationAlerts($document);
+                                }
+
+                                $uploadedDocuments[] = $document;
+                            } else {
+                                Log::error('Falha ao salvar o arquivo', [
+                                    'fileName' => $fileName,
+                                    'directory' => $directory
+                                ]);
                             }
-
-                            $uploadedDocuments[] = $document;
-                        } else {
-                            Log::error('Falha ao salvar o arquivo', [
-                                'fileName' => $fileName,
-                                'directory' => $directory
+                        } catch (\Exception $e) {
+                            Log::error('Erro ao processar documento', [
+                                'erro' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString(),
+                                'index' => $index
                             ]);
+                            continue;
                         }
-                    } catch (\Exception $e) {
-                        Log::error('Erro ao processar documento', [
-                            'erro' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString(),
-                            'index' => $index
+                    }
+                } else if (is_array($request->documents)) {
+                    // Handle documents passed as JSON array with file objects
+                    foreach ($request->documents as $index => $documentData) {
+                        Log::info('Processando documento ' . ($index + 1), [
+                            'documentData' => array_keys($documentData),
+                            'has_file' => isset($documentData['file']),
+                            'type' => $documentData['type'] ?? 'não informado'
                         ]);
-                        continue;
+                        
+                        if (!isset($documentData['file'])) {
+                            Log::warning('Documento sem arquivo', ['index' => $index]);
+                            continue;
+                        }
+                        
+                        if (!$documentData['file']->isValid()) {
+                            Log::warning('Arquivo inválido', [
+                                'index' => $index,
+                                'error' => $documentData['file']->getError(),
+                                'errorMessage' => $documentData['file']->getErrorMessage()
+                            ]);
+                            continue;
+                        }
+
+                        $documentFile = $documentData['file'];
+                        Log::info('Arquivo do documento', [
+                            'name' => $documentFile->getClientOriginalName(),
+                            'size' => $documentFile->getSize(),
+                            'mime' => $documentFile->getClientMimeType(),
+                            'extension' => $documentFile->getClientOriginalExtension()
+                        ]);
+                        
+                        // Get file extension and check allowed types
+                        $extension = $documentFile->getClientOriginalExtension();
+                        $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
+                        if (!in_array(strtolower($extension), $allowedTypes)) {
+                            Log::warning('Tipo de arquivo não permitido', [
+                                'extensão' => $extension,
+                                'tipos_permitidos' => $allowedTypes
+                            ]);
+                            continue;
+                        }
+
+                        try {
+                            // Create directory if it doesn't exist
+                            $directory = 'health_plans/documents/' . $healthPlan->id;
+                            Storage::disk('public')->makeDirectory($directory);
+                            
+                            // Store file with timestamp and original name
+                            $fileName = time() . '_' . $documentFile->getClientOriginalName();
+                            $filePath = $documentFile->storeAs($directory, $fileName, 'public');
+                            
+                            Log::info('Arquivo salvo', [
+                                'fileName' => $fileName,
+                                'filePath' => $filePath,
+                                'resultado' => $filePath ? 'sucesso' : 'falha'
+                            ]);
+                            
+                            if ($filePath) {
+                                // Create document record
+                                $document = $healthPlan->documents()->create([
+                                    'type' => $documentData['type'],
+                                    'description' => $documentData['description'],
+                                    'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
+                                    'file_path' => $filePath,
+                                    'file_name' => $documentFile->getClientOriginalName(),
+                                    'file_type' => $documentFile->getClientMimeType(),
+                                    'file_size' => $documentFile->getSize(),
+                                    'reference_date' => $documentData['reference_date'] ?? null,
+                                    'expiration_date' => $documentData['expiration_date'] ?? null,
+                                    'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? 90, // Default to 90 days
+                                    'uploaded_by' => Auth::id(),
+                                    'user_id' => $healthPlan->user_id,
+                                ]);
+                                
+                                Log::info('Documento criado no banco', [
+                                    'document_id' => $document->id,
+                                    'type' => $document->type,
+                                    'file_name' => $document->file_name
+                                ]);
+
+                                // If this is a contract document, schedule expiration alerts
+                                if ($document->type === 'contract' && $document->expiration_date) {
+                                    $this->scheduleContractExpirationAlerts($document);
+                                }
+
+                                $uploadedDocuments[] = $document;
+                            } else {
+                                Log::error('Falha ao salvar o arquivo', [
+                                    'fileName' => $fileName,
+                                    'directory' => $directory
+                                ]);
+                            }
+                        } catch (\Exception $e) {
+                            Log::error('Erro ao processar documento', [
+                                'erro' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString(),
+                                'index' => $index
+                            ]);
+                            continue;
+                        }
                     }
                 }
             } else {
-                Log::info('Nenhum documento fornecido no request', [
-                    'has_documents' => $request->has('documents'),
-                    'is_array' => $request->has('documents') ? is_array($request->documents) : false
-                ]);
+                Log::info('Nenhum documento fornecido no request');
             }
 
             // Create negotiation with procedures if provided
@@ -795,6 +891,7 @@ class HealthPlanController extends Controller
                             $document = $health_plan->documents()->create([
                                 'type' => $documentData['type'],
                                 'description' => $documentData['description'],
+                                'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
                                 'file_path' => $filePath,
                                 'file_name' => $documentFile->getClientOriginalName(),
                                 'file_type' => $documentFile->getClientMimeType(),
@@ -961,6 +1058,7 @@ class HealthPlanController extends Controller
                 $health_plan->documents()->create([
                     'type' => 'rejection_note',
                     'description' => $request->rejection_reason,
+                    'name' => 'Rejection Reason',
                     'uploaded_by' => Auth::id(),
                 ]);
             }
@@ -1044,6 +1142,7 @@ class HealthPlanController extends Controller
                 $document = $health_plan->documents()->create([
                     'type' => $fileData['type'],
                     'description' => $fileData['description'],
+                    'name' => $fileData['name'] ?? $documentFile->getClientOriginalName(),
                     'file_path' => $filePath,
                     'file_name' => $documentFile->getClientOriginalName(),
                     'file_type' => $documentFile->getClientMimeType(),
