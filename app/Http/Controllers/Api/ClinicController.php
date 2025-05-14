@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ClinicResource;
 use App\Models\Clinic;
 use App\Models\Document;
+use App\Models\Address;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -131,12 +132,23 @@ class ClinicController extends Controller
                 'technical_director_document' => 'required|string|max:20',
                 'technical_director_professional_id' => 'required|string|max:20',
                 'parent_clinic_id' => 'nullable|exists:clinics,id',
-                'address' => 'required|string|max:255',
-                'city' => 'required|string|max:100',
-                'state' => 'required|string|max:2',
-                'postal_code' => 'required|string|max:10',
+                'address' => 'nullable|string|max:255',
+                'city' => 'nullable|string|max:100',
+                'state' => 'nullable|string|max:2',
+                'postal_code' => 'nullable|string|max:10',
                 'latitude' => 'nullable|numeric',
                 'longitude' => 'nullable|numeric',
+                'addresses' => 'sometimes|array',
+                'addresses.*.street' => 'required|string|max:255',
+                'addresses.*.number' => 'nullable|string|max:20',
+                'addresses.*.complement' => 'nullable|string|max:100',
+                'addresses.*.neighborhood' => 'nullable|string|max:100',
+                'addresses.*.city' => 'required|string|max:100',
+                'addresses.*.state' => 'required|string|max:2',
+                'addresses.*.postal_code' => 'required|string|max:10',
+                'addresses.*.latitude' => 'nullable|numeric',
+                'addresses.*.longitude' => 'nullable|numeric',
+                'addresses.*.is_primary' => 'sometimes|boolean',
                 'logo' => 'nullable|image|max:2048',
                 'phones' => 'sometimes|array',
                 'phones.*.number' => 'required|string|max:20',
@@ -162,7 +174,7 @@ class ClinicController extends Controller
             }
 
             // Create clinic
-            $clinic = new Clinic($request->except('logo', 'phones'));
+            $clinic = new Clinic($request->except('logo', 'phones', 'addresses'));
             $clinic->logo = $logoPath;
             $clinic->save();
 
@@ -178,10 +190,39 @@ class ClinicController extends Controller
                 }
             }
 
+            // Add addresses if provided
+            if ($request->has('addresses') && is_array($request->addresses)) {
+                foreach ($request->addresses as $addressData) {
+                    $clinic->addresses()->create([
+                        'street' => $addressData['street'],
+                        'number' => $addressData['number'] ?? null,
+                        'complement' => $addressData['complement'] ?? null,
+                        'neighborhood' => $addressData['neighborhood'] ?? null,
+                        'city' => $addressData['city'],
+                        'state' => $addressData['state'],
+                        'postal_code' => $addressData['postal_code'],
+                        'latitude' => $addressData['latitude'] ?? null,
+                        'longitude' => $addressData['longitude'] ?? null,
+                        'is_primary' => $addressData['is_primary'] ?? false,
+                    ]);
+                }
+            } else if ($request->has('address')) {
+                // Create address from legacy fields if no addresses array is provided
+                $clinic->addresses()->create([
+                    'street' => $request->address,
+                    'city' => $request->city,
+                    'state' => $request->state,
+                    'postal_code' => $request->postal_code,
+                    'latitude' => $request->latitude,
+                    'longitude' => $request->longitude,
+                    'is_primary' => true,
+                ]);
+            }
+
             DB::commit();
 
             // Load relationships
-            $clinic->load(['phones', 'parentClinic']);
+            $clinic->load(['phones', 'parentClinic', 'addresses']);
 
             return response()->json([
                 'success' => true,
@@ -216,6 +257,7 @@ class ClinicController extends Controller
                 'contract', 
                 'parentClinic',
                 'pricingContracts',
+                'addresses',
                 'professionals' => function($query) {
                     $query->where('is_active', true)->take(10);
                 }
@@ -254,12 +296,24 @@ class ClinicController extends Controller
                 'technical_director_document' => 'sometimes|string|max:20',
                 'technical_director_professional_id' => 'sometimes|string|max:20',
                 'parent_clinic_id' => 'nullable|exists:clinics,id',
-                'address' => 'sometimes|string|max:255',
-                'city' => 'sometimes|string|max:100',
-                'state' => 'sometimes|string|max:2',
-                'postal_code' => 'sometimes|string|max:10',
+                'address' => 'nullable|string|max:255',
+                'city' => 'nullable|string|max:100',
+                'state' => 'nullable|string|max:2',
+                'postal_code' => 'nullable|string|max:10',
                 'latitude' => 'nullable|numeric',
                 'longitude' => 'nullable|numeric',
+                'addresses' => 'sometimes|array',
+                'addresses.*.id' => 'nullable|exists:addresses,id',
+                'addresses.*.street' => 'required|string|max:255',
+                'addresses.*.number' => 'nullable|string|max:20',
+                'addresses.*.complement' => 'nullable|string|max:100',
+                'addresses.*.neighborhood' => 'nullable|string|max:100',
+                'addresses.*.city' => 'required|string|max:100',
+                'addresses.*.state' => 'required|string|max:2',
+                'addresses.*.postal_code' => 'required|string|max:10',
+                'addresses.*.latitude' => 'nullable|numeric',
+                'addresses.*.longitude' => 'nullable|numeric',
+                'addresses.*.is_primary' => 'sometimes|boolean',
                 'logo' => 'nullable|image|max:2048',
                 'is_active' => 'sometimes|boolean',
                 'phones' => 'sometimes|array',
@@ -299,7 +353,7 @@ class ClinicController extends Controller
             }
 
             // Update clinic
-            $clinic->fill($request->except('logo', 'phones'));
+            $clinic->fill($request->except('logo', 'phones', 'addresses'));
             $clinic->save();
 
             // Update phones if provided
@@ -340,10 +394,54 @@ class ClinicController extends Controller
                 }
             }
 
+            // Update addresses if provided
+            if ($request->has('addresses') && is_array($request->addresses)) {
+                // Get existing address IDs
+                $existingAddressIds = $clinic->addresses->pluck('id')->toArray();
+                $updatedAddressIds = collect($request->addresses)->pluck('id')->filter()->toArray();
+                
+                // Delete addresses that are not in the updated list
+                $addressIdsToDelete = array_diff($existingAddressIds, $updatedAddressIds);
+                if (!empty($addressIdsToDelete)) {
+                    Address::whereIn('id', $addressIdsToDelete)->delete();
+                }
+                
+                // Update or create addresses
+                foreach ($request->addresses as $addressData) {
+                    if (isset($addressData['id'])) {
+                        Address::where('id', $addressData['id'])->update([
+                            'street' => $addressData['street'],
+                            'number' => $addressData['number'] ?? null,
+                            'complement' => $addressData['complement'] ?? null,
+                            'neighborhood' => $addressData['neighborhood'] ?? null,
+                            'city' => $addressData['city'],
+                            'state' => $addressData['state'],
+                            'postal_code' => $addressData['postal_code'],
+                            'latitude' => $addressData['latitude'] ?? null,
+                            'longitude' => $addressData['longitude'] ?? null,
+                            'is_primary' => $addressData['is_primary'] ?? false,
+                        ]);
+                    } else {
+                        $clinic->addresses()->create([
+                            'street' => $addressData['street'],
+                            'number' => $addressData['number'] ?? null,
+                            'complement' => $addressData['complement'] ?? null,
+                            'neighborhood' => $addressData['neighborhood'] ?? null,
+                            'city' => $addressData['city'],
+                            'state' => $addressData['state'],
+                            'postal_code' => $addressData['postal_code'],
+                            'latitude' => $addressData['latitude'] ?? null,
+                            'longitude' => $addressData['longitude'] ?? null,
+                            'is_primary' => $addressData['is_primary'] ?? false,
+                        ]);
+                    }
+                }
+            }
+
             DB::commit();
 
             // Load relationships
-            $clinic->load(['phones', 'documents', 'approver', 'parentClinic']);
+            $clinic->load(['phones', 'documents', 'approver', 'parentClinic', 'addresses']);
 
             return response()->json([
                 'success' => true,
@@ -447,6 +545,9 @@ class ClinicController extends Controller
 
             // Delete phones
             $clinic->phones()->delete();
+
+            // Delete addresses
+            $clinic->addresses()->delete();
 
             // Delete documents
             foreach ($clinic->documents as $document) {

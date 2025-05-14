@@ -7,6 +7,7 @@ use App\Http\Resources\ProfessionalResource;
 use App\Models\Professional;
 use App\Models\Document;
 use App\Models\Phone;
+use App\Models\Address;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -125,12 +126,23 @@ class ProfessionalController extends Controller
                 'council_state' => 'required|string',
                 'specialty' => 'nullable|string',
                 'clinic_id' => 'nullable|exists:clinics,id',
-                'address' => 'required|string',
-                'city' => 'required|string',
-                'state' => 'required|string',
-                'postal_code' => 'required|string',
+                'address' => 'nullable|string',
+                'city' => 'nullable|string',
+                'state' => 'nullable|string',
+                'postal_code' => 'nullable|string',
                 'latitude' => 'nullable|numeric',
                 'longitude' => 'nullable|numeric',
+                'addresses' => 'sometimes|array',
+                'addresses.*.street' => 'required|string|max:255',
+                'addresses.*.number' => 'nullable|string|max:20',
+                'addresses.*.complement' => 'nullable|string|max:100',
+                'addresses.*.neighborhood' => 'nullable|string|max:100',
+                'addresses.*.city' => 'required|string|max:100',
+                'addresses.*.state' => 'required|string|max:2',
+                'addresses.*.postal_code' => 'required|string|max:10',
+                'addresses.*.latitude' => 'nullable|numeric',
+                'addresses.*.longitude' => 'nullable|numeric',
+                'addresses.*.is_primary' => 'sometimes|boolean',
                 'photo' => 'nullable|image|max:2048',
                 'phones' => 'nullable|array',
                 'phones.*.number' => 'required|string',
@@ -165,7 +177,7 @@ class ProfessionalController extends Controller
             }
 
             // Create professional
-            $professionalData = $request->except(['phones', 'create_user', 'email', 'password', 'photo', 'specialties', 'documents', 'send_welcome_email']);
+            $professionalData = $request->except(['phones', 'create_user', 'email', 'password', 'photo', 'specialties', 'documents', 'send_welcome_email', 'addresses']);
             $professionalData['photo'] = $photoPath;
             $professionalData['status'] = 'pending';
             
@@ -179,6 +191,35 @@ class ProfessionalController extends Controller
                         'type' => $phoneData['type'],
                     ]);
                 }
+            }
+
+            // Create addresses if provided
+            if ($request->has('addresses') && is_array($request->addresses)) {
+                foreach ($request->addresses as $addressData) {
+                    $professional->addresses()->create([
+                        'street' => $addressData['street'],
+                        'number' => $addressData['number'] ?? null,
+                        'complement' => $addressData['complement'] ?? null,
+                        'neighborhood' => $addressData['neighborhood'] ?? null,
+                        'city' => $addressData['city'],
+                        'state' => $addressData['state'],
+                        'postal_code' => $addressData['postal_code'],
+                        'latitude' => $addressData['latitude'] ?? null,
+                        'longitude' => $addressData['longitude'] ?? null,
+                        'is_primary' => $addressData['is_primary'] ?? false,
+                    ]);
+                }
+            } else if ($request->has('address')) {
+                // Create address from legacy fields if no addresses array is provided
+                $professional->addresses()->create([
+                    'street' => $request->address,
+                    'city' => $request->city,
+                    'state' => $request->state,
+                    'postal_code' => $request->postal_code,
+                    'latitude' => $request->latitude,
+                    'longitude' => $request->longitude,
+                    'is_primary' => true,
+                ]);
             }
 
             // Create specialties if provided using the main specialty field
@@ -274,7 +315,7 @@ class ProfessionalController extends Controller
             DB::commit();
 
             // Load relationships
-            $professional->load(['phones', 'clinic', 'user']);
+            $professional->load(['phones', 'clinic', 'user', 'addresses']);
 
             return response()->json([
                 'success' => true,
@@ -318,6 +359,7 @@ class ProfessionalController extends Controller
                 'clinic', 
                 'user',
                 'contract',
+                'addresses',
                 'appointments' => function($query) {
                     $query->latest()->take(10);
                 }
@@ -367,12 +409,24 @@ class ProfessionalController extends Controller
                 'council_state' => 'sometimes|string',
                 'specialty' => 'nullable|string',
                 'clinic_id' => 'nullable|exists:clinics,id',
-                'address' => 'sometimes|string',
-                'city' => 'sometimes|string',
-                'state' => 'sometimes|string',
-                'postal_code' => 'sometimes|string',
+                'address' => 'nullable|string',
+                'city' => 'nullable|string',
+                'state' => 'nullable|string',
+                'postal_code' => 'nullable|string',
                 'latitude' => 'nullable|numeric',
                 'longitude' => 'nullable|numeric',
+                'addresses' => 'sometimes|array',
+                'addresses.*.id' => 'nullable|exists:addresses,id',
+                'addresses.*.street' => 'required|string|max:255',
+                'addresses.*.number' => 'nullable|string|max:20',
+                'addresses.*.complement' => 'nullable|string|max:100',
+                'addresses.*.neighborhood' => 'nullable|string|max:100',
+                'addresses.*.city' => 'required|string|max:100',
+                'addresses.*.state' => 'required|string|max:2',
+                'addresses.*.postal_code' => 'required|string|max:10',
+                'addresses.*.latitude' => 'nullable|numeric',
+                'addresses.*.longitude' => 'nullable|numeric',
+                'addresses.*.is_primary' => 'sometimes|boolean',
                 'photo' => 'nullable|image|max:2048',
                 'status' => 'sometimes|in:pending,approved,rejected',
                 'is_active' => 'sometimes|boolean',
@@ -407,7 +461,7 @@ class ProfessionalController extends Controller
             }
 
             // Update professional
-            $professional->fill($request->except(['phones', 'photo', 'documents']));
+            $professional->fill($request->except(['phones', 'photo', 'documents', 'addresses']));
             $professional->save();
 
             // Update phones if provided
@@ -438,6 +492,50 @@ class ProfessionalController extends Controller
                 }
             }
 
+            // Update addresses if provided
+            if ($request->has('addresses') && is_array($request->addresses)) {
+                // Get existing address IDs
+                $existingAddressIds = $professional->addresses->pluck('id')->toArray();
+                $updatedAddressIds = collect($request->addresses)->pluck('id')->filter()->toArray();
+                
+                // Delete addresses that are not in the updated list
+                $addressIdsToDelete = array_diff($existingAddressIds, $updatedAddressIds);
+                if (!empty($addressIdsToDelete)) {
+                    Address::whereIn('id', $addressIdsToDelete)->delete();
+                }
+                
+                // Update or create addresses
+                foreach ($request->addresses as $addressData) {
+                    if (isset($addressData['id'])) {
+                        Address::where('id', $addressData['id'])->update([
+                            'street' => $addressData['street'],
+                            'number' => $addressData['number'] ?? null,
+                            'complement' => $addressData['complement'] ?? null,
+                            'neighborhood' => $addressData['neighborhood'] ?? null,
+                            'city' => $addressData['city'],
+                            'state' => $addressData['state'],
+                            'postal_code' => $addressData['postal_code'],
+                            'latitude' => $addressData['latitude'] ?? null,
+                            'longitude' => $addressData['longitude'] ?? null,
+                            'is_primary' => $addressData['is_primary'] ?? false,
+                        ]);
+                    } else {
+                        $professional->addresses()->create([
+                            'street' => $addressData['street'],
+                            'number' => $addressData['number'] ?? null,
+                            'complement' => $addressData['complement'] ?? null,
+                            'neighborhood' => $addressData['neighborhood'] ?? null,
+                            'city' => $addressData['city'],
+                            'state' => $addressData['state'],
+                            'postal_code' => $addressData['postal_code'],
+                            'latitude' => $addressData['latitude'] ?? null,
+                            'longitude' => $addressData['longitude'] ?? null,
+                            'is_primary' => $addressData['is_primary'] ?? false,
+                        ]);
+                    }
+                }
+            }
+
             // Update the associated user name if exists
             if ($professional->user) {
                 $professional->user->update(['name' => $professional->name]);
@@ -462,7 +560,7 @@ class ProfessionalController extends Controller
             DB::commit();
 
             // Reload professional with relationships
-            $professional->load(['phones', 'clinic', 'user']);
+            $professional->load(['phones', 'clinic', 'user', 'addresses']);
 
             return response()->json([
                 'success' => true,
@@ -515,6 +613,9 @@ class ProfessionalController extends Controller
 
             // Delete phones
             $professional->phones()->delete();
+
+            // Delete addresses
+            $professional->addresses()->delete();
 
             // Delete documents
             $professional->documents()->delete();

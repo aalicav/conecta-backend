@@ -35,6 +35,7 @@ class ProfessionalResource extends JsonResource
             
             // Relationships
             'phones' => PhoneResource::collection($this->whenLoaded('phones')),
+            'addresses' => $this->whenLoaded('addresses'),
             'documents' => DocumentResource::collection($this->whenLoaded('documents')),
             'approver' => new UserResource($this->whenLoaded('approver')),
             'clinic' => new ClinicResource($this->whenLoaded('clinic')),

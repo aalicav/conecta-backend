@@ -88,6 +88,14 @@ class Clinic extends Model
     }
 
     /**
+     * Get the addresses for the clinic.
+     */
+    public function addresses(): MorphMany
+    {
+        return $this->morphMany(Address::class, 'addressable');
+    }
+
+    /**
      * Get the documents for the clinic.
      */
     public function documents(): MorphMany

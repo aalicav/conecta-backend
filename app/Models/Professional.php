@@ -75,6 +75,14 @@ class Professional extends Model
     }
 
     /**
+     * Get the addresses for the professional.
+     */
+    public function addresses(): MorphMany
+    {
+        return $this->morphMany(Address::class, 'addressable');
+    }
+
+    /**
      * Get the documents for the professional.
      */
     public function documents(): MorphMany

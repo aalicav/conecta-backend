@@ -15,7 +15,7 @@ class ClinicResource extends JsonResource
      */
     public function toArray($request)
     {
-        return [
+        $data = [
             'id' => $this->id,
             'name' => $this->name,
             'cnpj' => $this->cnpj,
@@ -41,6 +41,7 @@ class ClinicResource extends JsonResource
             
             // Relationships
             'phones' => PhoneResource::collection($this->whenLoaded('phones')),
+            'addresses' => $this->whenLoaded('addresses'),
             'documents' => DocumentResource::collection($this->whenLoaded('documents')),
             'approver' => new UserResource($this->whenLoaded('approver')),
             'contract' => new ContractResource($this->whenLoaded('contract')),
@@ -56,5 +57,7 @@ class ClinicResource extends JsonResource
             // Computed values
             'distance' => $this->when(isset($this->distance), number_format($this->distance, 2) . ' km'),
         ];
+        
+        return $data;
     }
 } 
