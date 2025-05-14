@@ -407,18 +407,18 @@ class NotificationController extends Controller
 
             // Create a simple array notification
             $notification = [
-                'id' => Str::uuid(),
+                'id' => Str::uuid()->toString(),
                 'type' => 'App\\Notifications\\TestNotification',
                 'notifiable_type' => get_class($user),
                 'notifiable_id' => $user->id,
-                'data' => [
+                'data' => json_encode([
                     'title' => 'Notificação de Teste',
                     'body' => 'Esta é uma notificação de teste enviada via endpoint de teste.',
                     'action_url' => '/dashboard',
                     'action_text' => 'Ver Dashboard',
                     'icon' => 'bell',
                     'priority' => 'normal'
-                ],
+                ]),
                 'read_at' => null,
                 'created_at' => now(),
                 'updated_at' => now()
@@ -430,7 +430,7 @@ class NotificationController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Test notification sent successfully',
-                'data' => $notification['data']
+                'data' => json_decode($notification['data'], true)
             ]);
 
         } catch (\Exception $e) {
