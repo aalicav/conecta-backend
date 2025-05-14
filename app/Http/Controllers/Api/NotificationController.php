@@ -14,6 +14,7 @@ use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Validator;
 use App\Models\User;
 use App\Services\NotificationService;
+use Illuminate\Support\Str;
 
 class NotificationController extends Controller
 {
@@ -404,23 +405,32 @@ class NotificationController extends Controller
                 ], 401);
             }
 
-            // Create the test notification data
-            $notificationData = [
-                'title' => 'Notificação de Teste',
-                'body' => 'Esta é uma notificação de teste enviada via endpoint de teste.',
-                'action_url' => '/dashboard',
-                'action_text' => 'Ver Dashboard',
-                'icon' => 'bell',
-                'priority' => 'normal',
-                'type' => 'App\\Notifications\\TestNotification'
+            // Create a simple array notification
+            $notification = [
+                'id' => Str::uuid(),
+                'type' => 'App\\Notifications\\TestNotification',
+                'notifiable_type' => get_class($user),
+                'notifiable_id' => $user->id,
+                'data' => [
+                    'title' => 'Notificação de Teste',
+                    'body' => 'Esta é uma notificação de teste enviada via endpoint de teste.',
+                    'action_url' => '/dashboard',
+                    'action_text' => 'Ver Dashboard',
+                    'icon' => 'bell',
+                    'priority' => 'normal'
+                ],
+                'read_at' => null,
+                'created_at' => now(),
+                'updated_at' => now()
             ];
             
-            $user->notify(new \Illuminate\Notifications\DatabaseNotification($notificationData));
+            // Insert directly into the notifications table
+            DB::table('notifications')->insert($notification);
             
             return response()->json([
                 'status' => 'success',
                 'message' => 'Test notification sent successfully',
-                'data' => $notificationData
+                'data' => $notification['data']
             ]);
 
         } catch (\Exception $e) {
