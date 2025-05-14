@@ -386,4 +386,50 @@ class NotificationController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Send a test notification to the authenticated user.
+     *
+     * @return JsonResponse
+     */
+    public function test(): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            // Create the test notification data
+            $notificationData = [
+                'title' => 'Notificação de Teste',
+                'body' => 'Esta é uma notificação de teste enviada via endpoint de teste.',
+                'action_url' => '/dashboard',
+                'action_text' => 'Ver Dashboard',
+                'icon' => 'bell',
+                'priority' => 'normal',
+                'type' => 'App\\Notifications\\TestNotification'
+            ];
+            
+            $user->notify(new \Illuminate\Notifications\DatabaseNotification($notificationData));
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Test notification sent successfully',
+                'data' => $notificationData
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to send test notification: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to send test notification',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 

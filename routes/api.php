@@ -185,6 +185,7 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::post('/role', [NotificationController::class, 'sendToRole']);
         Route::post('/user', [NotificationController::class, 'sendToUser']);
         Route::get('/unread/count', [NotificationController::class, 'unreadCount']);
+        Route::post('/test', [NotificationController::class, 'test']);
     });
 });
 
