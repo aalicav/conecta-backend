@@ -21,6 +21,9 @@ use Str;
 use Illuminate\Support\Facades\Mail;
 use App\Notifications\HealthPlanCreated;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use App\Http\Resources\DocumentResource;
+use App\Models\EntityDocumentType;
 
 class HealthPlanController extends Controller
 {
@@ -200,53 +203,13 @@ class HealthPlanController extends Controller
     }
 
     /**
-     * Store a newly created health plan.
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * Store a newly created health plan in storage.
      */
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
         try {
-            $validator = Validator::make($request->all(), [
-                'name' => 'required|string|max:255',
-                'cnpj' => 'required|string|max:18|unique:health_plans,cnpj',
-                'municipal_registration' => 'nullable|string|max:20',
-                'email' => 'required|email|unique:users,email',
-                'password' => 'sometimes|string|min:8',
-                'ans_code' => 'nullable|string|max:20',
-                'description' => 'nullable|string',
-                // Legal Representative
-                'legal_representative_name' => 'required|string|max:255',
-                'legal_representative_cpf' => 'required|string|max:14',
-                'legal_representative_position' => 'required|string|max:255',
-                'legal_representative_email' => 'required|email|unique:users,email',
-                'legal_representative_password' => 'required|string|min:8',
-                // Operational Representative
-                'operational_representative_name' => 'required|string|max:255',
-                'operational_representative_cpf' => 'required|string|max:14',
-                'operational_representative_position' => 'required|string|max:255',
-                'operational_representative_email' => 'required|email|unique:users,email',
-                'operational_representative_password' => 'required|string|min:8',
-                // Address
-                'address' => 'required|string|max:255',
-                'city' => 'required|string|max:100',
-                'state' => 'required|string|max:2',
-                'postal_code' => 'required|string|max:10',
-                'logo' => 'nullable|image|max:2048',
-                // Contacts
-                'phones' => 'sometimes|array',
-                'phones.*.number' => 'required|string|max:20',
-                'phones.*.type' => 'required|string|in:mobile,landline,whatsapp,fax',
-                // Documents
-                'documents' => 'sometimes|array',
-                'documents.*.file' => 'sometimes|file|max:10240',
-                'documents.*.type' => 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other',
-                'documents.*.description' => 'required|string|max:255',
-                'documents.*.reference_date' => 'nullable|date',
-                'documents.*.expiration_date' => 'nullable|date|after:reference_date',
-                'documents.*.contract_expiration_alert_days' => 'nullable|integer|min:1|max:365',
-            ]);
+            // Validate request
+            $validator = $this->getValidator($request, true);
 
             if ($validator->fails()) {
                 return response()->json([
@@ -283,43 +246,12 @@ class HealthPlanController extends Controller
                 'entity_id' => $healthPlan->id,
                 'entity_type' => 'App\\Models\\HealthPlan',
             ]);
+            
+            // Add the health_plan role
             $admin->assignRole('plan_admin');
-
-            // Create legal representative user
-            $legalRep = User::factory()->create([
-                'name' => $request->legal_representative_name,
-                'email' => $request->legal_representative_email,
-                'password' => Hash::make($request->legal_representative_password),
-                'entity_id' => $healthPlan->id,
-                'entity_type' => 'App\\Models\\HealthPlan',
-            ]);
-            $legalRep->assignRole('legal_representative');
             
-            // Atualizar o health_plan com o ID do representante legal
-            $healthPlan->legal_representative_id = $legalRep->id;
-
-            // Send welcome email
-            $legalRep->notify(new \App\Notifications\WelcomeNotification($legalRep, $healthPlan, false));
-
-            // Create operational representative user
-            $opRep = User::factory()->create([
-                'name' => $request->operational_representative_name,
-                'email' => $request->operational_representative_email,
-                'password' => Hash::make($request->operational_representative_password),
-                'entity_id' => $healthPlan->id,
-                'entity_type' => 'App\\Models\\HealthPlan',
-            ]);
-            $opRep->assignRole('operational_representative');
-            
-            // Atualizar o health_plan com o ID do representante operacional
-            $healthPlan->operational_representative_id = $opRep->id;
-            $healthPlan->save();
-
-            // Send welcome email
-            $opRep->notify(new \App\Notifications\WelcomeNotification($opRep, $healthPlan, false));
-
-            // Add phones if provided
-            if ($request->has('phones') && is_array($request->phones)) {
+            // Create phone records
+            if ($request->has('phones')) {
                 foreach ($request->phones as $phoneData) {
                     $healthPlan->phones()->create([
                         'number' => $phoneData['number'],
@@ -327,311 +259,64 @@ class HealthPlanController extends Controller
                     ]);
                 }
             }
-
+            
             // Process documents if provided
             $uploadedDocuments = [];
             if ($request->has('documents')) {
-                Log::info('Processando documentos', [
-                    'quantidade' => $request->hasFile('documents') ? count($request->file('documents')) : 'documents existe mas não tem arquivos',
-                    'health_plan_id' => $healthPlan->id
-                ]);
-                
-                if ($request->hasFile('documents')) {
-                    // Handle documents submitted as files (multipart/form-data)
-                    foreach ($request->file('documents') as $index => $documentFile) {
-                        if (!$documentFile->isValid()) {
-                            Log::warning('Arquivo inválido', [
-                                'index' => $index,
-                                'error' => $documentFile->getError(),
-                                'errorMessage' => $documentFile->getErrorMessage()
-                            ]);
-                            continue;
-                        }
-                        
-                        // Get the matching document data if available
-                        $documentData = $request->input('documents')[$index] ?? [];
-                        Log::info('Arquivo do documento', [
-                            'name' => $documentFile->getClientOriginalName(),
-                            'size' => $documentFile->getSize(),
-                            'mime' => $documentFile->getClientMimeType(),
-                            'extension' => $documentFile->getClientOriginalExtension(),
-                            'documentData' => $documentData
-                        ]);
-                        
-                        // Get file extension and check allowed types
-                        $extension = $documentFile->getClientOriginalExtension();
-                        $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
-                        if (!in_array(strtolower($extension), $allowedTypes)) {
-                            Log::warning('Tipo de arquivo não permitido', [
-                                'extensão' => $extension,
-                                'tipos_permitidos' => $allowedTypes
-                            ]);
-                            continue;
-                        }
-
-                        try {
-                            // Create directory if it doesn't exist
-                            $directory = 'health_plans/documents/' . $healthPlan->id;
-                            Storage::disk('public')->makeDirectory($directory);
-                            
-                            // Store file with timestamp and original name
-                            $fileName = time() . '_' . $documentFile->getClientOriginalName();
-                            $filePath = $documentFile->storeAs($directory, $fileName, 'public');
-                            
-                            Log::info('Arquivo salvo', [
-                                'fileName' => $fileName,
-                                'filePath' => $filePath,
-                                'resultado' => $filePath ? 'sucesso' : 'falha'
-                            ]);
-                            
-                            if ($filePath) {
-                                // Get document type and description from the data array
-                                $type = $documentData['type'] ?? 'other';
-                                $description = $documentData['description'] ?? $documentFile->getClientOriginalName();
-                                
-                                // Create document record
-                                $document = $healthPlan->documents()->create([
-                                    'type' => $type,
-                                    'description' => $description,
-                                    'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
-                                    'file_path' => $filePath,
-                                    'file_name' => $documentFile->getClientOriginalName(),
-                                    'file_type' => $documentFile->getClientMimeType(),
-                                    'file_size' => $documentFile->getSize(),
-                                    'reference_date' => $documentData['reference_date'] ?? null,
-                                    'expiration_date' => $documentData['expiration_date'] ?? null,
-                                    'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? 90,
-                                    'uploaded_by' => Auth::id(),
-                                    'user_id' => $healthPlan->user_id,
-                                ]);
-                                
-                                Log::info('Documento criado no banco', [
-                                    'document_id' => $document->id,
-                                    'type' => $document->type,
-                                    'file_name' => $document->file_name
-                                ]);
-
-                                // If this is a contract document, schedule expiration alerts
-                                if ($document->type === 'contract' && $document->expiration_date) {
-                                    $this->scheduleContractExpirationAlerts($document);
-                                }
-
-                                $uploadedDocuments[] = $document;
-                            } else {
-                                Log::error('Falha ao salvar o arquivo', [
-                                    'fileName' => $fileName,
-                                    'directory' => $directory
-                                ]);
-                            }
-                        } catch (\Exception $e) {
-                            Log::error('Erro ao processar documento', [
-                                'erro' => $e->getMessage(),
-                                'trace' => $e->getTraceAsString(),
-                                'index' => $index
-                            ]);
-                            continue;
-                        }
-                    }
-                } else if (is_array($request->documents)) {
-                    // Handle documents passed as JSON array with file objects
-                    foreach ($request->documents as $index => $documentData) {
-                        Log::info('Processando documento ' . ($index + 1), [
-                            'documentData' => array_keys($documentData),
-                            'has_file' => isset($documentData['file']),
-                            'type' => $documentData['type'] ?? 'não informado'
-                        ]);
-                        
-                        if (!isset($documentData['file'])) {
-                            Log::warning('Documento sem arquivo', ['index' => $index]);
-                            continue;
-                        }
-                        
-                        if (!$documentData['file']->isValid()) {
-                            Log::warning('Arquivo inválido', [
-                                'index' => $index,
-                                'error' => $documentData['file']->getError(),
-                                'errorMessage' => $documentData['file']->getErrorMessage()
-                            ]);
-                            continue;
-                        }
-
-                        $documentFile = $documentData['file'];
-                        Log::info('Arquivo do documento', [
-                            'name' => $documentFile->getClientOriginalName(),
-                            'size' => $documentFile->getSize(),
-                            'mime' => $documentFile->getClientMimeType(),
-                            'extension' => $documentFile->getClientOriginalExtension()
-                        ]);
-                        
-                        // Get file extension and check allowed types
-                        $extension = $documentFile->getClientOriginalExtension();
-                        $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
-                        if (!in_array(strtolower($extension), $allowedTypes)) {
-                            Log::warning('Tipo de arquivo não permitido', [
-                                'extensão' => $extension,
-                                'tipos_permitidos' => $allowedTypes
-                            ]);
-                            continue;
-                        }
-
-                        try {
-                            // Create directory if it doesn't exist
-                            $directory = 'health_plans/documents/' . $healthPlan->id;
-                            Storage::disk('public')->makeDirectory($directory);
-                            
-                            // Store file with timestamp and original name
-                            $fileName = time() . '_' . $documentFile->getClientOriginalName();
-                            $filePath = $documentFile->storeAs($directory, $fileName, 'public');
-                            
-                            Log::info('Arquivo salvo', [
-                                'fileName' => $fileName,
-                                'filePath' => $filePath,
-                                'resultado' => $filePath ? 'sucesso' : 'falha'
-                            ]);
-                            
-                            if ($filePath) {
-                                // Create document record
-                                $document = $healthPlan->documents()->create([
-                                    'type' => $documentData['type'],
-                                    'description' => $documentData['description'],
-                                    'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
-                                    'file_path' => $filePath,
-                                    'file_name' => $documentFile->getClientOriginalName(),
-                                    'file_type' => $documentFile->getClientMimeType(),
-                                    'file_size' => $documentFile->getSize(),
-                                    'reference_date' => $documentData['reference_date'] ?? null,
-                                    'expiration_date' => $documentData['expiration_date'] ?? null,
-                                    'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? 90, // Default to 90 days
-                                    'uploaded_by' => Auth::id(),
-                                    'user_id' => $healthPlan->user_id,
-                                ]);
-                                
-                                Log::info('Documento criado no banco', [
-                                    'document_id' => $document->id,
-                                    'type' => $document->type,
-                                    'file_name' => $document->file_name
-                                ]);
-
-                                // If this is a contract document, schedule expiration alerts
-                                if ($document->type === 'contract' && $document->expiration_date) {
-                                    $this->scheduleContractExpirationAlerts($document);
-                                }
-
-                                $uploadedDocuments[] = $document;
-                            } else {
-                                Log::error('Falha ao salvar o arquivo', [
-                                    'fileName' => $fileName,
-                                    'directory' => $directory
-                                ]);
-                            }
-                        } catch (\Exception $e) {
-                            Log::error('Erro ao processar documento', [
-                                'erro' => $e->getMessage(),
-                                'trace' => $e->getTraceAsString(),
-                                'index' => $index
-                            ]);
-                            continue;
-                        }
-                    }
-                }
-            } else {
-                Log::info('Nenhum documento fornecido no request');
-            }
-
-            // Create negotiation with procedures if provided
-            if ($request->has('procedures') && is_array($request->procedures) && count($request->procedures) > 0) {
-                $negotiationController = new NegotiationController(app(\App\Services\NotificationService::class));
-                
-                // Prepare data for negotiation
-                $negotiationData = [
-                    'entity_type' => 'App\\Models\\HealthPlan',
-                    'entity_id' => $healthPlan->id,
-                    'title' => 'Negociação inicial - ' . $healthPlan->name,
-                    'description' => 'Negociação de preços inicial para o plano de saúde ' . $healthPlan->name,
-                    'start_date' => now()->format('Y-m-d'),
-                    'end_date' => now()->addMonths(3)->format('Y-m-d'),
-                    'items' => []
-                ];
-                
-                // Set auto approved status if requested
-                if ($request->auto_approve === "true" || $request->auto_approve === true) {
-                    $negotiationData['status'] = 'approved';
-                }
-                
-                // Add items to negotiation
-                foreach ($request->procedures as $procedure) {
-                    if (isset($procedure['tuss_id']) && isset($procedure['proposed_value'])) {
-                        $item = [
-                            'tuss_id' => $procedure['tuss_id'],
-                            'proposed_value' => $procedure['proposed_value'],
-                            'notes' => $procedure['notes'] ?? null
-                        ];
-                        
-                        // If auto-approve, set the status and approved value
-                        if ($request->auto_approve === "true" || $request->auto_approve === true) {
-                            $item['status'] = 'approved';
-                            $item['approved_value'] = $procedure['proposed_value'];
-                        }
-                        
-                        $negotiationData['items'][] = $item;
-                    }
-                }
-                
-                // Create the negotiation
-                $negotiationRequest = new Request($negotiationData);
-                $negotiationResult = $negotiationController->store($negotiationRequest);
-                
-                // Check if negotiation was created successfully
-                if ($negotiationResult->getStatusCode() !== 201) {
-                    Log::warning('Failed to create initial negotiation for health plan: ' . $healthPlan->id);
-                    Log::warning(json_encode($negotiationResult->getData()));
+                foreach ($request->file('documents') as $index => $documentFile) {
+                    // Get document data
+                    $documentData = $request->input("documents")[$index];
+                    
+                    // Process file
+                    $filePath = $documentFile->store('health_plans/documents/' . $healthPlan->id, 'public');
+                    
+                    // Create document
+                    $document = $healthPlan->documents()->create([
+                        'type' => $documentData['type'],
+                        'description' => $documentData['description'],
+                        'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
+                        'file_path' => $filePath,
+                        'file_name' => $documentFile->getClientOriginalName(),
+                        'file_type' => $documentFile->getClientMimeType(),
+                        'file_size' => $documentFile->getSize(),
+                        'reference_date' => $documentData['reference_date'] ?? null,
+                        'expiration_date' => $documentData['expiration_date'] ?? null,
+                        'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? null,
+                        'uploaded_by' => Auth::id(),
+                        'user_id' => $admin->id,
+                    ]);
+                    
+                    $uploadedDocuments[] = $document;
                 }
             }
-
+            
+            // Update representatives if provided
+            $this->updateUserRepresentatives($request, $healthPlan);
+            
+            // Send welcome email if requested
+            if ($request->input('send_welcome_email', false)) {
+                try {
+                    Notification::send($admin, new HealthPlanCreated($healthPlan, $plainPassword));
+                } catch (\Exception $e) {
+                    Log::warning('Failed to send welcome email to health plan admin', [
+                        'health_plan_id' => $healthPlan->id,
+                        'admin_email' => $admin->email,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+            
+            // Auto approve if requested by admin
+            if ($request->input('auto_approve', false) && Auth::user()->hasRole('admin')) {
+                $healthPlan->status = 'approved';
+                $healthPlan->approved_at = now();
+                $healthPlan->approved_by = Auth::id();
+                $healthPlan->save();
+            }
+            
+            // Commit transaction if all is well
             DB::commit();
-
-            // Send notifications
-            try {
-                // Notify admins
-                $admins = User::role('admin')->get();
-                Notification::send($admins, new HealthPlanCreated($healthPlan));
-
-                // Notify the health plan user
-                if ($admin) {
-                    $admin->notify(new HealthPlanCreated($healthPlan));
-                }
-
-                // Log the notification
-                Log::info('Health plan creation notifications sent', [
-                    'health_plan_id' => $healthPlan->id,
-                    'admin_count' => $admins->count(),
-                    'user_notified' => $admin ? $admin->id : null
-                ]);
-            } catch (\Exception $e) {
-                // Log notification error but don't fail the request
-                Log::error('Failed to send health plan creation notifications', [
-                    'health_plan_id' => $healthPlan->id,
-                    'error' => $e->getMessage()
-                ]);
-            }
-
-            // Add audit log
-            $healthPlan->audit()->create([
-                'event' => 'created',
-                'user_id' => Auth::id(),
-                'user_type' => get_class(Auth::user()),
-                'old_values' => [],
-                'new_values' => $healthPlan->toArray(),
-                'url' => request()->fullUrl(),
-                'ip_address' => request()->ip(),
-                'user_agent' => request()->userAgent(),
-                'tags' => 'health_plan_creation',
-                'custom_message' => 'Plano de saúde criado: ' . $healthPlan->name
-            ]);
-
-            // Load relationships for response
-            $healthPlan->load(['phones', 'user', 'documents']);
-
+            
             return response()->json([
                 'success' => true,
                 'message' => 'Health plan created successfully',
@@ -712,51 +397,17 @@ class HealthPlanController extends Controller
     }
 
     /**
-     * Update the specified health plan.
-     *
-     * @param Request $request
-     * @param HealthPlan $health_plan
-     * @return JsonResponse
+     * Update the specified resource in storage.
      */
-    public function update(Request $request, HealthPlan $health_plan): JsonResponse
+    public function update(Request $request, string $id)
     {
         try {
-            Log::info('Updating health plan ID: ' . $health_plan->id);
-            Log::debug('Update request data:', $request->all());
-            
-            $validator = Validator::make($request->all(), [
-                'name' => 'sometimes|string|max:255',
-                'cnpj' => 'sometimes|string|max:18|unique:health_plans,cnpj,' . $health_plan->id,
-                'municipal_registration' => 'nullable|string|max:20',
-                'ans_code' => 'nullable|string|max:20',
-                'description' => 'nullable|string',
-                'legal_representative_name' => 'sometimes|string|max:255',
-                'legal_representative_cpf' => 'sometimes|string|max:14',
-                'legal_representative_position' => 'sometimes|string|max:255',
-                'legal_representative_email' => 'sometimes|email|unique:users,email,' . ($health_plan->legal_representative_id ?? ''),
-                'operational_representative_name' => 'sometimes|string|max:255',
-                'operational_representative_cpf' => 'sometimes|string|max:14',
-                'operational_representative_position' => 'sometimes|string|max:255',
-                'operational_representative_email' => 'sometimes|email|unique:users,email,' . ($health_plan->operational_representative_id ?? ''),
-                'address' => 'sometimes|string|max:255',
-                'city' => 'sometimes|string|max:100',
-                'state' => 'sometimes|string|max:2',
-                'postal_code' => 'sometimes|string|max:10',
-                'logo' => 'nullable|image|max:2048',
-                'phones' => 'sometimes|array',
-                'phones.*.id' => 'sometimes|exists:phones,id',
-                'phones.*.number' => 'required|string|max:20',
-                'phones.*.type' => 'required|string|in:mobile,landline,whatsapp,fax',
-                'email' => 'sometimes|email|unique:users,email,' . ($health_plan->user ? $health_plan->user->id : ''),
-                'password' => 'sometimes|string|min:8',
-                'documents' => 'sometimes|array',
-                'documents.*.file' => 'sometimes|file|max:10240',
-                'documents.*.type' => 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other',
-                'documents.*.description' => 'required|string|max:255',
-                'documents.*.reference_date' => 'nullable|date',
-                'documents.*.expiration_date' => 'nullable|date|after:reference_date',
-            ]);
+            // Find the health plan
+            $health_plan = HealthPlan::findOrFail($id);
 
+            // Run validator using the helper method
+            $validator = $this->getValidator($request, false);
+            
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
@@ -767,189 +418,174 @@ class HealthPlanController extends Controller
 
             DB::beginTransaction();
 
-            // Handle logo upload if provided
+            // Update health plan details
+            $health_plan->update($request->except('logo', 'phones', 'documents', 'new_documents'));
+
             if ($request->hasFile('logo')) {
-                // Delete old logo if exists
-                if ($health_plan->logo) {
-                    Storage::disk('public')->delete($health_plan->logo);
-                }
-                $logoPath = $request->file('logo')->store('health_plans/logos', 'public');
+                // Handle logo upload
+                $logoPath = $request->file('logo')->store('health_plans/' . $health_plan->id, 'public');
                 $health_plan->logo = $logoPath;
-                
-                // Update user profile photo if associated user exists
-                if ($health_plan->user) {
-                    $health_plan->user->profile_photo = $logoPath;
-                    $health_plan->user->save();
-                }
             }
 
-            // Update health plan fields
-            $health_plan->fill($request->only([
-                'name', 'cnpj', 'municipal_registration', 'ans_code', 'description',
-                'legal_representative_name', 'legal_representative_cpf', 'legal_representative_position',
-                'operational_representative_name', 'operational_representative_cpf', 'operational_representative_position',
-                'address', 'city', 'state', 'postal_code'
-            ]));
-            
-            // Atualizar dados do representante legal
-            if ($request->has('legal_representative_email') && $health_plan->legal_representative_id) {
-                $legalRep = User::find($health_plan->legal_representative_id);
-                if ($legalRep) {
-                    $legalRepUpdates = [
-                        'name' => $request->legal_representative_name,
-                        'email' => $request->legal_representative_email
-                    ];
-                    
-                    if ($request->has('legal_representative_password')) {
-                        $legalRepUpdates['password'] = Hash::make($request->legal_representative_password);
-                    }
-                    
-                    $legalRep->update($legalRepUpdates);
-                }
-            }
-            
-            // Atualizar dados do representante operacional
-            if ($request->has('operational_representative_email') && $health_plan->operational_representative_id) {
-                $opRep = User::find($health_plan->operational_representative_id);
-                if ($opRep) {
-                    $opRepUpdates = [
-                        'name' => $request->operational_representative_name,
-                        'email' => $request->operational_representative_email
-                    ];
-                    
-                    if ($request->has('operational_representative_password')) {
-                        $opRepUpdates['password'] = Hash::make($request->operational_representative_password);
-                    }
-                    
-                    $opRep->update($opRepUpdates);
-                }
-            }
-            
+            // Save the health plan
             $health_plan->save();
 
-            // Update phones if provided
-            if ($request->has('phones') && is_array($request->phones)) {
-                // Get existing phone IDs
-                $existingPhoneIds = $health_plan->phones->pluck('id')->toArray();
-                $newPhoneIds = [];
+            // Update phones
+            if ($request->has('phones')) {
+                // Delete existing phones
+                $health_plan->phones()->delete();
 
+                // Create new phones
                 foreach ($request->phones as $phoneData) {
-                    if (isset($phoneData['id'])) {
-                        // Update existing phone
-                        $phone = $health_plan->phones()->find($phoneData['id']);
-                        if ($phone) {
-                            $phone->update([
-                                'number' => $phoneData['number'],
-                                'type' => $phoneData['type'],
-                            ]);
-                            $newPhoneIds[] = $phone->id;
-                        }
-                    } else {
-                        // Create new phone
-                        $phone = $health_plan->phones()->create([
-                            'number' => $phoneData['number'],
-                            'type' => $phoneData['type'],
-                        ]);
-                        $newPhoneIds[] = $phone->id;
-                    }
-                }
-
-                // Delete phones that were not included in the request
-                $phonesToDelete = array_diff($existingPhoneIds, $newPhoneIds);
-                if (!empty($phonesToDelete)) {
-                    $health_plan->phones()->whereIn('id', $phonesToDelete)->delete();
+                    $health_plan->phones()->create([
+                        'number' => $phoneData['number'],
+                        'type' => $phoneData['type'],
+                    ]);
                 }
             }
 
-            // Handle document uploads if provided
-            if ($request->has('documents') && is_array($request->documents)) {
-                foreach ($request->documents as $documentData) {
-                    if (!isset($documentData['file']) || !$documentData['file']->isValid()) {
-                        continue;
-                    }
-
-                    $documentFile = $documentData['file'];
-                    
-                    // Get file extension and check allowed types
-                    $extension = $documentFile->getClientOriginalExtension();
-                    $allowedTypes = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'md', 'txt'];
-                    if (!in_array(strtolower($extension), $allowedTypes)) {
-                        continue;
-                    }
-
-                    try {
-                        // Create directory if it doesn't exist
-                        $directory = 'health_plans/documents/' . $health_plan->id;
-                        Storage::disk('public')->makeDirectory($directory);
-                        
-                        // Store file with timestamp and original name
-                        $fileName = time() . '_' . $documentFile->getClientOriginalName();
-                        $filePath = $documentFile->storeAs($directory, $fileName, 'public');
-                        
-                        if ($filePath) {
-                            // Create document record
-                            $document = $health_plan->documents()->create([
-                                'type' => $documentData['type'],
-                                'description' => $documentData['description'],
-                                'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
-                                'file_path' => $filePath,
-                                'file_name' => $documentFile->getClientOriginalName(),
-                                'file_type' => $documentFile->getClientMimeType(),
-                                'file_size' => $documentFile->getSize(),
-                                'reference_date' => $documentData['reference_date'] ?? null,
-                                'expiration_date' => $documentData['expiration_date'] ?? null,
-                                'uploaded_by' => Auth::id(),
-                                'user_id' => $health_plan->user_id,
-                            ]);
-                        }
-                    } catch (\Exception $e) {
-                        Log::error('Error uploading document: ' . $e->getMessage());
-                        continue;
-                    }
-                }
-            }
-
-            DB::commit();
-
-            // Add audit log for update
-            $health_plan->audit()->create([
-                'event' => 'updated',
-                'user_id' => Auth::id(),
-                'user_type' => get_class(Auth::user()),
-                'old_values' => [],
-                'new_values' => $health_plan->toArray(),
-                'url' => request()->fullUrl(),
-                'ip_address' => request()->ip(),
-                'user_agent' => request()->userAgent(),
-                'tags' => 'health_plan_update',
-                'custom_message' => 'Plano de saúde atualizado: ' . $health_plan->name
-            ]);
-
-            // Load relationships
-            $health_plan->load(['phones', 'documents', 'approver', 'user', 'pricingContracts.procedure']);
+            // Update representatives' users
+            $this->updateUserRepresentatives($request, $health_plan);
             
-            // Add logo URL for frontend display
-            if ($health_plan->logo) {
-                $health_plan->logo_url = Storage::disk('public')->url($health_plan->logo);
+            // Handle document deletions if requested
+            if ($request->has('documents_to_delete') && is_array($request->documents_to_delete)) {
+                $documentIds = $request->documents_to_delete;
+                
+                if (!empty($documentIds)) {
+                    Log::info('Deleting documents', ['document_ids' => $documentIds]);
+                    
+                    foreach ($documentIds as $docId) {
+                        try {
+                            $document = Document::find($docId);
+                            
+                            if ($document && $document->documentable_id == $health_plan->id) {
+                                // Delete the file from storage if it exists
+                                if ($document->file_path && Storage::disk('public')->exists($document->file_path)) {
+                                    Storage::disk('public')->delete($document->file_path);
+                                }
+                                
+                                // Delete the document record
+                                $document->delete();
+                                Log::info('Deleted document', ['document_id' => $docId]);
+                            } else {
+                                Log::warning('Document not found or not associated with this health plan', ['document_id' => $docId]);
+                            }
+                        } catch (\Exception $e) {
+                            Log::error('Failed to delete document', [
+                                'document_id' => $docId,
+                                'error' => $e->getMessage()
+                            ]);
+                        }
+                    }
+                }
             }
 
+            // Process new documents if provided
+            $uploadedDocuments = [];
+            
+            // Log what's coming in the request for debugging
+            Log::info('Update request new_document_count', [
+                'count' => $request->input('new_document_count', 0)
+            ]);
+            
+            // Only process if there are actually new documents
+            $newDocumentCount = intval($request->input('new_document_count', 0));
+            
+            if ($newDocumentCount > 0) {
+                Log::info('Processing new documents', ['count' => $newDocumentCount]);
+                
+                for ($i = 0; $i < $newDocumentCount; $i++) {
+                    $fileKey = "new_documents.{$i}.file";
+                    $documentFile = $request->file($fileKey);
+                    
+                    if ($documentFile && $documentFile->isValid()) {
+                        // Store the document
+                        $filePath = $documentFile->store('health_plans/documents/' . $health_plan->id, 'public');
+                        
+                        // Get document metadata
+                        $prefix = "new_documents.{$i}";
+                        $type = $request->input("{$prefix}.type", 'other');
+                        $description = $request->input("{$prefix}.description", 'Documento');
+                        $name = $request->input("{$prefix}.name", $documentFile->getClientOriginalName());
+                        $referenceDate = $request->input("{$prefix}.reference_date");
+                        $expirationDate = $request->input("{$prefix}.expiration_date");
+                        $observation = $request->input("{$prefix}.observation");
+                        
+                        Log::info("Processing new document {$i}", [
+                            'filename' => $documentFile->getClientOriginalName(),
+                            'type' => $type,
+                            'description' => $description,
+                            'reference_date' => $referenceDate,
+                            'expiration' => $expirationDate
+                        ]);
+
+                        // Find entity document type
+                        $documentType = EntityDocumentType::where('code', $type)
+                            ->where('entity_type', 'health_plan')
+                            ->first();
+                            
+                        // Create document record
+                        $document = $health_plan->documents()->create([
+                            'type' => $type,
+                            'description' => $description,
+                            'name' => $name,
+                            'file_path' => $filePath,
+                            'file_name' => $documentFile->getClientOriginalName(),
+                            'file_type' => $documentFile->getClientMimeType(),
+                            'file_size' => $documentFile->getSize(),
+                            'reference_date' => $referenceDate,
+                            'expiration_date' => $expirationDate,
+                            'observation' => $observation,
+                            'entity_document_type_id' => $documentType ? $documentType->id : null,
+                            'uploaded_by' => Auth::id(),
+                            'user_id' => Auth::id(),
+                        ]);
+                        
+                        $uploadedDocuments[] = $document;
+                    } else if ($request->has($fileKey)) {
+                        Log::warning("Invalid file for {$fileKey}", [
+                            'file' => $request->input($fileKey)
+                        ]);
+                    }
+                }
+            } else {
+                Log::info('No new documents to process');
+            }
+
+            // Commit transaction
+            DB::commit();
+            
+            // Load updated health plan with relationships for response
+            $health_plan->load([
+                'phones', 
+                'documents', 
+                'user',
+                'legalRepresentative',
+                'operationalRepresentative'
+            ]);
+            
+            // Return success response
             return response()->json([
                 'success' => true,
                 'message' => 'Health plan updated successfully',
-                'data' => new HealthPlanResource($health_plan)
+                'data' => new HealthPlanResource($health_plan),
+                'uploaded_documents' => DocumentResource::collection($uploadedDocuments)
             ]);
+        } catch (ModelNotFoundException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Health plan not found',
+            ], 404);
         } catch (\Exception $e) {
             DB::rollBack();
             
-            // Log detailed error
             Log::error('Error updating health plan', [
-                'health_plan_id' => $health_plan->id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'request_data' => $request->except(['password', 'documents']),
-                'user_id' => Auth::id()
+                'request' => $request->except(['password', 'documents', 'new_documents'])
             ]);
-
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update health plan',
@@ -1895,6 +1531,132 @@ class HealthPlanController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error scheduling contract expiration alerts: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get validator for health plan requests
+     *
+     * @param Request $request
+     * @param bool $isNew
+     * @return \Illuminate\Validation\Validator
+     */
+    private function getValidator(Request $request, bool $isNew = true)
+    {
+        // Base validation rules
+        $rules = [
+            'name' => 'required|string|max:255',
+            'cnpj' => 'required|string|max:18',
+            'municipal_registration' => 'nullable|string|max:30',
+            'email' => 'required|email|max:255',
+            'logo' => 'nullable|file|image|max:2048', // 2MB max
+            'ans_code' => 'nullable|string|max:50',
+            'description' => 'nullable|string',
+            'address' => 'required|string|max:255',
+            'city' => 'required|string|max:100',
+            'state' => 'required|string|max:2',
+            'postal_code' => 'required|string|max:9',
+            
+            'legal_representative_name' => 'nullable|string|max:255',
+            'legal_representative_cpf' => 'nullable|string|max:14',
+            'legal_representative_position' => 'nullable|string|max:100',
+            
+            'operational_representative_name' => 'nullable|string|max:255',
+            'operational_representative_cpf' => 'nullable|string|max:14',
+            'operational_representative_position' => 'nullable|string|max:100',
+            
+            'phones' => 'sometimes|array',
+            'phones.*.number' => 'required|string|max:20',
+            'phones.*.type' => 'required|string|in:commercial,mobile,fax,whatsapp',
+            
+            'parent_id' => 'nullable|exists:health_plans,id',
+            
+            'password' => 'sometimes|nullable|string|min:8',
+            
+            // For document deletion during update
+            'documents_to_delete' => 'sometimes|array',
+            'documents_to_delete.*' => 'sometimes|numeric|exists:documents,id',
+        ];
+        
+        if ($isNew) {
+            // Standard document rules for new health plans
+            $rules['documents'] = 'sometimes|array';
+            $rules['documents.*.file'] = 'required|file|max:10240';
+            $rules['documents.*.type'] = 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other';
+            $rules['documents.*.description'] = 'required|string|max:255';
+            $rules['documents.*.reference_date'] = 'nullable|date';
+            $rules['documents.*.expiration_date'] = 'nullable|date';
+            
+            // Email uniqueness check for new health plans
+            $rules['email'] = 'required|email|max:255|unique:users,email';
+        } else {
+            // Document rules for updates - we look for new_documents instead
+            $rules['new_document_count'] = 'sometimes|integer|min:0';
+            
+            // Only validate files that are actually present
+            if ($request->has('new_document_count') && $request->input('new_document_count') > 0) {
+                $newDocumentCount = intval($request->input('new_document_count'));
+                
+                for ($i = 0; $i < $newDocumentCount; $i++) {
+                    $fileKey = "new_documents.{$i}.file";
+                    
+                    // Only add validation rules if this is actually a file
+                    if ($request->hasFile($fileKey)) {
+                        $rules[$fileKey] = 'required|file|max:10240';
+                        $rules["new_documents.{$i}.type"] = 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other';
+                        $rules["new_documents.{$i}.description"] = 'required|string|max:255';
+                        $rules["new_documents.{$i}.name"] = 'sometimes|string|max:255';
+                        $rules["new_documents.{$i}.reference_date"] = 'nullable|date';
+                        $rules["new_documents.{$i}.expiration_date"] = 'nullable|date';
+                    }
+                }
+            }
+            
+            // Allow existing documents to be passed in the request without validation
+            // This ensures we don't try to validate existing documents as files
+            $rules['existing_documents'] = 'sometimes|array';
+        }
+
+        return Validator::make($request->all(), $rules);
+    }
+
+    /**
+     * Update user representatives for a health plan
+     *
+     * @param Request $request
+     * @param HealthPlan $health_plan
+     * @return void
+     */
+    private function updateUserRepresentatives(Request $request, HealthPlan $health_plan): void
+    {
+        // Update legal representative
+        $legalRep = User::find($health_plan->legal_representative_id);
+        if ($legalRep) {
+            $legalRepUpdates = [
+                'name' => $request->legal_representative_name,
+                'email' => $request->legal_representative_email
+            ];
+            
+            if ($request->has('legal_representative_password')) {
+                $legalRepUpdates['password'] = Hash::make($request->legal_representative_password);
+            }
+            
+            $legalRep->update($legalRepUpdates);
+        }
+
+        // Update operational representative
+        $opRep = User::find($health_plan->operational_representative_id);
+        if ($opRep) {
+            $opRepUpdates = [
+                'name' => $request->operational_representative_name,
+                'email' => $request->operational_representative_email
+            ];
+            
+            if ($request->has('operational_representative_password')) {
+                $opRepUpdates['password'] = Hash::make($request->operational_representative_password);
+            }
+            
+            $opRep->update($opRepUpdates);
         }
     }
 } 
