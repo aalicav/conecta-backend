@@ -15,13 +15,20 @@ class EntityDocumentTypesSeeder extends Seeder
      */
     public function run()
     {
+        // Verificar se já existem registros
+        $existingCount = DB::table('entity_document_types')->count();
+        if ($existingCount > 0) {
+            // Limpar registros existentes para evitar conflitos
+            DB::table('entity_document_types')->truncate();
+        }
+        
         $entities = ['professional', 'clinic'];
         
         // Seed document types for professionals (CPF)
         $professionalDocTypes = [
             [
                 'name' => 'Documento de Identificação',
-                'code' => 'identification',
+                'code' => 'prof_identification',
                 'description' => 'CPF, RG ou CNH do profissional',
                 'is_required' => true,
                 'entity_type' => 'professional',
@@ -30,7 +37,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Diploma',
-                'code' => 'diploma',
+                'code' => 'prof_diploma',
                 'description' => 'Diploma de graduação em medicina ou área da saúde',
                 'is_required' => true,
                 'entity_type' => 'professional',
@@ -39,7 +46,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Certificado de Especialização',
-                'code' => 'certificate',
+                'code' => 'prof_certificate',
                 'description' => 'Certificado de especialização médica',
                 'is_required' => false,
                 'entity_type' => 'professional',
@@ -48,7 +55,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Registro no Conselho (CRM/CREFITO/CRO)',
-                'code' => 'license',
+                'code' => 'prof_license',
                 'description' => 'Registro no conselho profissional',
                 'is_required' => true,
                 'entity_type' => 'professional',
@@ -57,7 +64,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Contrato de Trabalho',
-                'code' => 'contract',
+                'code' => 'prof_contract',
                 'description' => 'Contrato de prestação de serviços',
                 'is_required' => false,
                 'entity_type' => 'professional',
@@ -66,7 +73,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Currículo',
-                'code' => 'other',
+                'code' => 'prof_curriculum',
                 'description' => 'Currículo atualizado',
                 'is_required' => false,
                 'entity_type' => 'professional',
@@ -75,7 +82,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Comprovante de Endereço',
-                'code' => 'other',
+                'code' => 'prof_address',
                 'description' => 'Comprovante de residência atualizado',
                 'is_required' => false,
                 'entity_type' => 'professional',
@@ -84,7 +91,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Certificado de Vacinação',
-                'code' => 'certificate',
+                'code' => 'prof_vaccination',
                 'description' => 'Comprovante de vacinação atualizado',
                 'is_required' => false,
                 'entity_type' => 'professional',
@@ -97,7 +104,7 @@ class EntityDocumentTypesSeeder extends Seeder
         $clinicDocTypes = [
             [
                 'name' => 'CNPJ',
-                'code' => 'identification',
+                'code' => 'clinic_identification',
                 'description' => 'Comprovante de CNPJ',
                 'is_required' => true,
                 'entity_type' => 'clinic',
@@ -106,7 +113,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Alvará de Funcionamento',
-                'code' => 'license',
+                'code' => 'clinic_operation_permit',
                 'description' => 'Alvará de funcionamento emitido pela prefeitura',
                 'is_required' => true,
                 'entity_type' => 'clinic',
@@ -115,7 +122,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Licença Sanitária',
-                'code' => 'license',
+                'code' => 'clinic_sanitary_license',
                 'description' => 'Licença sanitária emitida pela Vigilância Sanitária',
                 'is_required' => true,
                 'entity_type' => 'clinic',
@@ -124,7 +131,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Certificado de Regularidade Técnica',
-                'code' => 'certificate',
+                'code' => 'clinic_tech_certificate',
                 'description' => 'Certificado emitido pelo conselho profissional competente',
                 'is_required' => true,
                 'entity_type' => 'clinic',
@@ -133,7 +140,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Contrato Social',
-                'code' => 'contract',
+                'code' => 'clinic_social_contract',
                 'description' => 'Contrato social da empresa e alterações',
                 'is_required' => true,
                 'entity_type' => 'clinic',
@@ -142,7 +149,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Comprovante de Endereço',
-                'code' => 'other',
+                'code' => 'clinic_address',
                 'description' => 'Comprovante de endereço do estabelecimento',
                 'is_required' => false,
                 'entity_type' => 'clinic',
@@ -151,7 +158,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Certificado de Controle de Pragas',
-                'code' => 'certificate',
+                'code' => 'clinic_pest_control',
                 'description' => 'Certificado de controle de pragas e vetores',
                 'is_required' => false,
                 'entity_type' => 'clinic',
@@ -160,7 +167,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'AVCB/CLCB',
-                'code' => 'license',
+                'code' => 'clinic_fire_certificate',
                 'description' => 'Auto de Vistoria do Corpo de Bombeiros',
                 'is_required' => false,
                 'entity_type' => 'clinic',
@@ -169,7 +176,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'PGRSS',
-                'code' => 'other',
+                'code' => 'clinic_waste_plan',
                 'description' => 'Plano de Gerenciamento de Resíduos de Serviços de Saúde',
                 'is_required' => false,
                 'entity_type' => 'clinic',
@@ -178,7 +185,7 @@ class EntityDocumentTypesSeeder extends Seeder
             ],
             [
                 'name' => 'Contrato com Operadora',
-                'code' => 'contract',
+                'code' => 'clinic_operator_contract',
                 'description' => 'Contrato de credenciamento com operadora de saúde',
                 'is_required' => false,
                 'entity_type' => 'clinic',
