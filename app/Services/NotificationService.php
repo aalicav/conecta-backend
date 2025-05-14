@@ -17,6 +17,9 @@ use App\Notifications\AppointmentStatusChanged;
 use App\Notifications\SchedulingConfigChanged;
 use App\Notifications\SolicitationCreated;
 use App\Notifications\SolicitationUpdated;
+use App\Notifications\ProfessionalRegistrationSubmitted;
+use App\Notifications\ProfessionalRegistrationReviewed;
+use App\Notifications\ProfessionalContractLinked;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
@@ -748,6 +751,86 @@ class NotificationService
             Log::info("Sent notification to {$users->count()} users with role '{$roleName}'");
         } catch (\Exception $e) {
             Log::error("Failed to send notification to role '{$roleName}': " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send notification for a new professional registration.
+     *
+     * @param Professional $professional
+     * @return void
+     */
+    public function notifyProfessionalRegistrationSubmitted(Professional $professional): void
+    {
+        try {
+            // Find users with permission to approve professionals
+            $validators = User::permission('approve professionals')->where('is_active', true)->get();
+            
+            if ($validators->isEmpty()) {
+                return;
+            }
+            
+            Notification::send($validators, new ProfessionalRegistrationSubmitted($professional));
+            Log::info("Sent professional registration submitted notification for professional #{$professional->id} to " . $validators->count() . " validators");
+        } catch (\Exception $e) {
+            Log::error("Failed to send professional registration submitted notification: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send notification for a professional registration review.
+     *
+     * @param Professional $professional
+     * @param bool $approved
+     * @param string|null $rejectionReason
+     * @return void
+     */
+    public function notifyProfessionalRegistrationReviewed(Professional $professional, bool $approved, ?string $rejectionReason = null): void
+    {
+        try {
+            $users = collect();
+
+            // Notify the submitter
+            $submitter = User::find($professional->created_by);
+            if ($submitter && $submitter->is_active) {
+                $users->push($submitter);
+            }
+
+            // If approved, also notify commercial team
+            if ($approved) {
+                $commercialTeam = User::permission('create contracts')->where('is_active', true)->get();
+                $users = $users->merge($commercialTeam);
+            }
+
+            if ($users->isEmpty()) {
+                return;
+            }
+
+            Notification::send($users, new ProfessionalRegistrationReviewed($professional, $approved, $rejectionReason));
+            Log::info("Sent professional registration reviewed notification for professional #{$professional->id} to " . $users->count() . " users");
+        } catch (\Exception $e) {
+            Log::error("Failed to send professional registration reviewed notification: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send notification for a professional contract linking.
+     *
+     * @param Professional $professional
+     * @param Contract $contract
+     * @param array $procedures
+     * @return void
+     */
+    public function notifyProfessionalContractLinked(Professional $professional, Contract $contract, array $procedures): void
+    {
+        try {
+            // Notify the professional's user
+            if ($professional->user && $professional->user->is_active) {
+                $professional->user->notify(new ProfessionalContractLinked($professional, $contract, $procedures));
+                Log::info("Sent professional contract linked notification for professional #{$professional->id}");
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to send professional contract linked notification: " . $e->getMessage());
         }
     }
 } 

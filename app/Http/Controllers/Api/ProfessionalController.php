@@ -22,6 +22,10 @@ use App\Http\Controllers\Api\NegotiationController;
 use App\Services\NotificationService;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
+use App\Notifications\ProfessionalRegistrationSubmitted;
+use App\Notifications\ProfessionalRegistrationReviewed;
+use App\Notifications\ProfessionalContractLinked;
+use Illuminate\Support\Facades\Notification;
 
 class ProfessionalController extends Controller
 {
@@ -311,6 +315,9 @@ class ProfessionalController extends Controller
                             ->subject('Bem-vindo ao ' . config('app.name') . ' - Detalhes da sua conta');
                 });
             }
+
+            // Notify validators about the new professional registration
+            app(NotificationService::class)->notifyProfessionalRegistrationSubmitted($professional);
 
             DB::commit();
 
@@ -696,6 +703,13 @@ class ProfessionalController extends Controller
                 $professional->user->update(['is_active' => true]);
             }
 
+            // Send notifications through the notification service
+            app(NotificationService::class)->notifyProfessionalRegistrationReviewed(
+                $professional,
+                $approved,
+                $request->rejection_reason
+            );
+
             // Load relationships
             $professional->load(['approver']);
 
@@ -947,6 +961,13 @@ class ProfessionalController extends Controller
                     ]);
                 }
             }
+
+            // After successful contract creation and procedure linking, notify through the notification service
+            app(NotificationService::class)->notifyProfessionalContractLinked(
+                $professional,
+                $negotiation['data']['contract'],
+                $request->procedures
+            );
 
             DB::commit();
 
