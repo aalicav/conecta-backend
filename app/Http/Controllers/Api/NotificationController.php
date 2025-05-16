@@ -268,13 +268,14 @@ class NotificationController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'role' => 'required|string',
+                'role' => 'required|string|exists:roles,name',
                 'title' => 'required|string|max:255',
                 'body' => 'required|string',
                 'action_link' => 'nullable|string',
                 'icon' => 'nullable|string',
                 'priority' => 'nullable|in:low,normal,high',
-                'except_user_id' => 'nullable|exists:users,id',
+                'type' => 'nullable|string',
+                'except_user_id' => 'nullable|exists:users,id'
             ]);
             
             if ($validator->fails()) {
@@ -285,16 +286,27 @@ class NotificationController extends Controller
                 ], 422);
             }
             
-            // Use the notification service to send to role
-            app(NotificationService::class)->sendToRole(
+            // Get a service instance
+            $notificationService = app(NotificationService::class);
+            
+            // Send notification to role
+            $notificationService->sendToRole(
                 $request->input('role'),
-                $request->only(['title', 'body', 'action_link', 'icon', 'priority']),
+                [
+                    'title' => $request->input('title'),
+                    'body' => $request->input('body'),
+                    'action_link' => $request->input('action_link'),
+                    'action_text' => $request->input('action_text', 'View'),
+                    'icon' => $request->input('icon'),
+                    'priority' => $request->input('priority', 'normal'),
+                    'type' => $request->input('type', 'general'),
+                ],
                 $request->input('except_user_id')
             );
             
             return response()->json([
                 'status' => 'success', 
-                'message' => 'Notification sent to users with role: ' . $request->input('role')
+                'message' => 'Notification sent to role'
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to send notification to role: ' . $e->getMessage());
@@ -321,6 +333,7 @@ class NotificationController extends Controller
                 'action_link' => 'nullable|string',
                 'icon' => 'nullable|string',
                 'priority' => 'nullable|in:low,normal,high',
+                'type' => 'nullable|string',
             ]);
             
             if ($validator->fails()) {
@@ -348,6 +361,10 @@ class NotificationController extends Controller
                 'action_text' => $request->input('action_text', 'View'),
                 'icon' => $request->input('icon'),
                 'priority' => $request->input('priority', 'normal'),
+                'type' => $request->input('type', 'general'),
+                'data' => [
+                    'type' => $request->input('type', 'general')
+                ]
             ];
             
             $user->notify(new \Illuminate\Notifications\DatabaseNotification($notificationData));
@@ -380,11 +397,12 @@ class NotificationController extends Controller
                 'count' => $count
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to get unread notifications count: ' . $e->getMessage());
+            Log::error('Error retrieving notification: ' . $e->getMessage(), ['action' => 'unread-count']);
+            // Return 0 count instead of an error when no notifications are found
             return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to get unread notifications count'
-            ], 500);
+                'status' => 'success',
+                'count' => 0
+            ]);
         }
     }
 

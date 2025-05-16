@@ -34,9 +34,19 @@ class NotificationResource extends JsonResource
      */
     protected function getNotificationType()
     {
-        $type = class_basename($this->type);
+        // If the notification type is a class
+        if (is_string($this->type) && class_exists($this->type)) {
+            $type = class_basename($this->type);
+            return strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $type));
+        }
         
-        return strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $type));
+        // If type is in data (for DatabaseNotification)
+        if (isset($this->data['type'])) {
+            return $this->data['type'];
+        }
+        
+        // Fallback
+        return 'notification';
     }
 
     /**

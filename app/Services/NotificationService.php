@@ -741,6 +741,9 @@ class NotificationService
                     'icon' => $data['icon'] ?? null,
                     'priority' => $data['priority'] ?? 'normal',
                     'type' => $data['type'] ?? 'general',
+                    'data' => [
+                        'type' => $data['type'] ?? 'general'
+                    ]
                 ];
                 
                 $user->notify(new \Illuminate\Notifications\DatabaseNotification($notificationData));
@@ -844,6 +847,11 @@ class NotificationService
      */
     public function create(int $userId, string $title, string $body, string $type, array $data = [])
     {
+        // Make sure type is included in data as well
+        if (!isset($data['type'])) {
+            $data['type'] = $type;
+        }
+        
         return \App\Models\Notification::create([
             'user_id' => $userId,
             'title' => $title,
