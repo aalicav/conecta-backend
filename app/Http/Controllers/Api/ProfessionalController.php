@@ -255,11 +255,9 @@ class ProfessionalController extends Controller
             }
 
             // Create user account if requested
-            $userCreated = false;
             $plainPassword = '';
             $professionalUser = null;
             
-            if ($request->boolean('create_user')) {
                 // Generate a random password if not provided
                 $plainPassword = $request->password ?? Str::random(10);
                 
@@ -277,13 +275,9 @@ class ProfessionalController extends Controller
                 if ($role) {
                     $professionalUser->assignRole($role);
                 }
-                
-                $userCreated = true;
-            }
 
             // Send welcome email with password
-            $sendEmail = $request->has('send_welcome_email') ? $request->boolean('send_welcome_email') : true;
-            if ($sendEmail && $userCreated && $professionalUser) {
+            if ($professionalUser) {
                 // Get company data from config
                 $companyName = config('app.name');
                 $companyAddress = config('app.address', 'Address not available');
