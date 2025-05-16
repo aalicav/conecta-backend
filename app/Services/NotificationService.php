@@ -611,11 +611,9 @@ class NotificationService
                 return;
             }
             
-            // Como essa classe SchedulingException é nova, precisamos verificar
-            // se a notificação correspondente já existe. Se não, usamos uma
-            // notificação genérica.
             if (class_exists('App\\Notifications\\SchedulingExceptionCreated')) {
                 Notification::send($superAdmins, new \App\Notifications\SchedulingExceptionCreated($exception));
+                Log::info("Sent scheduling exception created notification for exception #{$exception->id} to " . $superAdmins->count() . " admins");
             } else {
                 // Enviar uma notificação genérica usando arrays
                 $data = [
@@ -628,11 +626,10 @@ class NotificationService
                 foreach ($superAdmins as $admin) {
                     $admin->notify(new \Illuminate\Notifications\DatabaseNotification($data));
                 }
+                Log::info("Created scheduling exception notification records for exception #{$exception->id}");
             }
-            
-            Log::info("Enviada notificação de nova exceção de agendamento #{$exception->id} para " . $superAdmins->count() . " administradores");
         } catch (\Exception $e) {
-            Log::error("Erro ao enviar notificação de nova exceção de agendamento: " . $e->getMessage());
+            Log::error("Failed to send scheduling exception created notification: " . $e->getMessage());
         }
     }
     
@@ -648,15 +645,13 @@ class NotificationService
             // Notificar o solicitante da exceção que foi aprovada
             $requester = User::find($exception->requested_by);
             
-            if (!$requester) {
+            if (!$requester || !$requester->is_active) {
                 return;
             }
             
-            // Como essa classe SchedulingException é nova, precisamos verificar
-            // se a notificação correspondente já existe. Se não, usamos uma
-            // notificação genérica.
             if (class_exists('App\\Notifications\\SchedulingExceptionApproved')) {
                 $requester->notify(new \App\Notifications\SchedulingExceptionApproved($exception));
+                Log::info("Sent scheduling exception approved notification for exception #{$exception->id} to user #{$requester->id}");
             } else {
                 // Enviar uma notificação genérica
                 $data = [
@@ -667,11 +662,10 @@ class NotificationService
                 ];
                 
                 $requester->notify(new \Illuminate\Notifications\DatabaseNotification($data));
+                Log::info("Created scheduling exception approved notification record for exception #{$exception->id}");
             }
-            
-            Log::info("Enviada notificação de exceção de agendamento aprovada #{$exception->id} para usuário #{$requester->id}");
         } catch (\Exception $e) {
-            Log::error("Erro ao enviar notificação de exceção de agendamento aprovada: " . $e->getMessage());
+            Log::error("Failed to send scheduling exception approved notification: " . $e->getMessage());
         }
     }
     
@@ -687,15 +681,13 @@ class NotificationService
             // Notificar o solicitante da exceção que foi rejeitada
             $requester = User::find($exception->requested_by);
             
-            if (!$requester) {
+            if (!$requester || !$requester->is_active) {
                 return;
             }
             
-            // Como essa classe SchedulingException é nova, precisamos verificar
-            // se a notificação correspondente já existe. Se não, usamos uma
-            // notificação genérica.
             if (class_exists('App\\Notifications\\SchedulingExceptionRejected')) {
                 $requester->notify(new \App\Notifications\SchedulingExceptionRejected($exception));
+                Log::info("Sent scheduling exception rejected notification for exception #{$exception->id} to user #{$requester->id}");
             } else {
                 // Enviar uma notificação genérica
                 $data = [
@@ -706,14 +698,13 @@ class NotificationService
                 ];
                 
                 $requester->notify(new \Illuminate\Notifications\DatabaseNotification($data));
+                Log::info("Created scheduling exception rejected notification record for exception #{$exception->id}");
             }
-            
-            Log::info("Enviada notificação de exceção de agendamento rejeitada #{$exception->id} para usuário #{$requester->id}");
         } catch (\Exception $e) {
-            Log::error("Erro ao enviar notificação de exceção de agendamento rejeitada: " . $e->getMessage());
+            Log::error("Failed to send scheduling exception rejected notification: " . $e->getMessage());
         }
     }
-    
+
     /**
      * Send notification to all users with a specific role.
      *
@@ -749,6 +740,7 @@ class NotificationService
                     'action_text' => $data['action_text'] ?? 'Ver Detalhes',
                     'icon' => $data['icon'] ?? null,
                     'priority' => $data['priority'] ?? 'normal',
+                    'type' => $data['type'] ?? 'general',
                 ];
                 
                 $user->notify(new \Illuminate\Notifications\DatabaseNotification($notificationData));
@@ -892,6 +884,8 @@ class NotificationService
                 return;
             }
             
+            $usersToNotify = collect();
+            
             foreach ($recipients as $recipient) {
                 // Enviar somente para usuários com os papéis relevantes
                 if ($entityType === HealthPlan::class && !$recipient->hasRole('plan_admin')) {
@@ -902,17 +896,28 @@ class NotificationService
                     continue;
                 }
                 
-                $this->create(
-                    userId: $recipient->id,
-                    title: 'Nova Negociação Criada',
-                    body: "Uma nova negociação foi criada: {$negotiation->title}",
-                    type: 'negotiation_created',
-                    data: [
-                        'negotiation_id' => $negotiation->id,
-                        'title' => $negotiation->title,
-                        'created_by' => $negotiation->creator->name,
-                    ]
-                );
+                $usersToNotify->push($recipient);
+            }
+            
+            if (class_exists('App\\Notifications\\NegotiationCreated') && !$usersToNotify->isEmpty()) {
+                Notification::send($usersToNotify, new \App\Notifications\NegotiationCreated($negotiation));
+                Log::info("Sent negotiation created notification for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
+            } else {
+                // Fallback para o método antigo caso a classe não exista
+                foreach ($usersToNotify as $recipient) {
+                    $this->create(
+                        userId: $recipient->id,
+                        title: 'Nova Negociação Criada',
+                        body: "Uma nova negociação foi criada: {$negotiation->title}",
+                        type: 'negotiation_created',
+                        data: [
+                            'negotiation_id' => $negotiation->id,
+                            'title' => $negotiation->title,
+                            'created_by' => $negotiation->creator->name,
+                        ]
+                    );
+                }
+                Log::info("Created negotiation created notification records for negotiation #{$negotiation->id}");
             }
         } catch (\Exception $e) {
             Log::error('Error sending negotiation created notification', [
@@ -952,6 +957,7 @@ class NotificationService
             
             // Contar os itens na negociação
             $itemCount = $negotiation->items()->count();
+            $usersToNotify = collect();
             
             foreach ($recipients as $recipient) {
                 // Enviar somente para usuários com os papéis relevantes
@@ -963,18 +969,29 @@ class NotificationService
                     continue;
                 }
                 
-                $this->create(
-                    userId: $recipient->id,
-                    title: 'Negociação Submetida para Revisão',
-                    body: "A negociação '{$negotiation->title}' foi submetida para sua revisão, com {$itemCount} procedimentos.",
-                    type: 'negotiation_submitted',
-                    data: [
-                        'negotiation_id' => $negotiation->id,
-                        'title' => $negotiation->title,
-                        'item_count' => $itemCount,
-                        'submitted_by' => $negotiation->creator->name,
-                    ]
-                );
+                $usersToNotify->push($recipient);
+            }
+            
+            if (class_exists('App\\Notifications\\NegotiationSubmitted') && !$usersToNotify->isEmpty()) {
+                Notification::send($usersToNotify, new \App\Notifications\NegotiationSubmitted($negotiation));
+                Log::info("Sent negotiation submitted notification for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
+            } else {
+                // Fallback para o método antigo caso a classe não exista
+                foreach ($usersToNotify as $recipient) {
+                    $this->create(
+                        userId: $recipient->id,
+                        title: 'Negociação Submetida para Revisão',
+                        body: "A negociação '{$negotiation->title}' foi submetida para sua revisão, com {$itemCount} procedimentos.",
+                        type: 'negotiation_submitted',
+                        data: [
+                            'negotiation_id' => $negotiation->id,
+                            'title' => $negotiation->title,
+                            'item_count' => $itemCount,
+                            'submitted_by' => $negotiation->creator->name,
+                        ]
+                    );
+                }
+                Log::info("Created negotiation submitted notification records for negotiation #{$negotiation->id}");
             }
         } catch (\Exception $e) {
             Log::error('Error sending negotiation submitted notification', [
@@ -994,22 +1011,14 @@ class NotificationService
     {
         try {
             // Notificar todas as partes envolvidas
+            $usersToNotify = collect();
 
             // 1. Notificar o criador da negociação (se não for o usuário atual)
             $currentUserId = Auth::id();
             $creator = $negotiation->creator;
             
-            if ($creator->id !== $currentUserId) {
-                $this->create(
-                    userId: $creator->id,
-                    title: 'Negociação Cancelada',
-                    body: "A negociação '{$negotiation->title}' foi cancelada.",
-                    type: 'negotiation_cancelled',
-                    data: [
-                        'negotiation_id' => $negotiation->id,
-                        'title' => $negotiation->title,
-                    ]
-                );
+            if ($creator->id !== $currentUserId && $creator->is_active) {
+                $usersToNotify->push($creator);
             }
             
             // 2. Notificar os representantes da entidade
@@ -1034,17 +1043,28 @@ class NotificationService
                     continue;
                 }
                 
-                $this->create(
-                    userId: $user->id,
-                    title: 'Negociação Cancelada',
-                    body: "A negociação '{$negotiation->title}' foi cancelada.",
-                    type: 'negotiation_cancelled',
-                    data: [
-                        'negotiation_id' => $negotiation->id,
-                        'title' => $negotiation->title,
-                        'cancelled_by' => Auth::user()->name,
-                    ]
-                );
+                $usersToNotify->push($user);
+            }
+            
+            if (class_exists('App\\Notifications\\NegotiationCancelled') && !$usersToNotify->isEmpty()) {
+                Notification::send($usersToNotify, new \App\Notifications\NegotiationCancelled($negotiation));
+                Log::info("Sent negotiation cancelled notification for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
+            } else {
+                // Fallback para o método antigo caso a classe não exista
+                foreach ($usersToNotify as $user) {
+                    $this->create(
+                        userId: $user->id,
+                        title: 'Negociação Cancelada',
+                        body: "A negociação '{$negotiation->title}' foi cancelada.",
+                        type: 'negotiation_cancelled',
+                        data: [
+                            'negotiation_id' => $negotiation->id,
+                            'title' => $negotiation->title,
+                            'cancelled_by' => Auth::user()->name,
+                        ]
+                    );
+                }
+                Log::info("Created negotiation cancelled notification records for negotiation #{$negotiation->id}");
             }
         } catch (\Exception $e) {
             Log::error('Error sending negotiation cancelled notification', [
@@ -1068,45 +1088,53 @@ class NotificationService
             $currentUserId = Auth::id();
             
             // Não enviar notificação se o criador é quem está respondendo
-            if ($creator->id === $currentUserId) {
+            if ($creator->id === $currentUserId || !$creator->is_active) {
                 return;
             }
             
             // Obter informação do item e do procedimento TUSS
             $tuss = $item->tuss;
             $tussName = $tuss ? $tuss->name : 'Procedimento';
-            $statusText = match($item->status) {
-                'approved' => 'aprovado',
-                'rejected' => 'rejeitado',
-                default => 'respondido'
-            };
             
-            // Mensagem personalizada baseada no status
-            $body = "O procedimento '{$tussName}' foi {$statusText}";
-            if ($item->status === 'approved' && $item->approved_value) {
-                $formattedValue = 'R$ ' . number_format($item->approved_value, 2, ',', '.');
-                $body .= " com valor de {$formattedValue}";
+            if (class_exists('App\\Notifications\\NegotiationItemResponse')) {
+                $creator->notify(new \App\Notifications\NegotiationItemResponse($item));
+                Log::info("Sent negotiation item response notification for item #{$item->id} to user #{$creator->id}");
+            } else {
+                // Fallback para o método antigo caso a classe não exista
+                $statusText = match($item->status) {
+                    'approved' => 'aprovado',
+                    'rejected' => 'rejeitado',
+                    default => 'respondido'
+                };
+                
+                // Mensagem personalizada baseada no status
+                $body = "O procedimento '{$tussName}' foi {$statusText}";
+                if ($item->status === 'approved' && $item->approved_value) {
+                    $formattedValue = 'R$ ' . number_format($item->approved_value, 2, ',', '.');
+                    $body .= " com valor de {$formattedValue}";
+                }
+                if ($item->notes) {
+                    $body .= ". Observação: {$item->notes}";
+                }
+                
+                // Enviar notificação para o criador da negociação
+                $this->create(
+                    userId: $creator->id,
+                    title: 'Resposta em Item da Negociação',
+                    body: $body,
+                    type: 'item_response',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'item_id' => $item->id,
+                        'tuss_id' => $item->tuss_id,
+                        'tuss_name' => $tussName,
+                        'status' => $item->status,
+                        'approved_value' => $item->approved_value,
+                        'negotiation_title' => $negotiation->title,
+                    ]
+                );
+                Log::info("Created negotiation item response notification for item #{$item->id}");
             }
-            if ($item->notes) {
-                $body .= ". Observação: {$item->notes}";
-            }
-            
-            // Enviar notificação para o criador da negociação
-            $this->create(
-                userId: $creator->id,
-                title: 'Resposta em Item da Negociação',
-                body: $body,
-                type: 'item_response',
-                data: [
-                    'negotiation_id' => $negotiation->id,
-                    'item_id' => $item->id,
-                    'tuss_id' => $item->tuss_id,
-                    'tuss_name' => $tussName,
-                    'status' => $item->status,
-                    'approved_value' => $item->approved_value,
-                    'negotiation_title' => $negotiation->title,
-                ]
-            );
         } catch (\Exception $e) {
             Log::error('Error sending item response notification', [
                 'error' => $e->getMessage(),
@@ -1129,30 +1157,38 @@ class NotificationService
             $currentUserId = Auth::id();
             
             // Não enviar notificação se o criador é quem está enviando a contra-oferta
-            if ($creator->id === $currentUserId) {
+            if ($creator->id === $currentUserId || !$creator->is_active) {
                 return;
             }
             
             // Obter informação do item e do procedimento TUSS
             $tuss = $item->tuss;
             $tussName = $tuss ? $tuss->name : 'Procedimento';
-            $formattedValue = 'R$ ' . number_format($item->approved_value, 2, ',', '.');
             
-            // Enviar notificação para o criador da negociação
-            $this->create(
-                userId: $creator->id,
-                title: 'Contra-proposta Recebida',
-                body: "Uma contra-proposta foi feita para o procedimento '{$tussName}' com valor de {$formattedValue}.",
-                type: 'counter_offer',
-                data: [
-                    'negotiation_id' => $negotiation->id,
-                    'item_id' => $item->id,
-                    'tuss_id' => $item->tuss_id,
-                    'tuss_name' => $tussName,
-                    'counter_value' => $item->approved_value,
-                    'negotiation_title' => $negotiation->title,
-                ]
-            );
+            if (class_exists('App\\Notifications\\NegotiationCounterOffer')) {
+                $creator->notify(new \App\Notifications\NegotiationCounterOffer($item));
+                Log::info("Sent negotiation counter offer notification for item #{$item->id} to user #{$creator->id}");
+            } else {
+                // Fallback para o método antigo caso a classe não exista
+                $formattedValue = 'R$ ' . number_format($item->approved_value, 2, ',', '.');
+                
+                // Enviar notificação para o criador da negociação
+                $this->create(
+                    userId: $creator->id,
+                    title: 'Contra-proposta Recebida',
+                    body: "Uma contra-proposta foi feita para o procedimento '{$tussName}' com valor de {$formattedValue}.",
+                    type: 'counter_offer',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'item_id' => $item->id,
+                        'tuss_id' => $item->tuss_id,
+                        'tuss_name' => $tussName,
+                        'counter_value' => $item->approved_value,
+                        'negotiation_title' => $negotiation->title,
+                    ]
+                );
+                Log::info("Created negotiation counter offer notification for item #{$item->id}");
+            }
         } catch (\Exception $e) {
             Log::error('Error sending counter offer notification', [
                 'error' => $e->getMessage(),
@@ -1174,43 +1210,50 @@ class NotificationService
             $currentUserId = Auth::id();
             
             // Não enviar notificação se o criador é quem está avaliando
-            if ($creator->id === $currentUserId) {
+            if ($creator->id === $currentUserId || !$creator->is_active) {
                 return;
             }
             
-            // Calcular estatísticas da negociação
-            $totalItems = $negotiation->items()->count();
-            $approvedItems = $negotiation->items()->where('status', 'approved')->count();
-            $rejectedItems = $negotiation->items()->where('status', 'rejected')->count();
-            
-            // Calcular valores financeiros
-            $totalProposed = $negotiation->items()->sum('proposed_value');
-            $totalApproved = $negotiation->items()->where('status', 'approved')->sum('approved_value');
-            
-            $formattedProposed = 'R$ ' . number_format($totalProposed, 2, ',', '.');
-            $formattedApproved = 'R$ ' . number_format($totalApproved, 2, ',', '.');
-            
-            // Criar mensagem detalhada
-            $body = "A negociação '{$negotiation->title}' foi parcialmente aprovada. ";
-            $body .= "De {$totalItems} itens, {$approvedItems} foram aprovados e {$rejectedItems} foram rejeitados. ";
-            $body .= "Valor total proposto: {$formattedProposed}. Valor total aprovado: {$formattedApproved}.";
-            
-            // Enviar notificação para o criador da negociação
-            $this->create(
-                userId: $creator->id,
-                title: 'Negociação Parcialmente Aprovada',
-                body: $body,
-                type: 'negotiation_partially_approved',
-                data: [
-                    'negotiation_id' => $negotiation->id,
-                    'title' => $negotiation->title,
-                    'total_items' => $totalItems,
-                    'approved_items' => $approvedItems,
-                    'rejected_items' => $rejectedItems,
-                    'total_proposed' => $totalProposed,
-                    'total_approved' => $totalApproved
-                ]
-            );
+            if (class_exists('App\\Notifications\\NegotiationPartiallyApproved')) {
+                $creator->notify(new \App\Notifications\NegotiationPartiallyApproved($negotiation));
+                Log::info("Sent negotiation partially approved notification for negotiation #{$negotiation->id} to user #{$creator->id}");
+            } else {
+                // Fallback para o método antigo caso a classe não exista
+                // Calcular estatísticas da negociação
+                $totalItems = $negotiation->items()->count();
+                $approvedItems = $negotiation->items()->where('status', 'approved')->count();
+                $rejectedItems = $negotiation->items()->where('status', 'rejected')->count();
+                
+                // Calcular valores financeiros
+                $totalProposed = $negotiation->items()->sum('proposed_value');
+                $totalApproved = $negotiation->items()->where('status', 'approved')->sum('approved_value');
+                
+                $formattedProposed = 'R$ ' . number_format($totalProposed, 2, ',', '.');
+                $formattedApproved = 'R$ ' . number_format($totalApproved, 2, ',', '.');
+                
+                // Criar mensagem detalhada
+                $body = "A negociação '{$negotiation->title}' foi parcialmente aprovada. ";
+                $body .= "De {$totalItems} itens, {$approvedItems} foram aprovados e {$rejectedItems} foram rejeitados. ";
+                $body .= "Valor total proposto: {$formattedProposed}. Valor total aprovado: {$formattedApproved}.";
+                
+                // Enviar notificação para o criador da negociação
+                $this->create(
+                    userId: $creator->id,
+                    title: 'Negociação Parcialmente Aprovada',
+                    body: $body,
+                    type: 'negotiation_partially_approved',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'total_items' => $totalItems,
+                        'approved_items' => $approvedItems,
+                        'rejected_items' => $rejectedItems,
+                        'total_proposed' => $totalProposed,
+                        'total_approved' => $totalApproved
+                    ]
+                );
+                Log::info("Created negotiation partially approved notification for negotiation #{$negotiation->id}");
+            }
         } catch (\Exception $e) {
             Log::error('Error sending partial approval notification', [
                 'error' => $e->getMessage(),
