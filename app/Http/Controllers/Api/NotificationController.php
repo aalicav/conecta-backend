@@ -84,6 +84,11 @@ class NotificationController extends Controller
             $notification = Auth::user()->notifications()->findOrFail($id);
             
             return new NotificationResource($notification);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Notification not found',
+            ], 404);
         } catch (\Exception $e) {
             Log::error('Error retrieving notification: ' . $e->getMessage());
             return response()->json([
@@ -113,6 +118,11 @@ class NotificationController extends Controller
                 'success' => true,
                 'message' => 'Notification marked as read'
             ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Notification not found',
+            ], 404);
         } catch (\Exception $e) {
             Log::error('Error marking notification as read: ' . $e->getMessage());
             return response()->json([
@@ -390,6 +400,7 @@ class NotificationController extends Controller
     public function unreadCount(): JsonResponse
     {
         try {
+            // Simply count unread notifications - no model retrieval needed
             $count = Auth::user()->unreadNotifications()->count();
             
             return response()->json([
@@ -397,8 +408,8 @@ class NotificationController extends Controller
                 'count' => $count
             ]);
         } catch (\Exception $e) {
-            Log::error('Error retrieving notification: ' . $e->getMessage(), ['action' => 'unread-count']);
-            // Return 0 count instead of an error when no notifications are found
+            // This should only happen for connection errors, not empty results
+            Log::error('Error retrieving notification count: ' . $e->getMessage());
             return response()->json([
                 'status' => 'success',
                 'count' => 0
@@ -435,7 +446,8 @@ class NotificationController extends Controller
                     'action_url' => '/dashboard',
                     'action_text' => 'Ver Dashboard',
                     'icon' => 'bell',
-                    'priority' => 'normal'
+                    'priority' => 'normal',
+                    'type' => 'test_notification'
                 ]),
                 'read_at' => null,
                 'created_at' => now(),
