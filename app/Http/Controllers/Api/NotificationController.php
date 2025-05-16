@@ -472,4 +472,65 @@ class NotificationController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Send a test email to the authenticated user.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function testEmail(Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'email' => 'nullable|email',
+                'subject' => 'nullable|string|max:255',
+                'message' => 'nullable|string',
+            ]);
+            
+            if ($validator->fails()) {
+                return response()->json([
+                    'status' => 'error', 
+                    'message' => 'Validation failed', 
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $email = $request->input('email', $user->email);
+            $subject = $request->input('subject', 'Teste de Email - ' . config('app.name'));
+            $message = $request->input('message', 'Este é um email de teste enviado via API.');
+
+            // Enviar email usando o Mail facade
+            \Illuminate\Support\Facades\Mail::raw($message, function($mail) use ($email, $subject) {
+                $mail->to($email)
+                     ->subject($subject);
+            });
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Email de teste enviado com sucesso',
+                'data' => [
+                    'email' => $email,
+                    'subject' => $subject
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Falha ao enviar email de teste: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Falha ao enviar email de teste',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 
