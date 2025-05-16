@@ -509,23 +509,34 @@ class NotificationController extends Controller
             $subject = $request->input('subject', 'Teste de Email - ' . config('app.name'));
             $message = $request->input('message', 'Este é um email de teste enviado via API.');
 
-            // Obter e logar as configurações de email (ocultando senhas)
-            $mailConfig = config('mail');
-            $safeConfig = [
-                'driver' => $mailConfig['default'],
-                'host' => $mailConfig['mailers'][$mailConfig['default']]['host'] ?? null,
-                'port' => $mailConfig['mailers'][$mailConfig['default']]['port'] ?? null,
-                'from_address' => $mailConfig['from']['address'] ?? null,
-                'from_name' => $mailConfig['from']['name'] ?? null,
-                'encryption' => $mailConfig['mailers'][$mailConfig['default']]['encryption'] ?? null,
-            ];
-            
-            Log::info('Tentando enviar email de teste com as seguintes configurações:', $safeConfig);
             Log::info('Enviando para: ' . $email);
+
+            // Configurar o Laravel para usar SMTP diretamente
+            config([
+                'mail.default' => 'smtp',
+                'mail.mailers.smtp.host' => 'smtp.hostinger.com',
+                'mail.mailers.smtp.port' => 465,
+                'mail.mailers.smtp.encryption' => 'ssl',
+                'mail.mailers.smtp.username' => 'app@virtucc.com.br',
+                'mail.mailers.smtp.password' => '4xkXej935PX-qt8',
+                'mail.from.address' => 'app@virtucc.com.br',
+                'mail.from.name' => config('app.name'),
+            ]);
 
             // Enviar email usando a classe de email TestMail
             \Illuminate\Support\Facades\Mail::to($email)
                 ->send(new \App\Mail\TestMail($message, $subject));
+            
+            // Obter configurações atuais para retornar ao usuário
+            $mailConfig = config('mail');
+            $safeConfig = [
+                'driver' => $mailConfig['default'],
+                'host' => $mailConfig['mailers']['smtp']['host'] ?? null,
+                'port' => $mailConfig['mailers']['smtp']['port'] ?? null,
+                'from_address' => $mailConfig['from']['address'] ?? null,
+                'from_name' => $mailConfig['from']['name'] ?? null,
+                'encryption' => $mailConfig['mailers']['smtp']['encryption'] ?? null,
+            ];
             
             return response()->json([
                 'status' => 'success',
