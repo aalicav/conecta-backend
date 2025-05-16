@@ -5,6 +5,8 @@ namespace App\Console;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Console\Commands\CleanAuditLogs;
+use App\Console\Commands\CheckMailConfig;
+use App\Console\Commands\SendTestMail;
 
 class Kernel extends ConsoleKernel
 {
@@ -15,6 +17,8 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         CleanAuditLogs::class,
+        CheckMailConfig::class,
+        SendTestMail::class,
     ];
 
     /**

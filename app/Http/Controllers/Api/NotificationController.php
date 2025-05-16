@@ -509,27 +509,50 @@ class NotificationController extends Controller
             $subject = $request->input('subject', 'Teste de Email - ' . config('app.name'));
             $message = $request->input('message', 'Este é um email de teste enviado via API.');
 
-            // Enviar email usando o Mail facade
-            \Illuminate\Support\Facades\Mail::raw($message, function($mail) use ($email, $subject) {
-                $mail->to($email)
-                     ->subject($subject);
-            });
+            // Obter e logar as configurações de email (ocultando senhas)
+            $mailConfig = config('mail');
+            $safeConfig = [
+                'driver' => $mailConfig['default'],
+                'host' => $mailConfig['mailers'][$mailConfig['default']]['host'] ?? null,
+                'port' => $mailConfig['mailers'][$mailConfig['default']]['port'] ?? null,
+                'from_address' => $mailConfig['from']['address'] ?? null,
+                'from_name' => $mailConfig['from']['name'] ?? null,
+                'encryption' => $mailConfig['mailers'][$mailConfig['default']]['encryption'] ?? null,
+            ];
+            
+            Log::info('Tentando enviar email de teste com as seguintes configurações:', $safeConfig);
+            Log::info('Enviando para: ' . $email);
+
+            // Enviar email usando a classe de email TestMail
+            \Illuminate\Support\Facades\Mail::to($email)
+                ->send(new \App\Mail\TestMail($message, $subject));
             
             return response()->json([
                 'status' => 'success',
                 'message' => 'Email de teste enviado com sucesso',
                 'data' => [
                     'email' => $email,
-                    'subject' => $subject
+                    'subject' => $subject,
+                    'mail_config' => $safeConfig
                 ]
             ]);
 
+        } catch (\Swift_TransportException $e) {
+            Log::error('Erro de conexão SMTP: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Falha na conexão com o servidor de email',
+                'error' => $e->getMessage(),
+                'error_type' => 'smtp_connection'
+            ], 500);
         } catch (\Exception $e) {
             Log::error('Falha ao enviar email de teste: ' . $e->getMessage());
+            Log::error('Trace: ' . $e->getTraceAsString());
             return response()->json([
                 'status' => 'error',
                 'message' => 'Falha ao enviar email de teste',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ], 500);
         }
     }
