@@ -171,6 +171,7 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::get('/system-settings/{key}', [SystemSettingController::class, 'show']);
     Route::put('/system-settings/{key}', [SystemSettingController::class, 'update'])->middleware('permission:edit settings');
     Route::delete('/system-settings/{key}', [SystemSettingController::class, 'destroy'])->middleware('permission:edit settings');
+    Route::post('/test-email', [NotificationController::class, 'testEmail']);
 
     // Notifications
     Route::prefix('notifications')->group(function () {
