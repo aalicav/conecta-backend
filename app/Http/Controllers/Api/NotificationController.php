@@ -511,18 +511,6 @@ class NotificationController extends Controller
 
             Log::info('Enviando para: ' . $email);
 
-            // Configurar o Laravel para usar SMTP diretamente
-            config([
-                'mail.default' => 'smtp',
-                'mail.mailers.smtp.host' => 'smtp.hostinger.com',
-                'mail.mailers.smtp.port' => 465,
-                'mail.mailers.smtp.encryption' => 'ssl',
-                'mail.mailers.smtp.username' => 'app@virtucc.com.br',
-                'mail.mailers.smtp.password' => '4xkXej935PX-qt8',
-                'mail.from.address' => 'app@virtucc.com.br',
-                'mail.from.name' => config('app.name'),
-            ]);
-
             // Enviar email usando a classe de email TestMail
             \Illuminate\Support\Facades\Mail::to($email)
                 ->send(new \App\Mail\TestMail($message, $subject));
