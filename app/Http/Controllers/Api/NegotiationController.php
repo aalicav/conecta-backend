@@ -665,11 +665,11 @@ class NegotiationController extends Controller
         $user = Auth::user();
         
         return match($level) {
-            self::APPROVAL_LEVEL_COMMERCIAL => $user->hasRole('commercial_manager'),
-            self::APPROVAL_LEVEL_FINANCIAL => $user->hasRole('financial_manager'),
-            self::APPROVAL_LEVEL_MANAGEMENT => $user->hasRole('management_committee'),
-            self::APPROVAL_LEVEL_LEGAL => $user->hasRole('legal_manager'),
-            self::APPROVAL_LEVEL_DIRECTION => $user->hasRole('director'),
+            self::APPROVAL_LEVEL_COMMERCIAL => $user->hasPermissionTo('approve_negotiation_commercial'),
+            self::APPROVAL_LEVEL_FINANCIAL => $user->hasPermissionTo('approve_negotiation_financial'),
+            self::APPROVAL_LEVEL_MANAGEMENT => $user->hasPermissionTo('approve_negotiation_management'),
+            self::APPROVAL_LEVEL_LEGAL => $user->hasPermissionTo('approve_negotiation_legal'),
+            self::APPROVAL_LEVEL_DIRECTION => $user->hasPermissionTo('approve_negotiation_direction'),
             default => false
         };
     }

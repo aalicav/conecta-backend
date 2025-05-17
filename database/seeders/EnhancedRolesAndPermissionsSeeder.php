@@ -23,6 +23,18 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
 
         // Additional permissions needed for the enhanced role system
         $additionalPermissions = [
+            // Negotiation approval workflow permissions
+            'approve_negotiation_commercial',
+            'approve_negotiation_financial',
+            'approve_negotiation_management',
+            'approve_negotiation_legal',
+            'approve_negotiation_direction',
+            'reject_negotiation_commercial',
+            'reject_negotiation_financial',
+            'reject_negotiation_management',
+            'reject_negotiation_legal',
+            'reject_negotiation_direction',
+            
             // Contract approval workflow permissions
             'approve contracts final',
             'legal review contracts',
@@ -97,6 +109,8 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
         
         // 2. Direção (Director) - Dr. Ítalo
         $directorPermissions = [
+            'approve_negotiation_direction',
+            'reject_negotiation_direction',
             'approve contracts final',
             'approve scheduling exceptions',
             'view executive dashboard',
@@ -117,7 +131,9 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
         $this->createOrUpdateRole('director', $directorPermissions);
         
         // 3. Equipe Comercial (Commercial Team) - Mirelle and team
-        $commercialPermissions = [
+        $commercialManagerPermissions = [
+            'approve_negotiation_commercial',
+            'reject_negotiation_commercial',
             'view health plans',
             'create health plans',
             'edit health plans',
@@ -147,10 +163,12 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
             'view reports',
             'generate contracts from negotiations',
         ];
-        $this->createOrUpdateRole('commercial', $commercialPermissions);
+        $this->createOrUpdateRole('commercial_manager', $commercialManagerPermissions);
         
         // 4. Equipe Jurídica (Legal Team)
-        $legalPermissions = [
+        $legalManagerPermissions = [
+            'approve_negotiation_legal',
+            'reject_negotiation_legal',
             'view contracts',
             'edit contracts',
             'legal review contracts',
@@ -160,30 +178,12 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
             'view professionals',
             'view documents',
         ];
-        $this->createOrUpdateRole('legal', $legalPermissions);
+        $this->createOrUpdateRole('legal_manager', $legalManagerPermissions);
         
-        // 5. Equipe Operacional (Operational Team) - Lorena and team
-        $operationalPermissions = [
-            'view patients',
-            'create patients',
-            'edit patients',
-            'view solicitations',
-            'create solicitations',
-            'edit solicitations',
-            'view appointments',
-            'confirm appointments',
-            'confirm presence',
-            'complete appointment',
-            'manage patient flow',
-            'register patient arrival',
-            'request scheduling exceptions',
-            'view operational dashboard',
-            'view reports',
-        ];
-        $this->createOrUpdateRole('operational', $operationalPermissions);
-        
-        // 6. Equipe Financeira (Financial Team) - Aline and Paula
-        $financialPermissions = [
+        // 5. Equipe Financeira (Financial Team) - Aline and Paula
+        $financialManagerPermissions = [
+            'approve_negotiation_financial',
+            'reject_negotiation_financial',
             'view payments',
             'process payments',
             'view financial reports',
@@ -200,7 +200,27 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
             'manage financials',
             'apply gloss',
         ];
-        $this->createOrUpdateRole('financial', $financialPermissions);
+        $this->createOrUpdateRole('financial_manager', $financialManagerPermissions);
+
+        // 6. Comitê de Gestão (Management Committee)
+        $managementCommitteePermissions = [
+            'approve_negotiation_management',
+            'reject_negotiation_management',
+            'view executive dashboard',
+            'view financial dashboard',
+            'view commercial dashboard',
+            'view reports',
+            'view financial reports',
+            'export reports',
+            'view contracts',
+            'view negotiations',
+            'view health plans',
+            'view clinics',
+            'view professionals',
+            'view appointments',
+            'view payments',
+        ];
+        $this->createOrUpdateRole('management_committee', $managementCommitteePermissions);
         
         // 7. Operadora de Saúde (Health Plan Portal)
         $healthPlanPortalPermissions = [
