@@ -13,7 +13,6 @@ return new class extends Migration
     {
         Schema::table('negotiations', function (Blueprint $table) {
             $table->string('current_approval_level')->nullable();
-            $table->timestamp('approved_at')->nullable();
         });
     }
 
@@ -24,7 +23,6 @@ return new class extends Migration
     {
         Schema::table('negotiations', function (Blueprint $table) {
             $table->dropColumn('current_approval_level');
-            $table->dropColumn('approved_at');
         });
     }
 }; 
