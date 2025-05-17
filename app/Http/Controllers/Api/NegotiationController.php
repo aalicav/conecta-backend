@@ -24,6 +24,24 @@ use Carbon\Carbon;
 
 class NegotiationController extends Controller
 {
+    // Define approval levels as constants
+    const APPROVAL_LEVEL_COMMERCIAL = 'commercial';
+    const APPROVAL_LEVEL_FINANCIAL = 'financial';
+    const APPROVAL_LEVEL_MANAGEMENT = 'management';
+    const APPROVAL_LEVEL_LEGAL = 'legal';
+    const APPROVAL_LEVEL_DIRECTION = 'direction';
+
+    // Define approval statuses
+    const STATUS_DRAFT = 'draft';
+    const STATUS_PENDING_COMMERCIAL = 'pending_commercial';
+    const STATUS_PENDING_FINANCIAL = 'pending_financial';
+    const STATUS_PENDING_MANAGEMENT = 'pending_management';
+    const STATUS_PENDING_LEGAL = 'pending_legal';
+    const STATUS_PENDING_DIRECTION = 'pending_direction';
+    const STATUS_APPROVED = 'approved';
+    const STATUS_REJECTED = 'rejected';
+    const STATUS_CANCELLED = 'cancelled';
+
     /**
      * Create a new controller instance.
      */
@@ -514,5 +532,163 @@ class NegotiationController extends Controller
         } catch (\Exception $e) {
             return response()->json(['message' => 'Failed to submit counter offer', 'error' => $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Submit the negotiation for internal approval.
+     *
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function submitForApproval(Negotiation $negotiation)
+    {
+        if ($negotiation->status !== self::STATUS_DRAFT) {
+            return response()->json(['message' => 'Only draft negotiations can be submitted for approval'], 403);
+        }
+        
+        if ($negotiation->items->isEmpty()) {
+            return response()->json(['message' => 'Cannot submit a negotiation without items'], 400);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Start with commercial approval
+            $negotiation->status = self::STATUS_PENDING_COMMERCIAL;
+            $negotiation->current_approval_level = self::APPROVAL_LEVEL_COMMERCIAL;
+            $negotiation->save();
+            
+            // Create approval history record
+            $negotiation->approvalHistory()->create([
+                'level' => self::APPROVAL_LEVEL_COMMERCIAL,
+                'status' => 'pending',
+                'user_id' => Auth::id(),
+                'notes' => 'Initial submission for commercial approval'
+            ]);
+            
+            // Notify commercial team
+            $this->notificationService->notifyApprovalRequired($negotiation, self::APPROVAL_LEVEL_COMMERCIAL);
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Negotiation submitted for approval',
+                'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to submit negotiation for approval', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Approve or reject a negotiation at the current approval level.
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function processApproval(Request $request, Negotiation $negotiation)
+    {
+        $validated = $request->validate([
+            'action' => 'required|in:approve,reject',
+            'notes' => 'nullable|string',
+        ]);
+
+        // Check if user has permission for current approval level
+        if (!$this->userHasApprovalPermission($negotiation->current_approval_level)) {
+            return response()->json(['message' => 'You do not have permission to approve at this level'], 403);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Record the current approval decision
+            $negotiation->approvalHistory()->create([
+                'level' => $negotiation->current_approval_level,
+                'status' => $validated['action'],
+                'user_id' => Auth::id(),
+                'notes' => $validated['notes'] ?? null
+            ]);
+
+            if ($validated['action'] === 'reject') {
+                $negotiation->status = self::STATUS_REJECTED;
+                $negotiation->save();
+                
+                $this->notificationService->notifyApprovalRejected($negotiation);
+                
+                DB::commit();
+                return response()->json([
+                    'message' => 'Negotiation rejected',
+                    'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
+                ]);
+            }
+
+            // If approved, move to next approval level
+            $nextLevel = $this->getNextApprovalLevel($negotiation->current_approval_level);
+            
+            if ($nextLevel) {
+                $negotiation->status = 'pending_' . $nextLevel;
+                $negotiation->current_approval_level = $nextLevel;
+                $negotiation->save();
+                
+                $this->notificationService->notifyApprovalRequired($negotiation, $nextLevel);
+            } else {
+                // If no next level, negotiation is fully approved
+                $negotiation->status = self::STATUS_APPROVED;
+                $negotiation->approved_at = now();
+                $negotiation->save();
+                
+                $this->notificationService->notifyNegotiationApproved($negotiation);
+            }
+
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Approval processed successfully',
+                'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to process approval', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Check if the current user has permission for the given approval level.
+     *
+     * @param string $level
+     * @return bool
+     */
+    private function userHasApprovalPermission(string $level): bool
+    {
+        $user = Auth::user();
+        
+        return match($level) {
+            self::APPROVAL_LEVEL_COMMERCIAL => $user->hasRole('commercial_manager'),
+            self::APPROVAL_LEVEL_FINANCIAL => $user->hasRole('financial_manager'),
+            self::APPROVAL_LEVEL_MANAGEMENT => $user->hasRole('management_committee'),
+            self::APPROVAL_LEVEL_LEGAL => $user->hasRole('legal_manager'),
+            self::APPROVAL_LEVEL_DIRECTION => $user->hasRole('director'),
+            default => false
+        };
+    }
+
+    /**
+     * Get the next approval level in the workflow.
+     *
+     * @param string $currentLevel
+     * @return string|null
+     */
+    private function getNextApprovalLevel(string $currentLevel): ?string
+    {
+        return match($currentLevel) {
+            self::APPROVAL_LEVEL_COMMERCIAL => self::APPROVAL_LEVEL_FINANCIAL,
+            self::APPROVAL_LEVEL_FINANCIAL => self::APPROVAL_LEVEL_MANAGEMENT,
+            self::APPROVAL_LEVEL_MANAGEMENT => self::APPROVAL_LEVEL_LEGAL,
+            self::APPROVAL_LEVEL_LEGAL => self::APPROVAL_LEVEL_DIRECTION,
+            self::APPROVAL_LEVEL_DIRECTION => null,
+            default => null
+        };
     }
 } 

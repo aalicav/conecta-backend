@@ -42,6 +42,8 @@ class Negotiation extends Model
         'creator_id',
         'status',
         'notes',
+        'current_approval_level',
+        'approved_at',
     ];
 
     /**
@@ -142,5 +144,13 @@ class Negotiation extends Model
     public function calculateTotalValue(): float
     {
         return $this->items->sum('proposed_value');
+    }
+
+    /**
+     * Get the approval history for the negotiation.
+     */
+    public function approvalHistory()
+    {
+        return $this->hasMany(NegotiationApprovalHistory::class);
     }
 } 
