@@ -1287,7 +1287,7 @@ class NotificationService
     }
 
     /**
-     * Notifica os usuários com permissão para aprovar uma negociação em um nível específico
+     * Notifica os usuários com permissão para aprovar uma negociação
      *
      * @param Negotiation $negotiation
      * @param string $approvalLevel
@@ -1296,68 +1296,20 @@ class NotificationService
     public function notifyApprovalRequired(Negotiation $negotiation, string $approvalLevel): void
     {
         try {
-            // Mapeamento de níveis de aprovação para permissões, roles e títulos
-            $levelMap = [
-                'commercial' => [
-                    'permission' => 'approve_negotiation_commercial',
-                    'role' => 'commercial',
-                    'title' => 'Aprovação Comercial Necessária',
-                ],
-                'financial' => [
-                    'permission' => 'approve_negotiation_financial',
-                    'role' => 'financial',
-                    'title' => 'Aprovação Financeira Necessária',
-                ],
-                'management' => [
-                    'permission' => 'approve_negotiation_management',
-                    'role' => 'management', // Pode ser que precise mudar dependendo do seu sistema
-                    'title' => 'Aprovação de Gestão Necessária',
-                ],
-                'legal' => [
-                    'permission' => 'approve_negotiation_legal',
-                    'role' => 'legal',
-                    'title' => 'Aprovação Jurídica Necessária',
-                ],
-                'direction' => [
-                    'permission' => 'approve_negotiation_direction',
-                    'role' => 'director',
-                    'title' => 'Aprovação da Direção Necessária',
-                ],
-            ];
-
-            if (!isset($levelMap[$approvalLevel])) {
-                Log::error("Invalid approval level provided: {$approvalLevel}");
-                return;
-            }
-
-            $permissionName = $levelMap[$approvalLevel]['permission'];
-            $roleName = $levelMap[$approvalLevel]['role'];
-            $titlePrefix = $levelMap[$approvalLevel]['title'];
-
-            // Buscar usuários com a permissão específica para este nível de aprovação
-            // OU com o papel correspondente
-            $users = User::where(function($query) use ($permissionName, $roleName) {
-                    $query->permission($permissionName)
-                          ->orWhere(function($q) use ($roleName) {
-                               $q->role($roleName);
-                          });
+            // Buscar usuários com a permissão de aprovação ou papel relevante
+            $users = User::where(function($query) {
+                    $query->permission('approve_negotiations')
+                         ->orWhere(function($q) {
+                             $q->role(['super_admin', 'director', 'financial']);
+                         });
                 })
                 ->where('is_active', true)
                 ->where('id', '!=', Auth::id()) // Não notificar o usuário atual (que enviou para aprovação)
                 ->get();
 
-            // Sempre incluir super_admin
-            $superAdmins = User::role('super_admin')
-                ->where('is_active', true)
-                ->where('id', '!=', Auth::id())
-                ->get();
-                
-            $users = $users->merge($superAdmins);
-
             if ($users->isEmpty()) {
-                Log::warning("No users found with permission {$permissionName} or role {$roleName} for negotiation approval", [
+                Log::warning("Nenhum usuário encontrado com permissão para aprovar negociações", [
                     'negotiation_id' => $negotiation->id,
-                    'approval_level' => $approvalLevel,
                 ]);
                 return;
             }
@@ -1366,11 +1318,11 @@ class NotificationService
             $notificationClass = "App\\Notifications\\NegotiationApprovalRequired";
             if (class_exists($notificationClass)) {
                 Notification::send($users, new $notificationClass($negotiation, $approvalLevel));
-                Log::info("Sent negotiation approval required notification for level {$approvalLevel} to " . $users->count() . " users");
+                Log::info("Enviada notificação de aprovação necessária para " . $users->count() . " usuários");
             } else {
                 // Fallback para o método antigo
-                $title = "{$titlePrefix} - {$negotiation->title}";
-                $body = "A negociação '{$negotiation->title}' precisa de sua aprovação no nível {$approvalLevel}.";
+                $title = "Aprovação Necessária - {$negotiation->title}";
+                $body = "A negociação '{$negotiation->title}' precisa de sua aprovação.";
 
                 foreach ($users as $user) {
                     $this->create(
@@ -1381,18 +1333,16 @@ class NotificationService
                         data: [
                             'negotiation_id' => $negotiation->id,
                             'title' => $negotiation->title,
-                            'approval_level' => $approvalLevel,
                             'submitted_by' => $negotiation->creator->name,
                         ]
                     );
                 }
-                Log::info("Created negotiation approval required notifications for level {$approvalLevel} to " . $users->count() . " users");
+                Log::info("Criados registros de notificação de aprovação necessária para " . $users->count() . " usuários");
             }
         } catch (\Exception $e) {
-            Log::error('Error sending approval required notification', [
+            Log::error('Erro ao enviar notificação de aprovação necessária', [
                 'error' => $e->getMessage(),
                 'negotiation_id' => $negotiation->id,
-                'approval_level' => $approvalLevel,
             ]);
         }
     }
