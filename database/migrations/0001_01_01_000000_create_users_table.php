@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('password');
             $table->unsignedBigInteger('entity_id')->nullable();
             $table->string('entity_type')->nullable();
-            $table->boolean('is_active')->default(false);
+            $table->boolean('is_active')->default(true);
             $table->string('profile_photo')->nullable();
             $table->rememberToken();
             $table->timestamps();
