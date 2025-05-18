@@ -691,4 +691,84 @@ class NegotiationController extends Controller
             default => null
         };
     }
+
+    /**
+     * Resend notifications for a negotiation in pending approval status.
+     *
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resendNotifications(Negotiation $negotiation)
+    {
+        // Check if negotiation is in a pending state
+        if (!str_starts_with($negotiation->status, 'pending_')) {
+            return response()->json([
+                'message' => 'Only pending negotiations can have notifications resent',
+                'success' => false
+            ], 400);
+        }
+
+        try {
+            // Resend the appropriate notification based on the current approval level
+            if ($negotiation->current_approval_level) {
+                $this->notificationService->notifyApprovalRequired($negotiation, $negotiation->current_approval_level);
+                
+                return response()->json([
+                    'message' => 'Notifications resent successfully',
+                    'success' => true,
+                    'data' => [
+                        'negotiation_id' => $negotiation->id,
+                        'status' => $negotiation->status,
+                        'approval_level' => $negotiation->current_approval_level
+                    ]
+                ]);
+            }
+            
+            return response()->json([
+                'message' => 'Could not determine approval level for notification',
+                'success' => false
+            ], 400);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to resend notifications: ' . $e->getMessage(),
+                'success' => false
+            ], 500);
+        }
+    }
+
+    /**
+     * Resend notifications for a submitted negotiation.
+     *
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function resendSubmittedNotifications(Negotiation $negotiation)
+    {
+        // Check if negotiation is in submitted state
+        if ($negotiation->status !== 'submitted') {
+            return response()->json([
+                'message' => 'Only submitted negotiations can have these notifications resent',
+                'success' => false
+            ], 400);
+        }
+
+        try {
+            // Resend notification to the entity representatives
+            $this->notificationService->notifyNegotiationSubmitted($negotiation);
+            
+            return response()->json([
+                'message' => 'Notifications resent successfully',
+                'success' => true,
+                'data' => [
+                    'negotiation_id' => $negotiation->id,
+                    'status' => $negotiation->status
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to resend notifications: ' . $e->getMessage(),
+                'success' => false
+            ], 500);
+        }
+    }
 } 

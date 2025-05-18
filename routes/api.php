@@ -279,6 +279,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/negotiations/{negotiation}/submit-approval', [NegotiationController::class, 'submitForApproval'])
         ->middleware('permission:create negotiations');
     Route::post('/negotiations/{negotiation}/process-approval', [NegotiationController::class, 'processApproval']);
+    Route::post('/negotiations/{negotiation}/resend-notifications', [NegotiationController::class, 'resendNotifications'])
+        ->middleware('permission:create negotiations');
+    Route::post('/negotiations/{negotiation}/resend-submitted-notifications', [NegotiationController::class, 'resendSubmittedNotifications'])
+        ->middleware('permission:create negotiations');
     
     // Negotiation items
     Route::post('/negotiation-items/{item}/respond', [NegotiationController::class, 'respondToItem'])->middleware('permission:respond to negotiations');
