@@ -1296,26 +1296,31 @@ class NotificationService
     public function notifyApprovalRequired(Negotiation $negotiation, string $approvalLevel): void
     {
         try {
-            // Mapeamento de níveis de aprovação para permissões e títulos
+            // Mapeamento de níveis de aprovação para permissões, roles e títulos
             $levelMap = [
                 'commercial' => [
                     'permission' => 'approve_negotiation_commercial',
+                    'role' => 'commercial',
                     'title' => 'Aprovação Comercial Necessária',
                 ],
                 'financial' => [
                     'permission' => 'approve_negotiation_financial',
+                    'role' => 'financial',
                     'title' => 'Aprovação Financeira Necessária',
                 ],
                 'management' => [
                     'permission' => 'approve_negotiation_management',
+                    'role' => 'management', // Pode ser que precise mudar dependendo do seu sistema
                     'title' => 'Aprovação de Gestão Necessária',
                 ],
                 'legal' => [
                     'permission' => 'approve_negotiation_legal',
+                    'role' => 'legal',
                     'title' => 'Aprovação Jurídica Necessária',
                 ],
                 'direction' => [
                     'permission' => 'approve_negotiation_direction',
+                    'role' => 'director',
                     'title' => 'Aprovação da Direção Necessária',
                 ],
             ];
@@ -1326,16 +1331,31 @@ class NotificationService
             }
 
             $permissionName = $levelMap[$approvalLevel]['permission'];
+            $roleName = $levelMap[$approvalLevel]['role'];
             $titlePrefix = $levelMap[$approvalLevel]['title'];
 
             // Buscar usuários com a permissão específica para este nível de aprovação
-            $users = User::permission($permissionName)
+            // OU com o papel correspondente
+            $users = User::where(function($query) use ($permissionName, $roleName) {
+                    $query->permission($permissionName)
+                          ->orWhere(function($q) use ($roleName) {
+                               $q->role($roleName);
+                          });
+                })
                 ->where('is_active', true)
                 ->where('id', '!=', Auth::id()) // Não notificar o usuário atual (que enviou para aprovação)
                 ->get();
 
+            // Sempre incluir super_admin
+            $superAdmins = User::role('super_admin')
+                ->where('is_active', true)
+                ->where('id', '!=', Auth::id())
+                ->get();
+                
+            $users = $users->merge($superAdmins);
+
             if ($users->isEmpty()) {
-                Log::warning("No users found with permission {$permissionName} for negotiation approval", [
+                Log::warning("No users found with permission {$permissionName} or role {$roleName} for negotiation approval", [
                     'negotiation_id' => $negotiation->id,
                     'approval_level' => $approvalLevel,
                 ]);

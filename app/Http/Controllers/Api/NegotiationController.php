@@ -664,14 +664,39 @@ class NegotiationController extends Controller
     {
         $user = Auth::user();
         
-        return match($level) {
-            self::APPROVAL_LEVEL_COMMERCIAL => $user->hasPermissionTo('approve_negotiation_commercial'),
-            self::APPROVAL_LEVEL_FINANCIAL => $user->hasPermissionTo('approve_negotiation_financial'),
-            self::APPROVAL_LEVEL_MANAGEMENT => $user->hasPermissionTo('approve_negotiation_management'),
-            self::APPROVAL_LEVEL_LEGAL => $user->hasPermissionTo('approve_negotiation_legal'),
-            self::APPROVAL_LEVEL_DIRECTION => $user->hasPermissionTo('approve_negotiation_direction'),
-            default => false
-        };
+        // Map levels to both permissions and roles
+        $levelMap = [
+            self::APPROVAL_LEVEL_COMMERCIAL => [
+                'permission' => 'approve_negotiation_commercial',
+                'role' => 'commercial'
+            ],
+            self::APPROVAL_LEVEL_FINANCIAL => [
+                'permission' => 'approve_negotiation_financial',
+                'role' => 'financial'
+            ],
+            self::APPROVAL_LEVEL_MANAGEMENT => [
+                'permission' => 'approve_negotiation_management',
+                'role' => 'management'
+            ],
+            self::APPROVAL_LEVEL_LEGAL => [
+                'permission' => 'approve_negotiation_legal',
+                'role' => 'legal'
+            ],
+            self::APPROVAL_LEVEL_DIRECTION => [
+                'permission' => 'approve_negotiation_direction',
+                'role' => 'director'
+            ],
+        ];
+        
+        // Check if the level is valid
+        if (!isset($levelMap[$level])) {
+            return false;
+        }
+        
+        // Check if user has the permission or the role
+        return $user->hasPermissionTo($levelMap[$level]['permission']) || 
+               $user->hasRole($levelMap[$level]['role']) || 
+               $user->hasRole('super_admin');
     }
 
     /**
