@@ -275,9 +275,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/negotiations/{negotiation}/cancel', [NegotiationController::class, 'cancel'])->middleware('permission:manage negotiations');
     Route::post('/negotiations/{negotiation}/generate-contract', [NegotiationController::class, 'generateContract'])->middleware('permission:manage contracts');
     
+    // New approval workflow endpoints
+    Route::post('/negotiations/{negotiation}/submit-approval', [NegotiationController::class, 'submitForApproval'])
+        ->middleware('permission:create negotiations');
+    Route::post('/negotiations/{negotiation}/process-approval', [NegotiationController::class, 'processApproval']);
+    
     // Negotiation items
     Route::post('/negotiation-items/{item}/respond', [NegotiationController::class, 'respondToItem'])->middleware('permission:respond to negotiations');
-    Route::post('/negotiation-items/{item}/counter', [NegotiationController::class, 'counterItemAsHealthPlan'])->middleware('permission:manage health plans');
+    Route::post('/negotiation-items/{item}/counter', [NegotiationController::class, 'counterItem'])->middleware('permission:manage health plans');
 });
 
 // WhatsApp notifications routes

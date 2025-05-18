@@ -1269,4 +1269,230 @@ class NotificationService
             ]);
         }
     }
+
+    /**
+     * Notifica os usuários com permissão para aprovar uma negociação em um nível específico
+     *
+     * @param Negotiation $negotiation
+     * @param string $approvalLevel
+     * @return void
+     */
+    public function notifyApprovalRequired(Negotiation $negotiation, string $approvalLevel): void
+    {
+        try {
+            // Mapeamento de níveis de aprovação para permissões e títulos
+            $levelMap = [
+                'commercial' => [
+                    'permission' => 'approve_negotiation_commercial',
+                    'title' => 'Aprovação Comercial Necessária',
+                ],
+                'financial' => [
+                    'permission' => 'approve_negotiation_financial',
+                    'title' => 'Aprovação Financeira Necessária',
+                ],
+                'management' => [
+                    'permission' => 'approve_negotiation_management',
+                    'title' => 'Aprovação de Gestão Necessária',
+                ],
+                'legal' => [
+                    'permission' => 'approve_negotiation_legal',
+                    'title' => 'Aprovação Jurídica Necessária',
+                ],
+                'direction' => [
+                    'permission' => 'approve_negotiation_direction',
+                    'title' => 'Aprovação da Direção Necessária',
+                ],
+            ];
+
+            if (!isset($levelMap[$approvalLevel])) {
+                Log::error("Invalid approval level provided: {$approvalLevel}");
+                return;
+            }
+
+            $permissionName = $levelMap[$approvalLevel]['permission'];
+            $titlePrefix = $levelMap[$approvalLevel]['title'];
+
+            // Buscar usuários com a permissão específica para este nível de aprovação
+            $users = User::permission($permissionName)
+                ->where('is_active', true)
+                ->where('id', '!=', Auth::id()) // Não notificar o usuário atual (que enviou para aprovação)
+                ->get();
+
+            if ($users->isEmpty()) {
+                Log::warning("No users found with permission {$permissionName} for negotiation approval", [
+                    'negotiation_id' => $negotiation->id,
+                    'approval_level' => $approvalLevel,
+                ]);
+                return;
+            }
+
+            // Verificar se existe a classe de notificação específica
+            $notificationClass = "App\\Notifications\\NegotiationApprovalRequired";
+            if (class_exists($notificationClass)) {
+                Notification::send($users, new $notificationClass($negotiation, $approvalLevel));
+                Log::info("Sent negotiation approval required notification for level {$approvalLevel} to " . $users->count() . " users");
+            } else {
+                // Fallback para o método antigo
+                $title = "{$titlePrefix} - {$negotiation->title}";
+                $body = "A negociação '{$negotiation->title}' precisa de sua aprovação no nível {$approvalLevel}.";
+
+                foreach ($users as $user) {
+                    $this->create(
+                        userId: $user->id,
+                        title: $title,
+                        body: $body,
+                        type: 'approval_required',
+                        data: [
+                            'negotiation_id' => $negotiation->id,
+                            'title' => $negotiation->title,
+                            'approval_level' => $approvalLevel,
+                            'submitted_by' => $negotiation->creator->name,
+                        ]
+                    );
+                }
+                Log::info("Created negotiation approval required notifications for level {$approvalLevel} to " . $users->count() . " users");
+            }
+        } catch (\Exception $e) {
+            Log::error('Error sending approval required notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
+                'approval_level' => $approvalLevel,
+            ]);
+        }
+    }
+
+    /**
+     * Notifica sobre a aprovação completa de uma negociação
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function notifyNegotiationApproved(Negotiation $negotiation): void
+    {
+        try {
+            // Notificar o criador da negociação
+            $creator = $negotiation->creator;
+            $currentUserId = Auth::id();
+            
+            // Não enviar notificação se o criador é quem está aprovando
+            if ($creator->id === $currentUserId || !$creator->is_active) {
+                return;
+            }
+            
+            // Verificar se existe a classe de notificação específica
+            if (class_exists('App\\Notifications\\NegotiationApproved')) {
+                $creator->notify(new \App\Notifications\NegotiationApproved($negotiation));
+                Log::info("Sent negotiation approved notification for negotiation #{$negotiation->id} to user #{$creator->id}");
+            } else {
+                // Fallback para o método antigo
+                $this->create(
+                    userId: $creator->id,
+                    title: 'Negociação Aprovada',
+                    body: "A negociação '{$negotiation->title}' foi totalmente aprovada.",
+                    type: 'negotiation_approved',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'approved_by' => Auth::user()->name,
+                    ]
+                );
+                Log::info("Created negotiation approved notification for negotiation #{$negotiation->id}");
+            }
+            
+            // Também notificar representantes da entidade envolvida
+            $entityType = $negotiation->negotiable_type;
+            $entityId = $negotiation->negotiable_id;
+            
+            $entityUsers = User::where(function($query) use ($entityType, $entityId) {
+                    $query->where('entity_type', $entityType)
+                          ->where('entity_id', $entityId);
+                })
+                ->where('is_active', true)
+                ->where('id', '!=', $currentUserId)
+                ->where('id', '!=', $creator->id)
+                ->get();
+                
+            foreach ($entityUsers as $user) {
+                // Enviar somente para usuários com os papéis relevantes
+                if ($entityType === HealthPlan::class && !$user->hasRole('plan_admin')) {
+                    continue;
+                } elseif ($entityType === Professional::class && !$user->hasRole('professional')) {
+                    continue;
+                } elseif ($entityType === Clinic::class && !$user->hasRole('clinic_admin')) {
+                    continue;
+                }
+                
+                if (class_exists('App\\Notifications\\NegotiationApproved')) {
+                    $user->notify(new \App\Notifications\NegotiationApproved($negotiation));
+                } else {
+                    $this->create(
+                        userId: $user->id,
+                        title: 'Negociação Aprovada',
+                        body: "A negociação '{$negotiation->title}' foi totalmente aprovada.",
+                        type: 'negotiation_approved',
+                        data: [
+                            'negotiation_id' => $negotiation->id,
+                            'title' => $negotiation->title,
+                            'approved_by' => Auth::user()->name,
+                        ]
+                    );
+                }
+            }
+            
+            if (!$entityUsers->isEmpty()) {
+                Log::info("Sent negotiation approved notification to " . $entityUsers->count() . " entity users");
+            }
+        } catch (\Exception $e) {
+            Log::error('Error sending negotiation approved notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
+            ]);
+        }
+    }
+
+    /**
+     * Notifica sobre a rejeição de uma negociação em um nível de aprovação
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function notifyApprovalRejected(Negotiation $negotiation): void
+    {
+        try {
+            // Notificar o criador da negociação
+            $creator = $negotiation->creator;
+            $currentUserId = Auth::id();
+            
+            // Não enviar notificação se o criador é quem está rejeitando
+            if ($creator->id === $currentUserId || !$creator->is_active) {
+                return;
+            }
+            
+            // Verificar se existe a classe de notificação específica
+            if (class_exists('App\\Notifications\\NegotiationRejected')) {
+                $creator->notify(new \App\Notifications\NegotiationRejected($negotiation));
+                Log::info("Sent negotiation rejected notification for negotiation #{$negotiation->id} to user #{$creator->id}");
+            } else {
+                // Fallback para o método antigo
+                $this->create(
+                    userId: $creator->id,
+                    title: 'Negociação Rejeitada',
+                    body: "A negociação '{$negotiation->title}' foi rejeitada no nível de aprovação {$negotiation->current_approval_level}.",
+                    type: 'negotiation_rejected',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'rejected_by' => Auth::user()->name,
+                        'level' => $negotiation->current_approval_level,
+                    ]
+                );
+                Log::info("Created negotiation rejected notification for negotiation #{$negotiation->id}");
+            }
+        } catch (\Exception $e) {
+            Log::error('Error sending negotiation rejected notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
+            ]);
+        }
+    }
 } 
