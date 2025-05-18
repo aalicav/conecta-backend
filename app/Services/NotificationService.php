@@ -883,6 +883,14 @@ class NotificationService
                 ->where('is_active', true)
                 ->get();
             
+            // Buscar administradores do sistema
+            $admins = User::role(['super_admin', 'director', 'commercial', 'financial', 'legal'])
+                ->where('is_active', true)
+                ->get();
+            
+            // Mesclar as listas de destinatários
+            $recipients = $recipients->merge($admins);
+            
             if ($recipients->isEmpty()) {
                 Log::info('No recipients found for negotiation creation notification', [
                     'negotiation_id' => $negotiation->id,
@@ -896,11 +904,11 @@ class NotificationService
             
             foreach ($recipients as $recipient) {
                 // Enviar somente para usuários com os papéis relevantes
-                if ($entityType === HealthPlan::class && !$recipient->hasRole('plan_admin')) {
+                if ($entityType === HealthPlan::class && !$recipient->hasRole(['plan_admin', 'health_plan_portal', 'super_admin', 'director', 'commercial'])) {
                     continue;
-                } elseif ($entityType === Professional::class && !$recipient->hasRole('professional')) {
+                } elseif ($entityType === Professional::class && !$recipient->hasRole(['professional', 'provider_portal', 'super_admin', 'director', 'commercial'])) {
                     continue;
-                } elseif ($entityType === Clinic::class && !$recipient->hasRole('clinic_admin')) {
+                } elseif ($entityType === Clinic::class && !$recipient->hasRole(['clinic_admin', 'provider_portal', 'super_admin', 'director', 'commercial'])) {
                     continue;
                 }
                 
@@ -956,6 +964,14 @@ class NotificationService
                 ->where('is_active', true)
                 ->get();
             
+            // Buscar aprovadores do sistema
+            $approvers = User::role(['super_admin', 'director', 'commercial', 'financial', 'legal'])
+                ->where('is_active', true)
+                ->get();
+                
+            // Mesclar as listas de destinatários
+            $recipients = $recipients->merge($approvers);
+            
             if ($recipients->isEmpty()) {
                 Log::info('No recipients found for negotiation submission notification', [
                     'negotiation_id' => $negotiation->id,
@@ -969,11 +985,11 @@ class NotificationService
             
             foreach ($recipients as $recipient) {
                 // Enviar somente para usuários com os papéis relevantes
-                if ($entityType === HealthPlan::class && !$recipient->hasRole('plan_admin')) {
+                if ($entityType === HealthPlan::class && !$recipient->hasRole(['plan_admin', 'health_plan_portal', 'super_admin', 'director', 'commercial'])) {
                     continue;
-                } elseif ($entityType === Professional::class && !$recipient->hasRole('professional')) {
+                } elseif ($entityType === Professional::class && !$recipient->hasRole(['professional', 'provider_portal', 'super_admin', 'director', 'commercial'])) {
                     continue;
-                } elseif ($entityType === Clinic::class && !$recipient->hasRole('clinic_admin')) {
+                } elseif ($entityType === Clinic::class && !$recipient->hasRole(['clinic_admin', 'provider_portal', 'super_admin', 'director', 'commercial'])) {
                     continue;
                 }
                 
