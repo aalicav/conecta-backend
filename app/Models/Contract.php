@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Jobs\ContractExpirationAlert;
+use Carbon\Carbon;
 
 class Contract extends Model
 {
@@ -37,6 +39,12 @@ class Contract extends Model
         'autentique_data',
         'autentique_webhook_data',
         'signed_file_path',
+        'alert_days_before_expiration',
+        'last_alert_sent_at',
+        'alert_count',
+        'billing_frequency',
+        'payment_term_days',
+        'billing_rule_id',
     ];
 
     /**
@@ -52,6 +60,20 @@ class Contract extends Model
         'template_data' => 'array',
         'autentique_data' => 'array',
         'autentique_webhook_data' => 'array',
+        'last_alert_sent_at' => 'datetime',
+        'alert_count' => 'integer',
+    ];
+
+    /**
+     * Default values for attributes
+     *
+     * @var array
+     */
+    protected $attributes = [
+        'alert_days_before_expiration' => 90,
+        'alert_count' => 0,
+        'billing_frequency' => 'monthly',
+        'payment_term_days' => 30,
     ];
 
     /**
@@ -64,6 +86,18 @@ class Contract extends Model
             if (!$contract->contract_number) {
                 $contract->contract_number = 'CT-' . date('Y') . '-' . str_pad(static::max('id') + 1, 6, '0', STR_PAD_LEFT);
             }
+            
+            // Set default alert days if not specified
+            if (!$contract->alert_days_before_expiration) {
+                $contract->alert_days_before_expiration = 90;
+            }
+        });
+
+        static::created(function ($contract) {
+            // Schedule expiration alerts if end date is set
+            if ($contract->end_date) {
+                $contract->scheduleExpirationAlert();
+            }
         });
 
         static::updated(function ($contract) {
@@ -74,6 +108,11 @@ class Contract extends Model
                         'has_signed_contract' => true
                     ]);
                 }
+            }
+            
+            // Reschedule alerts if end date changed
+            if ($contract->isDirty('end_date') && $contract->end_date) {
+                $contract->scheduleExpirationAlert();
             }
         });
     }
@@ -220,6 +259,130 @@ class Contract extends Model
     public function approvals()
     {
         return $this->hasMany(ContractApproval::class);
+    }
+
+    /**
+     * Get the billing rule associated with this contract.
+     */
+    public function billingRule()
+    {
+        return $this->belongsTo(BillingRule::class);
+    }
+    
+    /**
+     * Schedule an expiration alert for this contract.
+     */
+    public function scheduleExpirationAlert()
+    {
+        // Only schedule if contract has an end date
+        if (!$this->end_date) {
+            return;
+        }
+        
+        // Calculate when to send the first alert (90 days before expiration by default)
+        $alertDate = Carbon::parse($this->end_date)->subDays($this->alert_days_before_expiration);
+        
+        // If the alert date is in the past, don't schedule it
+        if ($alertDate->isPast()) {
+            return;
+        }
+        
+        // Create a job to send the expiration alert
+        ContractExpirationAlert::dispatch($this)
+            ->delay($alertDate);
+            
+        return $this;
+    }
+    
+    /**
+     * Send an immediate expiration alert, regardless of the schedule.
+     */
+    public function sendExpirationAlert()
+    {
+        dispatch(new ContractExpirationAlert($this));
+        
+        $this->update([
+            'last_alert_sent_at' => now(),
+            'alert_count' => $this->alert_count + 1
+        ]);
+        
+        return $this;
+    }
+    
+    /**
+     * Send a recurring expiration alert.
+     */
+    public function sendRecurringExpirationAlert()
+    {
+        dispatch(new \App\Jobs\RecurringContractExpirationAlert($this));
+        
+        $this->update([
+            'last_alert_sent_at' => now(),
+            'alert_count' => $this->alert_count + 1
+        ]);
+        
+        return $this;
+    }
+    
+    /**
+     * Schedule the next recurring alert.
+     */
+    public function scheduleNextRecurringAlert($daysFromNow = 7)
+    {
+        $nextAlertDate = Carbon::now()->addDays($daysFromNow);
+        
+        \App\Jobs\RecurringContractExpirationAlert::dispatch($this)
+            ->delay($nextAlertDate);
+            
+        return $this;
+    }
+    
+    /**
+     * Get the appropriate recipients for contract alerts.
+     */
+    public function getAlertRecipients()
+    {
+        $recipients = collect();
+        
+        // Add contract creator
+        if ($this->created_by) {
+            $creator = User::find($this->created_by);
+            if ($creator) {
+                $recipients->push($creator);
+            }
+        }
+        
+        // Add users with commercial role
+        $commercialUsers = User::role('commercial')->get();
+        $recipients = $recipients->merge($commercialUsers);
+        
+        // Add contractable entity contacts
+        if ($this->contractable) {
+            $entity = $this->contractable;
+            
+            // Add entity admin users based on entity type
+            if (strpos($this->contractable_type, 'HealthPlan') !== false) {
+                $entityAdmins = User::role('plan_admin')
+                    ->where('entity_id', $this->contractable_id)
+                    ->get();
+                $recipients = $recipients->merge($entityAdmins);
+                
+                // Also add specific people from the health plan
+                if (method_exists($entity, 'getOperationalRepresentativeEmailAttribute') && $entity->operational_representative_email) {
+                    $opRep = User::where('email', $entity->operational_representative_email)->first();
+                    if ($opRep) {
+                        $recipients->push($opRep);
+                    }
+                }
+            } elseif (strpos($this->contractable_type, 'Clinic') !== false) {
+                $entityAdmins = User::role('clinic_admin')
+                    ->where('entity_id', $this->contractable_id)
+                    ->get();
+                $recipients = $recipients->merge($entityAdmins);
+            }
+        }
+        
+        return $recipients->unique('id');
     }
 
     /**

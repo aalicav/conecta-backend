@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Models\Document;
+use App\Models\Contract;
 use App\Notifications\ContractExpirationNotification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -16,16 +16,16 @@ class RecurringContractExpirationAlert implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    protected $document;
+    protected $contract;
     protected $maxAttempts = 3;
-    protected $attemptDelay = 7; // days
+    protected $attemptDelay = 7; // days between recurring alerts
 
     /**
      * Create a new job instance.
      */
-    public function __construct(Document $document)
+    public function __construct(Contract $contract)
     {
-        $this->document = $document;
+        $this->contract = $contract;
     }
 
     /**
@@ -34,73 +34,66 @@ class RecurringContractExpirationAlert implements ShouldQueue
     public function handle(): void
     {
         try {
-            // Check if document still exists and is not renewed
-            $document = Document::find($this->document->id);
-            if (!$document || $document->is_renewed) {
+            // Check if contract still exists and is not renewed
+            $contract = Contract::find($this->contract->id);
+            
+            if (!$contract) {
+                Log::error("Recurring contract expiration alert failed: Contract ID {$this->contract->id} not found");
                 return;
             }
 
-            // Get the health plan and its representatives
-            $healthPlan = $document->documentable;
-            if (!$healthPlan) {
-                Log::error('Health plan not found for document: ' . $document->id);
+            // Check if contract has been renewed (has a new version)
+            $hasRenewal = Contract::where('contractable_type', $contract->contractable_type)
+                ->where('contractable_id', $contract->contractable_id)
+                ->where('start_date', '>', $contract->end_date)
+                ->exists();
+
+            if ($hasRenewal) {
+                Log::info("Contract #{$contract->contract_number} has been renewed, skipping recurring alert");
                 return;
             }
 
-            // Get users to notify
-            $usersToNotify = collect();
-
-            // Add legal representative if exists
-            if ($healthPlan->legal_representative_email) {
-                $legalRep = \App\Models\User::where('email', $healthPlan->legal_representative_email)->first();
-                if ($legalRep) {
-                    $usersToNotify->push($legalRep);
+            // Check if contract is already well past expiration (more than 30 days)
+            if ($contract->end_date && $contract->end_date->addDays(30)->isPast()) {
+                // Only send max 3 alerts for severely expired contracts
+                if ($contract->alert_count >= 3) {
+                    Log::info("Contract #{$contract->contract_number} is severely expired and has reached max alerts, stopping alerts");
+                    return;
                 }
             }
 
-            // Add operational representative if exists
-            if ($healthPlan->operational_representative_email) {
-                $opRep = \App\Models\User::where('email', $healthPlan->operational_representative_email)->first();
-                if ($opRep) {
-                    $usersToNotify->push($opRep);
-                }
-            }
-
-            // Add health plan admin
-            $admin = $healthPlan->user;
-            if ($admin) {
-                $usersToNotify->push($admin);
-            }
-
-            // Add system admins
-            $systemAdmins = \App\Models\User::role('admin')->get();
-            $usersToNotify = $usersToNotify->merge($systemAdmins);
+            // Get all recipients for notification
+            $recipients = $contract->getAlertRecipients();
 
             // Send notifications
-            foreach ($usersToNotify as $user) {
-                $user->notify(new ContractExpirationNotification($document, true));
+            foreach ($recipients as $recipient) {
+                $recipient->notify(new ContractExpirationNotification($contract, true));
             }
+
+            // Update contract alert status
+            $contract->update([
+                'last_alert_sent_at' => now(),
+                'alert_count' => $contract->alert_count + 1
+            ]);
 
             // Schedule next alert if we haven't reached max attempts
-            $attempts = $document->expiration_alert_attempts ?? 0;
-            if ($attempts < $this->maxAttempts) {
-                $document->expiration_alert_attempts = $attempts + 1;
-                $document->save();
-
+            if ($contract->alert_count < $this->maxAttempts) {
                 // Schedule next alert
                 $nextAlertDate = Carbon::now()->addDays($this->attemptDelay);
-                $this->dispatch($document)->delay($nextAlertDate);
+                self::dispatch($contract)->delay($nextAlertDate);
             }
 
-            Log::info('Recurring contract expiration alert sent', [
-                'document_id' => $document->id,
-                'health_plan_id' => $healthPlan->id,
-                'notified_users_count' => $usersToNotify->count(),
-                'attempt' => $attempts + 1
+            Log::info("Recurring contract expiration alert sent for contract #{$contract->contract_number}", [
+                'contract_id' => $contract->id,
+                'alert_count' => $contract->alert_count,
+                'recipients_count' => $recipients->count()
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Error sending recurring contract expiration alert: ' . $e->getMessage());
+            Log::error("Error sending recurring contract expiration alert: " . $e->getMessage(), [
+                'contract_id' => $this->contract->id ?? null,
+                'exception' => $e
+            ]);
         }
     }
 } 

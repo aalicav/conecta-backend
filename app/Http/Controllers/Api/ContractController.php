@@ -39,7 +39,11 @@ class ContractController extends Controller
                 'contractable_type' => 'required|string|in:App\\Models\\HealthPlan,App\\Models\\Clinic,App\\Models\\Professional',
                 'start_date' => 'required|date',
                 'end_date' => 'nullable|date|after:start_date',
-                'template_data' => 'required|array'
+                'template_data' => 'required|array',
+                'billing_frequency' => 'nullable|string|in:daily,weekly,biweekly,monthly,quarterly',
+                'payment_term_days' => 'nullable|integer|min:1|max:120',
+                'alert_days_before_expiration' => 'nullable|integer|min:1|max:365',
+                'billing_rule_id' => 'nullable|exists:billing_rules,id'
             ]);
             
             DB::beginTransaction();
@@ -70,9 +74,13 @@ class ContractController extends Controller
                 'template_data' => $validated['template_data'],
                 'start_date' => $validated['start_date'],
                 'end_date' => $validated['end_date'],
-                'status' => 'pending',
+                'status' => 'draft',
                 'file_path' => $filePath,
-                'created_by' => Auth::id()
+                'created_by' => Auth::id(),
+                'billing_frequency' => $validated['billing_frequency'] ?? 'monthly',
+                'payment_term_days' => $validated['payment_term_days'] ?? 30,
+                'alert_days_before_expiration' => $validated['alert_days_before_expiration'] ?? 90,
+                'billing_rule_id' => $validated['billing_rule_id'] ?? null
             ]);
             
             DB::commit();

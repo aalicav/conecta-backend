@@ -497,40 +497,128 @@ class ContractApprovalController extends Controller
                         $entityAdmins = \App\Models\User::role('clinic_admin')
                             ->where('entity_id', $contract->contractable_id)
                             ->get();
-                    } elseif (strpos($contract->contractable_type, 'Professional') !== false) {
-                        $entityAdmins = \App\Models\User::where('professional_id', $contract->contractable_id)
-                            ->get();
                     }
                     
                     foreach ($entityAdmins as $admin) {
                         $this->notificationService->sendToUser($admin->id, [
-                            'title' => 'Contrato Aprovado e Pronto para Assinatura',
-                            'body' => "O contrato #{$contract->contract_number} foi aprovado e está pronto para assinatura. Por favor, verifique o documento e proceda com a assinatura.",
+                            'title' => 'Contrato Aprovado para Assinatura',
+                            'body' => "Um contrato envolvendo sua organização foi aprovado e será enviado para assinatura digital em breve.",
                             'action_link' => "/contracts/{$contract->id}",
                             'icon' => 'check-circle',
                         ]);
                     }
                 }
+                
+                // 5. Automatically prepare for electronic signature
+                // Get contractable entity details for signature
+                $signers = [];
+                
+                // Add INVICTA signer (typically director)
+                $signers[] = [
+                    'name' => Auth::user()->name,
+                    'email' => Auth::user()->email,
+                    'cpf' => Auth::user()->cpf ?? null,
+                ];
+                
+                // Add entity signer based on contractable type
+                if ($contract->contractable) {
+                    $contractable = $contract->contractable;
+                    
+                    // Determine the appropriate contact for signing
+                    if (method_exists($contractable, 'getLegalRepresentativeAttribute') && $contractable->legal_representative) {
+                        $signers[] = [
+                            'name' => $contractable->legal_representative,
+                            'email' => $contractable->legal_representative_email,
+                            'cpf' => $contractable->legal_representative_cpf ?? null,
+                        ];
+                    } elseif (property_exists($contractable, 'responsible_name') && $contractable->responsible_name) {
+                        $signers[] = [
+                            'name' => $contractable->responsible_name,
+                            'email' => $contractable->responsible_email,
+                            'cpf' => $contractable->responsible_cpf ?? null,
+                        ];
+                    } elseif (property_exists($contractable, 'contact_name') && $contractable->contact_name) {
+                        $signers[] = [
+                            'name' => $contractable->contact_name,
+                            'email' => $contractable->contact_email,
+                            'cpf' => null,
+                        ];
+                    }
+                }
+                
+                // Send for electronic signature if we have valid signers
+                if (count($signers) > 1) {
+                    try {
+                        // Get the AutentiqueService instance
+                        $autentiqueService = app(\App\Services\AutentiqueService::class);
+                        
+                        // Send contract for signature
+                        $result = $autentiqueService->sendContractForSignature($contract, $signers);
+                        
+                        if ($result['success']) {
+                            Log::info("Contract #{$contract->contract_number} automatically sent for electronic signature", [
+                                'contract_id' => $contract->id,
+                                'signers' => $signers
+                            ]);
+                        } else {
+                            Log::error("Failed to automatically send contract for signature", [
+                                'contract_id' => $contract->id,
+                                'error' => $result['message']
+                            ]);
+                            
+                            // Notify commercial team about the failure
+                            $this->notificationService->sendToRole('commercial', [
+                                'title' => 'Falha no Envio Automático para Assinatura',
+                                'body' => "O contrato #{$contract->contract_number} foi aprovado, mas não pôde ser enviado automaticamente para assinatura. Por favor, verifique e envie manualmente.",
+                                'action_link' => "/contracts/{$contract->id}",
+                                'icon' => 'alert-triangle',
+                                'priority' => 'high'
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        Log::error("Exception during automatic signature sending: " . $e->getMessage(), [
+                            'contract_id' => $contract->id,
+                            'exception' => $e
+                        ]);
+                    }
+                } else {
+                    // Notify commercial team that manual signature setup is needed
+                    $this->notificationService->sendToRole('commercial', [
+                        'title' => 'Configuração de Assinatura Necessária',
+                        'body' => "O contrato #{$contract->contract_number} foi aprovado, mas precisa de configuração manual para assinatura eletrônica.",
+                        'action_link' => "/contracts/{$contract->id}/signature",
+                        'icon' => 'edit-3',
+                        'priority' => 'high'
+                    ]);
+                }
+                
             } else {
-                // Reject - send back to commercial review
-                $contract->status = 'legal_review'; // Back to commercial review stage
+                // Reject - return to draft or previous step based on rejection reason
+                if ($request->has('rejection_target') && $request->input('rejection_target') === 'commercial') {
+                    // Send back to commercial review
+                    $contract->status = 'legal_review';
+                    
+                    // Send notification to commercial team
+                    $this->notificationService->sendToRole('commercial', [
+                        'title' => 'Contrato Devolvido pela Direção',
+                        'body' => "O contrato #{$contract->contract_number} foi devolvido pela Direção para revisão comercial.",
+                        'action_link' => "/contracts/{$contract->id}/approval",
+                        'icon' => 'arrow-left-circle',
+                    ]);
+                } else {
+                    // Default: return to draft
+                    $contract->status = 'draft';
+                    
+                    // Send notification to creator
+                    $this->notificationService->sendToUser($contract->creator_id, [
+                        'title' => 'Contrato Rejeitado pela Direção',
+                        'body' => "O contrato #{$contract->contract_number} foi rejeitado pela Direção e precisa de revisão completa.",
+                        'action_link' => "/contracts/{$contract->id}/edit",
+                        'icon' => 'x-circle',
+                    ]);
+                }
+                
                 $contract->save();
-                
-                // Log the rejection
-                Log::info("Contract #{$contract->contract_number} rejected by director", [
-                    'contract_id' => $contract->id,
-                    'director_id' => Auth::id(),
-                    'director_name' => Auth::user()->name,
-                    'rejection_reason' => $validated['notes']
-                ]);
-                
-                // Send notification to commercial team
-                $this->notificationService->sendToRole('commercial', [
-                    'title' => 'Contrato Rejeitado pela Direção',
-                    'body' => "O contrato #{$contract->contract_number} foi rejeitado pelo Dr. Ítalo e precisa de revisão antes da resubmissão.",
-                    'action_link' => "/contracts/{$contract->id}/approval",
-                    'icon' => 'alert-circle',
-                ]);
             }
             
             DB::commit();

@@ -141,7 +141,27 @@ class ExtemporaneousNegotiationController extends Controller
                 'body' => "Foi solicitada uma negociação extemporânea para o contrato #{$contract->contract_number}.",
                 'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
                 'icon' => 'alert-circle',
+                'priority' => 'high'
             ]);
+            
+            // Find specific user "Adla" if they exist (as mentioned in requirements)
+            $adla = \App\Models\User::where('name', 'like', '%adla%')
+                ->orWhere('email', 'like', '%adla%')
+                ->first();
+                
+            if ($adla) {
+                $this->notificationService->sendToUser($adla->id, [
+                    'title' => 'URGENTE: Nova negociação extemporânea',
+                    'body' => "Adla, foi solicitada uma negociação extemporânea para o contrato #{$contract->contract_number} que requer seu acompanhamento imediato.",
+                    'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
+                    'icon' => 'alert-circle',
+                    'priority' => 'high'
+                ]);
+            }
+            
+            // Set a flag to indicate this negotiation requires an addendum
+            $negotiation->is_requiring_addendum = true;
+            $negotiation->save();
             
             DB::commit();
             
