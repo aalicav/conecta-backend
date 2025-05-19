@@ -35,6 +35,13 @@ class NegotiationController extends Controller
     const STATUS_CANCELLED = 'cancelled';
     const STATUS_PARTIALLY_APPROVED = 'partially_approved';
 
+    // Novos status para aprovação externa
+    const STATUS_PENDING_EXTERNAL_APPROVAL = 'pending_external_approval';
+    const STATUS_EXTERNALLY_APPROVED = 'externally_approved';
+    const STATUS_EXTERNALLY_REJECTED = 'externally_rejected';
+    const STATUS_PENDING_REVIEW_AFTER_EXTERNAL = 'pending_review_after_external';
+    const STATUS_EXTERNAL_REVIEW_REQUESTED = 'external_review_requested';
+
     /**
      * Create a new controller instance.
      */
@@ -603,8 +610,8 @@ class NegotiationController extends Controller
 
             // If approved internally, submit to entity
             $negotiation->status = self::STATUS_SUBMITTED;
-            $negotiation->save();
-            
+                $negotiation->save();
+                
             // Notify entity representatives about the negotiation
             $this->notificationService->notifyNegotiationSubmitted($negotiation);
 
