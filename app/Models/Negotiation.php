@@ -53,13 +53,15 @@ class Negotiation extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'start_date' => 'datetime',
-        'end_date' => 'datetime',
+        'previous_cycles_data' => 'array',
+        'start_date' => 'date',
+        'end_date' => 'date',
         'rejected_at' => 'datetime',
         'completed_at' => 'datetime',
         'approved_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'forked_at' => 'datetime',
     ];
 
     /**
@@ -154,5 +156,29 @@ class Negotiation extends Model
     public function approvalHistory()
     {
         return $this->hasMany(NegotiationApprovalHistory::class);
+    }
+
+    /**
+     * Relacionamento com o histórico de status.
+     */
+    public function statusHistory()
+    {
+        return $this->hasMany(NegotiationStatusHistory::class);
+    }
+
+    /**
+     * Obter a negociação pai (quando for uma bifurcação).
+     */
+    public function parentNegotiation()
+    {
+        return $this->belongsTo(Negotiation::class, 'parent_negotiation_id');
+    }
+
+    /**
+     * Obter as negociações bifurcadas desta negociação.
+     */
+    public function forkedNegotiations()
+    {
+        return $this->hasMany(Negotiation::class, 'parent_negotiation_id');
     }
 } 

@@ -81,6 +81,92 @@ The system includes a configurable automatic scheduling engine that considers:
 
 Administrators can configure scheduling priority, advance notice requirements, and other parameters.
 
+## Novas funcionalidades do Fluxo de Negociação
+
+### Ciclos de Renegociação
+Esta funcionalidade permite múltiplos ciclos de negociação, limitando o número máximo de tentativas para evitar negociações intermináveis.
+
+**Endpoints**:
+- `POST /api/negotiations/{negotiation}/cycles` - Inicia um novo ciclo de negociação
+
+**Parâmetros**:
+- Não requer parâmetros adicionais
+
+**Restrições**:
+- Apenas negociações com status 'rejected' ou 'partially_approved' podem iniciar um novo ciclo
+- Existe um limite máximo de ciclos (configurado como 3 por padrão)
+
+### Rollback no Fluxo
+Permite reverter o status de uma negociação para um estado anterior em situações específicas.
+
+**Endpoints**:
+- `POST /api/negotiations/{negotiation}/rollback` - Reverte o status da negociação
+
+**Parâmetros**:
+- `target_status` - Status alvo para o rollback (draft, submitted, pending)
+- `reason` - Motivo da reversão
+
+**Restrições**:
+- Apenas certos rollbacks são permitidos:
+  - De 'pending' para 'submitted' ou 'draft'
+  - De 'approved' para 'pending' ou 'submitted'
+  - De 'partially_approved' para 'submitted'
+  
+### Bifurcação de Fluxo
+Permite dividir uma negociação em múltiplas sub-negociações quando há grandes divergências.
+
+**Endpoints**:
+- `POST /api/negotiations/{negotiation}/fork` - Bifurca a negociação em múltiplas
+
+**Parâmetros**:
+- `item_groups` - Array de grupos de itens para criar novas negociações
+  - `items` - IDs dos itens para incluir no grupo
+  - `title` - Título da nova negociação
+  - `notes` - Notas adicionais (opcional)
+
+**Restrições**:
+- Mínimo de 2 grupos para bifurcar
+- Apenas negociações com status 'submitted' ou 'partially_approved' podem ser bifurcadas
+
+## Como usar
+
+Para implementar estas funcionalidades no frontend:
+
+1. **Ciclos de Negociação**:
+   - Adicione um botão "Iniciar Novo Ciclo" para negociações rejeitadas ou parcialmente aprovadas
+   - Exiba o contador de ciclos atualmente utilizado e o máximo permitido
+
+2. **Rollback**:
+   - Adicione uma opção de menu "Reverter Status" em negociações pendentes ou aprovadas
+   - Solicite o motivo da reversão através de um modal
+
+3. **Bifurcação**:
+   - Adicione um botão "Dividir Negociação" em negociações em andamento
+   - Implemente uma interface para agrupar itens em diferentes grupos
+
+## Modelos de Banco de Dados
+
+Foram adicionados novos campos e tabelas:
+
+1. **Na tabela `negotiations`**:
+   - `negotiation_cycle` - Ciclo atual da negociação
+   - `max_cycles_allowed` - Número máximo de ciclos permitidos
+   - `previous_cycles_data` - Histórico dos ciclos anteriores (JSON)
+   - `is_fork` - Indica se é uma bifurcação
+   - `parent_negotiation_id` - ID da negociação original (quando bifurcada)
+   - `forked_at` - Data da bifurcação
+   - `fork_count` - Número de bifurcações
+
+2. **Nova tabela `negotiation_status_history`**:
+   - Registra mudanças de status, incluindo o motivo da mudança
+
+## Notificações
+
+Novas notificações foram implementadas para:
+- Início de novo ciclo de negociação
+- Rollback de status
+- Bifurcação de negociação
+
 ## Installation
 
 ```bash

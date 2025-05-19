@@ -1481,4 +1481,172 @@ class NotificationService
             ]);
         }
     }
+
+    /**
+     * Notificar sobre um novo ciclo de negociação
+     *
+     * @param Negotiation $negotiation
+     */
+    public function notifyNewNegotiationCycle($negotiation)
+    {
+        try {
+            $entity = $negotiation->negotiable;
+            $creatorUser = $negotiation->creator;
+            
+            // Notificar entidade sobre o novo ciclo
+            if ($entity) {
+                $this->createNotification(
+                    $entity,
+                    'Nova fase de negociação iniciada',
+                    "Um novo ciclo (#" . $negotiation->negotiation_cycle . ") da negociação " . $negotiation->title . " foi iniciado.",
+                    'negotiation_cycle_started',
+                    [
+                        'negotiation_id' => $negotiation->id,
+                        'cycle' => $negotiation->negotiation_cycle
+                    ]
+                );
+            }
+            
+            // Notificar o criador da negociação
+            if ($creatorUser) {
+                $this->createNotification(
+                    $creatorUser,
+                    'Novo ciclo iniciado',
+                    "Você iniciou um novo ciclo (#" . $negotiation->negotiation_cycle . ") para a negociação " . $negotiation->title,
+                    'negotiation_cycle_started',
+                    [
+                        'negotiation_id' => $negotiation->id,
+                        'cycle' => $negotiation->negotiation_cycle
+                    ]
+                );
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar notificação de novo ciclo: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Notificar sobre um rollback de status
+     *
+     * @param Negotiation $negotiation
+     * @param string $fromStatus
+     * @param string $toStatus
+     * @param string $reason
+     */
+    public function notifyStatusRollback($negotiation, $fromStatus, $toStatus, $reason)
+    {
+        try {
+            $entity = $negotiation->negotiable;
+            $creatorUser = $negotiation->creator;
+            
+            // Obter nomes amigáveis para os status
+            $fromStatusLabel = $this->getStatusLabel($fromStatus);
+            $toStatusLabel = $this->getStatusLabel($toStatus);
+            
+            // Notificar entidade sobre o rollback
+            if ($entity) {
+                $this->createNotification(
+                    $entity,
+                    'Status da negociação revertido',
+                    "A negociação " . $negotiation->title . " foi revertida de " . $fromStatusLabel . " para " . $toStatusLabel . ".",
+                    'negotiation_rollback',
+                    [
+                        'negotiation_id' => $negotiation->id,
+                        'from_status' => $fromStatus,
+                        'to_status' => $toStatus,
+                        'reason' => $reason
+                    ]
+                );
+            }
+            
+            // Notificar o criador da negociação
+            if ($creatorUser) {
+                $this->createNotification(
+                    $creatorUser,
+                    'Status da negociação revertido',
+                    "A negociação " . $negotiation->title . " foi revertida de " . $fromStatusLabel . " para " . $toStatusLabel . ".",
+                    'negotiation_rollback',
+                    [
+                        'negotiation_id' => $negotiation->id,
+                        'from_status' => $fromStatus,
+                        'to_status' => $toStatus,
+                        'reason' => $reason
+                    ]
+                );
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar notificação de rollback: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Notificar sobre bifurcação de negociação
+     *
+     * @param Negotiation $originalNegotiation
+     * @param array $forkedNegotiations
+     */
+    public function notifyNegotiationFork($originalNegotiation, $forkedNegotiations)
+    {
+        try {
+            $entity = $originalNegotiation->negotiable;
+            $creatorUser = $originalNegotiation->creator;
+            
+            // Notificar entidade sobre a bifurcação
+            if ($entity) {
+                $this->createNotification(
+                    $entity,
+                    'Negociação dividida em sub-negociações',
+                    "A negociação " . $originalNegotiation->title . " foi dividida em " . count($forkedNegotiations) . " sub-negociações.",
+                    'negotiation_forked',
+                    [
+                        'original_negotiation_id' => $originalNegotiation->id,
+                        'forked_negotiation_ids' => collect($forkedNegotiations)->pluck('id')->toArray()
+                    ]
+                );
+            }
+            
+            // Notificar o criador da negociação
+            if ($creatorUser) {
+                $this->createNotification(
+                    $creatorUser,
+                    'Negociação dividida',
+                    "A negociação " . $originalNegotiation->title . " foi dividida em " . count($forkedNegotiations) . " sub-negociações.",
+                    'negotiation_forked',
+                    [
+                        'original_negotiation_id' => $originalNegotiation->id,
+                        'forked_negotiation_ids' => collect($forkedNegotiations)->pluck('id')->toArray()
+                    ]
+                );
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar notificação de bifurcação: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Obter label amigável para um status
+     *
+     * @param string $status
+     * @return string
+     */
+    private function getStatusLabel($status)
+    {
+        $statusLabels = [
+            'draft' => 'Rascunho',
+            'submitted' => 'Enviada',
+            'pending' => 'Pendente',
+            'approved' => 'Aprovada Internamente',
+            'partially_approved' => 'Parcialmente Aprovada',
+            'rejected' => 'Rejeitada',
+            'complete' => 'Concluída',
+            'cancelled' => 'Cancelada',
+            'forked' => 'Bifurcada',
+            'expired' => 'Expirada'
+        ];
+        
+        return $statusLabels[$status] ?? $status;
+    }
 } 

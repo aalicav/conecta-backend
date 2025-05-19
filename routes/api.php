@@ -279,10 +279,24 @@ Route::prefix('negotiations')->group(function () {
     Route::post('/{negotiation}/cancel', [NegotiationController::class, 'cancel']);
     Route::post('/{negotiation}/generate-contract', [NegotiationController::class, 'generateContract']);
     Route::post('/{negotiation}/resend-notifications', [NegotiationController::class, 'resendNotifications']);
+    Route::post('/{negotiation}/batch-counter', [NegotiationController::class, 'batchCounterOffer']);
+    Route::get('/announcements', [NegotiationController::class, 'getAnnouncements']);
     
     // Items routes
     Route::post('/items/{item}/respond', [NegotiationController::class, 'respondToItem']);
     Route::post('/items/{item}/counter', [NegotiationController::class, 'counterItem']);
+
+    // Ciclos de renegociação
+    Route::post('/{negotiation}/cycles', [NegotiationController::class, 'startNewCycle'])
+        ->middleware(['auth:sanctum']);
+
+    // Rollback no fluxo
+    Route::post('/{negotiation}/rollback', [NegotiationController::class, 'rollbackStatus'])
+        ->middleware(['auth:sanctum']);
+
+    // Bifurcação de fluxo
+    Route::post('/{negotiation}/fork', [NegotiationController::class, 'forkNegotiation'])
+        ->middleware(['auth:sanctum']);
 });
 
 // WhatsApp notifications routes

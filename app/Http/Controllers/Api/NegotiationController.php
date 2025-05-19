@@ -37,6 +37,9 @@ class NegotiationController extends Controller
     const STATUS_PARTIALLY_APPROVED = 'partially_approved';
     const STATUS_REJECTED = 'rejected';
     const STATUS_CANCELLED = 'cancelled';
+    // New statuses for enhanced negotiation flow
+    const STATUS_FORKED = 'forked'; // Negotiation was split into multiple sub-negotiations
+    const STATUS_EXPIRED = 'expired'; // Negotiation expired due to time limits
 
     /**
      * Create a new controller instance.
@@ -507,9 +510,18 @@ class NegotiationController extends Controller
         try {
             DB::beginTransaction();
             
+            // Store the original proposed value for reference
+            $original_value = $item->proposed_value;
+            
+            // If approved, always set an approved value (default to proposed value if not provided)
+            $approved_value = null;
+            if ($validated['status'] === 'approved') {
+                $approved_value = $validated['approved_value'] ?? $original_value;
+            }
+            
             $item->update([
                 'status' => $validated['status'],
-                'approved_value' => $validated['status'] === 'approved' ? $validated['approved_value'] : null,
+                'approved_value' => $approved_value,
                 'notes' => $validated['notes'] ?? $item->notes,
                 'responded_at' => now()
             ]);
@@ -530,8 +542,20 @@ class NegotiationController extends Controller
                         $negotiation->status = self::STATUS_COMPLETE;
                         $negotiation->completed_at = now();
                     } else {
-                        // Ready for internal approval
-                        $negotiation->status = self::STATUS_SUBMITTED;
+                        // Ready for internal approval - mudança de STATUS_SUBMITTED para STATUS_PENDING
+                        $negotiation->status = self::STATUS_PENDING;
+                        $negotiation->current_approval_level = self::APPROVAL_LEVEL;
+                        
+                        // Criar um registro no histórico de aprovação
+                        $negotiation->approvalHistory()->create([
+                            'level' => self::APPROVAL_LEVEL,
+                            'status' => 'pending',
+                            'user_id' => Auth::id(),
+                            'notes' => 'Enviado automaticamente para aprovação após resposta a todos os itens'
+                        ]);
+                        
+                        // Notificar sobre a necessidade de aprovação
+                        $this->notificationService->notifyApprovalRequired($negotiation, self::APPROVAL_LEVEL);
                     }
                 } 
                 // If all items were rejected
@@ -585,7 +609,7 @@ class NegotiationController extends Controller
     }
 
     /**
-     * Submit a counter offer for a negotiation item (entity).
+     * Submit a proposal for a negotiation item (entity).
      *
      * @param Request $request
      * @param NegotiationItem $item
@@ -601,25 +625,163 @@ class NegotiationController extends Controller
         $negotiation = $item->negotiation;
         
         if ($negotiation->status !== 'submitted') {
-            return response()->json(['message' => 'Can only counter items in a submitted negotiation'], 403);
+            return response()->json(['message' => 'Can only propose values for items in a submitted negotiation'], 403);
         }
         
         try {
+            DB::beginTransaction();
+            
+            // Store original value for comparison
+            $original_value = $item->proposed_value;
+            
             $item->update([
                 'status' => 'counter_offered',
                 'approved_value' => $validated['counter_value'],
                 'notes' => $validated['notes'] ?? $item->notes,
             ]);
             
-            // Notificar o criador sobre a contra-oferta
+            // Verificar se todos os itens foram respondidos
+            $allResponded = $negotiation->items()->whereNotIn('status', ['pending'])->count() === $negotiation->items()->count();
+            
+            if ($allResponded) {
+                // Verificar se todos os itens estão com contra-proposta
+                $counterOfferedCount = $negotiation->items()->where('status', 'counter_offered')->count();
+                $totalItems = $negotiation->items()->count();
+                
+                // Se todos os itens tiverem contra-proposta, atualizar para STATUS_PENDING
+                if ($counterOfferedCount === $totalItems) {
+                    $negotiation->status = self::STATUS_PENDING;
+                    $negotiation->current_approval_level = self::APPROVAL_LEVEL;
+                    $negotiation->save();
+                    
+                    // Criar um registro no histórico de aprovação
+                    $negotiation->approvalHistory()->create([
+                        'level' => self::APPROVAL_LEVEL,
+                        'status' => 'pending',
+                        'user_id' => Auth::id(),
+                        'notes' => 'Enviado automaticamente para aprovação após contraproposta para todos os itens'
+                    ]);
+                    
+                    // Notificar sobre a necessidade de aprovação
+                    $this->notificationService->notifyApprovalRequired($negotiation, self::APPROVAL_LEVEL);
+                }
+            }
+            
+            // Notificar o criador sobre a proposta
             $this->notificationService->notifyCounterOffer($item);
             
+            DB::commit();
+            
             return response()->json([
-                'message' => 'Counter offer submitted successfully',
+                'message' => 'Proposal submitted successfully',
                 'data' => new NegotiationItemResource($item->fresh(['tuss'])),
+                'negotiation' => $allResponded ? new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])) : null
             ]);
         } catch (\Exception $e) {
-            return response()->json(['message' => 'Failed to submit counter offer', 'error' => $e->getMessage()], 500);
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to submit proposal', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Submit batch counter offers for multiple items at once.
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function batchCounterOffer(Request $request, Negotiation $negotiation)
+    {
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|integer|exists:negotiation_items,id',
+            'items.*.counter_value' => 'required|numeric|min:0',
+            'items.*.notes' => 'nullable|string',
+        ]);
+        
+        if ($negotiation->status !== 'submitted') {
+            return response()->json(['message' => 'Can only counter items in a submitted negotiation'], 403);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            $updatedItems = [];
+            
+            foreach ($validated['items'] as $itemData) {
+                $item = NegotiationItem::find($itemData['item_id']);
+                
+                // Check if item belongs to this negotiation
+                if (!$item || $item->negotiation_id !== $negotiation->id) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => 'One or more items do not belong to this negotiation',
+                        'item_id' => $itemData['item_id']
+                    ], 400);
+                }
+                
+                // Check if item is pending
+                if ($item->status !== 'pending') {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => 'One or more items are not in pending status',
+                        'item_id' => $itemData['item_id'],
+                        'status' => $item->status
+                    ], 400);
+                }
+                
+                $item->update([
+                    'status' => 'counter_offered',
+                    'approved_value' => $itemData['counter_value'],
+                    'notes' => $itemData['notes'] ?? $item->notes,
+                ]);
+                
+                // Notify about the counter offer
+                $this->notificationService->notifyCounterOffer($item);
+                
+                $updatedItems[] = new NegotiationItemResource($item->fresh(['tuss']));
+            }
+            
+            // Verificar se todos os itens foram respondidos após as atualizações em lote
+            $allResponded = $negotiation->items()->whereNotIn('status', ['pending'])->count() === $negotiation->items()->count();
+            
+            // Se todos os itens tiverem sido respondidos, verificar se devemos alterar o status
+            if ($allResponded) {
+                // Verificar se todos os itens têm contraproposta
+                $counterOfferedCount = $negotiation->items()->where('status', 'counter_offered')->count();
+                $totalItems = $negotiation->items()->count();
+                
+                // Se todos os itens tiverem contraproposta, mudar para aprovação interna
+                if ($counterOfferedCount === $totalItems) {
+                    $negotiation->status = self::STATUS_PENDING;
+                    $negotiation->current_approval_level = self::APPROVAL_LEVEL;
+                    $negotiation->save();
+                    
+                    // Criar um registro no histórico de aprovação
+                    $negotiation->approvalHistory()->create([
+                        'level' => self::APPROVAL_LEVEL,
+                        'status' => 'pending',
+                        'user_id' => Auth::id(),
+                        'notes' => 'Enviado automaticamente para aprovação após contrapropostas em lote'
+                    ]);
+                    
+                    // Notificar sobre a necessidade de aprovação
+                    $this->notificationService->notifyApprovalRequired($negotiation, self::APPROVAL_LEVEL);
+                }
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Batch counter offers submitted successfully',
+                'data' => [
+                    'items' => $updatedItems,
+                    'negotiation' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss']))
+                ]
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to submit batch counter offers', 'error' => $e->getMessage()], 500);
         }
     }
 
@@ -832,6 +994,281 @@ class NegotiationController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['message' => 'Failed to mark negotiation as partially complete', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Get announcements related to negotiations.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getAnnouncements()
+    {
+        try {
+            // In a production environment, these would likely come from a database
+            $announcements = [
+                [
+                    'id' => 'negotiation-improvements-2023',
+                    'title' => 'Melhorias no fluxo de negociação',
+                    'description' => 'Aprimoramos o processo de negociação com aprovações internas antes do envio para a entidade. Agora as aprovações estão mais transparentes e organizadas.',
+                    'type' => 'update',
+                    'date' => '2023-11-05',
+                    'dismissible' => true
+                ]
+            ];
+            
+            return response()->json([
+                'data' => $announcements
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get negotiation announcements: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to get announcements', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Iniciar um novo ciclo de negociação a partir de uma negociação existente
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function startNewCycle(Request $request, Negotiation $negotiation)
+    {
+        // Verificar se a negociação está em um estado que permite novo ciclo
+        if (!in_array($negotiation->status, [self::STATUS_REJECTED, self::STATUS_PARTIALLY_APPROVED])) {
+            return response()->json([
+                'message' => 'Apenas negociações rejeitadas ou parcialmente aprovadas podem iniciar um novo ciclo',
+            ], 403);
+        }
+        
+        // Verificar se atingiu o limite máximo de ciclos
+        if ($negotiation->negotiation_cycle >= $negotiation->max_cycles_allowed) {
+            return response()->json([
+                'message' => 'Esta negociação atingiu o limite máximo de ciclos permitidos',
+            ], 403);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Salvar dados do ciclo atual
+            $currentCycleData = [
+                'cycle_number' => $negotiation->negotiation_cycle,
+                'status' => $negotiation->status,
+                'items' => $negotiation->items()->get()->toArray(),
+                'ended_at' => now()->toDateTimeString()
+            ];
+            
+            // Atualizar histórico de ciclos
+            $previousCycles = $negotiation->previous_cycles_data ?? [];
+            $previousCycles[] = $currentCycleData;
+            
+            // Reset dos itens para novo ciclo
+            foreach ($negotiation->items as $item) {
+                // Manter o valor original proposto, mas reset do status
+                $item->update([
+                    'status' => 'pending',
+                    'approved_value' => null,
+                    'responded_at' => null,
+                    'notes' => null
+                ]);
+            }
+            
+            // Atualizar a negociação para novo ciclo
+            $negotiation->update([
+                'status' => self::STATUS_SUBMITTED, // Volta para submitted para iniciar novo ciclo
+                'negotiation_cycle' => $negotiation->negotiation_cycle + 1,
+                'previous_cycles_data' => $previousCycles,
+                'current_approval_level' => null,
+                'approved_at' => null,
+            ]);
+            
+            // Notificar entidade sobre o novo ciclo
+            $this->notificationService->notifyNewNegotiationCycle($negotiation);
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Novo ciclo de negociação iniciado com sucesso',
+                'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
+                'cycle' => $negotiation->negotiation_cycle
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Falha ao iniciar novo ciclo de negociação', 
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Reverter status da negociação para um estado anterior
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function rollbackStatus(Request $request, Negotiation $negotiation)
+    {
+        $validated = $request->validate([
+            'target_status' => 'required|in:draft,submitted,pending',
+            'reason' => 'required|string|max:500'
+        ]);
+        
+        $currentStatus = $negotiation->status;
+        $targetStatus = $validated['target_status'];
+        
+        // Validar se o rollback é permitido
+        $allowedRollbacks = [
+            self::STATUS_PENDING => [self::STATUS_SUBMITTED, self::STATUS_DRAFT],
+            self::STATUS_APPROVED => [self::STATUS_PENDING, self::STATUS_SUBMITTED],
+            self::STATUS_PARTIALLY_APPROVED => [self::STATUS_SUBMITTED],
+            // Não permitir rollback de status finais (complete, rejected, cancelled)
+        ];
+        
+        if (!isset($allowedRollbacks[$currentStatus]) || 
+            !in_array($targetStatus, $allowedRollbacks[$currentStatus])) {
+            return response()->json([
+                'message' => 'Rollback não permitido para este status',
+            ], 403);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Registrar o rollback no histórico
+            $negotiation->statusHistory()->create([
+                'from_status' => $currentStatus,
+                'to_status' => $targetStatus,
+                'user_id' => Auth::id(),
+                'reason' => $validated['reason'],
+                'created_at' => now()
+            ]);
+            
+            // Atualizar o status
+            $negotiation->status = $targetStatus;
+            
+            // Resetar campos relacionados ao status, se necessário
+            if ($targetStatus === self::STATUS_SUBMITTED) {
+                $negotiation->current_approval_level = null;
+            }
+            
+            $negotiation->save();
+            
+            // Notificar as partes sobre o rollback
+            $this->notificationService->notifyStatusRollback($negotiation, $currentStatus, $targetStatus, $validated['reason']);
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Status da negociação revertido com sucesso',
+                'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Falha ao reverter status da negociação', 
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Bifurcar uma negociação em múltiplas baseado nos itens selecionados
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function forkNegotiation(Request $request, Negotiation $negotiation)
+    {
+        $validated = $request->validate([
+            'item_groups' => 'required|array|min:2', // Pelo menos 2 grupos para bifurcar
+            'item_groups.*.items' => 'required|array|min:1',
+            'item_groups.*.items.*' => 'required|integer|exists:negotiation_items,id',
+            'item_groups.*.title' => 'required|string|max:255',
+            'item_groups.*.notes' => 'nullable|string'
+        ]);
+        
+        // Verificar se o status permite bifurcação
+        if (!in_array($negotiation->status, [self::STATUS_SUBMITTED, self::STATUS_PARTIALLY_APPROVED])) {
+            return response()->json([
+                'message' => 'Apenas negociações em andamento podem ser bifurcadas',
+            ], 403);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Armazenar novas negociações criadas
+            $forkedNegotiations = [];
+            
+            // Para cada grupo, criar uma nova negociação
+            foreach ($validated['item_groups'] as $group) {
+                $itemIds = $group['items'];
+                
+                // Verificar se os itens pertencem à negociação original
+                $items = $negotiation->items()->whereIn('id', $itemIds)->get();
+                
+                if ($items->count() !== count($itemIds)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => 'Um ou mais itens não pertencem a esta negociação',
+                    ], 400);
+                }
+                
+                // Criar nova negociação
+                $forkedNegotiation = new Negotiation([
+                    'negotiable_type' => $negotiation->negotiable_type,
+                    'negotiable_id' => $negotiation->negotiable_id,
+                    'creator_id' => Auth::id(),
+                    'title' => $group['title'],
+                    'description' => "Bifurcado da negociação #{$negotiation->id}: {$negotiation->title}",
+                    'status' => self::STATUS_SUBMITTED,
+                    'start_date' => $negotiation->start_date,
+                    'end_date' => $negotiation->end_date,
+                    'notes' => $group['notes'] ?? $negotiation->notes,
+                    'parent_negotiation_id' => $negotiation->id,
+                    'is_fork' => true,
+                    'negotiation_cycle' => 1, // Começa um novo ciclo
+                ]);
+                
+                $forkedNegotiation->save();
+                
+                // Clonar os itens para a nova negociação
+                foreach ($items as $item) {
+                    $newItem = $item->replicate();
+                    $newItem->negotiation_id = $forkedNegotiation->id;
+                    $newItem->save();
+                }
+                
+                $forkedNegotiations[] = $forkedNegotiation;
+            }
+            
+            // Atualizar a negociação original
+            $negotiation->status = self::STATUS_FORKED;
+            $negotiation->forked_at = now();
+            $negotiation->fork_count = count($validated['item_groups']);
+            $negotiation->save();
+            
+            // Notificar sobre a bifurcação
+            $this->notificationService->notifyNegotiationFork($negotiation, $forkedNegotiations);
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Negociação bifurcada com sucesso',
+                'original_negotiation' => new NegotiationResource($negotiation->fresh()),
+                'forked_negotiations' => NegotiationResource::collection(collect($forkedNegotiations)),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Falha ao bifurcar negociação', 
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 } 

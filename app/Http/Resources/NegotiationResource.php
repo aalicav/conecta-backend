@@ -41,6 +41,16 @@ class NegotiationResource extends JsonResource
             'created_at' => $this->created_at->format('Y-m-d H:i:s'),
             'updated_at' => $this->updated_at->format('Y-m-d H:i:s'),
             
+            // Campos de controle de ciclos
+            'negotiation_cycle' => $this->negotiation_cycle,
+            'max_cycles_allowed' => $this->max_cycles_allowed,
+            
+            // Campos de bifurcação
+            'is_fork' => $this->is_fork,
+            'forked_at' => $this->forked_at ? $this->forked_at->format('Y-m-d H:i:s') : null,
+            'fork_count' => $this->fork_count,
+            'parent_negotiation_id' => $this->parent_negotiation_id,
+            
             // Relations
             'negotiable_type' => $this->negotiable_type,
             'negotiable_id' => $this->negotiable_id,
@@ -48,6 +58,20 @@ class NegotiationResource extends JsonResource
             'health_plan' => new HealthPlanResource($this->whenLoaded('healthPlan')), // For backward compatibility
             'creator' => new UserResource($this->whenLoaded('creator')),
             'items' => NegotiationItemResource::collection($this->whenLoaded('items')),
+            'parent_negotiation' => new NegotiationResource($this->whenLoaded('parentNegotiation')),
+            'forked_negotiations' => NegotiationResource::collection($this->whenLoaded('forkedNegotiations')),
+            'status_history' => $this->whenLoaded('statusHistory', function() {
+                return $this->statusHistory->map(function($history) {
+                    return [
+                        'id' => $history->id,
+                        'from_status' => $history->from_status,
+                        'to_status' => $history->to_status,
+                        'reason' => $history->reason,
+                        'user' => new UserResource($history->user),
+                        'created_at' => $history->created_at->format('Y-m-d H:i:s')
+                    ];
+                });
+            }),
         ];
     }
 } 
