@@ -13,10 +13,8 @@ return new class extends Migration
     public function up(): void
     {
         DB::statement("ALTER TABLE negotiations MODIFY COLUMN status ENUM(
-            'draft', 'submitted', 'pending', 'complete', 
-            'approved', 'partially_approved', 'rejected', 'cancelled',
-            'pending_external_approval', 'externally_approved', 'externally_rejected',
-            'pending_review_after_external', 'external_review_requested'
+            'draft', 'submitted', 'pending', 'complete', 'partially_complete',
+            'approved', 'partially_approved', 'rejected', 'cancelled'
         ) DEFAULT 'draft'");
     }
 

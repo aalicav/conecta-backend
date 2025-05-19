@@ -266,27 +266,23 @@ Route::middleware(['auth:sanctum'])->prefix('contract-templates')->group(functio
 });
 
 // Negotiations
-Route::middleware(['auth:sanctum'])->group(function () {
-    Route::get('/negotiations', [NegotiationController::class, 'index']);
-    Route::post('/negotiations', [NegotiationController::class, 'store'])->middleware('permission:create negotiations');
-    Route::get('/negotiations/{negotiation}', [NegotiationController::class, 'show']);
-    Route::put('/negotiations/{negotiation}', [NegotiationController::class, 'update'])->middleware('permission:edit negotiations');
-    Route::post('/negotiations/{negotiation}/submit', [NegotiationController::class, 'submit'])->middleware('permission:create negotiations');
-    Route::post('/negotiations/{negotiation}/cancel', [NegotiationController::class, 'cancel'])->middleware('permission:manage negotiations');
-    Route::post('/negotiations/{negotiation}/generate-contract', [NegotiationController::class, 'generateContract'])->middleware('permission:manage contracts');
+Route::prefix('negotiations')->group(function () {
+    Route::get('/', [NegotiationController::class, 'index']);
+    Route::post('/', [NegotiationController::class, 'store']);
+    Route::get('/{negotiation}', [NegotiationController::class, 'show']);
+    Route::put('/{negotiation}', [NegotiationController::class, 'update']);
+    Route::post('/{negotiation}/submit', [NegotiationController::class, 'submit']);
+    Route::post('/{negotiation}/submit-approval', [NegotiationController::class, 'submitForApproval']);
+    Route::post('/{negotiation}/process-approval', [NegotiationController::class, 'processApproval']);
+    Route::post('/{negotiation}/mark-complete', [NegotiationController::class, 'markAsComplete']);
+    Route::post('/{negotiation}/mark-partially-complete', [NegotiationController::class, 'markAsPartiallyComplete']);
+    Route::post('/{negotiation}/cancel', [NegotiationController::class, 'cancel']);
+    Route::post('/{negotiation}/generate-contract', [NegotiationController::class, 'generateContract']);
+    Route::post('/{negotiation}/resend-notifications', [NegotiationController::class, 'resendNotifications']);
     
-    // New approval workflow endpoints
-    Route::post('/negotiations/{negotiation}/submit-approval', [NegotiationController::class, 'submitForApproval'])
-        ->middleware('permission:create negotiations');
-    Route::post('/negotiations/{negotiation}/process-approval', [NegotiationController::class, 'processApproval']);
-    Route::post('/negotiations/{negotiation}/resend-notifications', [NegotiationController::class, 'resendNotifications'])
-        ->middleware('permission:create negotiations');
-    Route::post('/negotiations/{negotiation}/resend-submitted-notifications', [NegotiationController::class, 'resendSubmittedNotifications'])
-        ->middleware('permission:create negotiations');
-    
-    // Negotiation items
-    Route::post('/negotiation-items/{item}/respond', [NegotiationController::class, 'respondToItem'])->middleware('permission:respond to negotiations');
-    Route::post('/negotiation-items/{item}/counter', [NegotiationController::class, 'counterItem'])->middleware('permission:manage health plans');
+    // Items routes
+    Route::post('/items/{item}/respond', [NegotiationController::class, 'respondToItem']);
+    Route::post('/items/{item}/counter', [NegotiationController::class, 'counterItem']);
 });
 
 // WhatsApp notifications routes

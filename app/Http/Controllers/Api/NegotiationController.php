@@ -29,18 +29,14 @@ class NegotiationController extends Controller
 
     // Define approval statuses
     const STATUS_DRAFT = 'draft';
-    const STATUS_SUBMITTED = 'submitted'; // After internal approval, sent to entity
-    const STATUS_APPROVED = 'approved';
+    const STATUS_SUBMITTED = 'submitted'; // Sent to entity
+    const STATUS_PENDING = 'pending'; // During internal approval
+    const STATUS_COMPLETE = 'complete'; // Approved externally
+    const STATUS_PARTIALLY_COMPLETE = 'partially_complete'; // Partially completed externally
+    const STATUS_APPROVED = 'approved'; // Approved internally
+    const STATUS_PARTIALLY_APPROVED = 'partially_approved';
     const STATUS_REJECTED = 'rejected';
     const STATUS_CANCELLED = 'cancelled';
-    const STATUS_PARTIALLY_APPROVED = 'partially_approved';
-
-    // Novos status para aprovação externa
-    const STATUS_PENDING_EXTERNAL_APPROVAL = 'pending_external_approval';
-    const STATUS_EXTERNALLY_APPROVED = 'externally_approved';
-    const STATUS_EXTERNALLY_REJECTED = 'externally_rejected';
-    const STATUS_PENDING_REVIEW_AFTER_EXTERNAL = 'pending_review_after_external';
-    const STATUS_EXTERNAL_REVIEW_REQUESTED = 'external_review_requested';
 
     /**
      * Create a new controller instance.
@@ -350,7 +346,7 @@ class NegotiationController extends Controller
     }
 
     /**
-     * Submit the negotiation for internal approval.
+     * Submit the negotiation to entity.
      *
      * @param Negotiation $negotiation
      * @return \Illuminate\Http\JsonResponse
@@ -368,8 +364,43 @@ class NegotiationController extends Controller
         try {
             DB::beginTransaction();
             
-            // Set to submitted status
+            // Set to submitted status - sent directly to the entity
             $negotiation->status = self::STATUS_SUBMITTED;
+            $negotiation->save();
+            
+            // Notify entity representatives about the negotiation
+            $this->notificationService->notifyNegotiationSubmitted($negotiation);
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Negotiation submitted to entity',
+                'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to submit negotiation', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Submit the negotiation for internal approval.
+     *
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function submitForApproval(Request $request, Negotiation $negotiation)
+    {
+        // Can only submit for approval if it's in submitted or partially_approved state
+        if (!in_array($negotiation->status, [self::STATUS_SUBMITTED, self::STATUS_PARTIALLY_APPROVED])) {
+            return response()->json(['message' => 'Only submitted or partially approved negotiations can be sent for internal approval'], 403);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Set to pending status for internal approval
+            $negotiation->status = self::STATUS_PENDING;
             $negotiation->current_approval_level = self::APPROVAL_LEVEL;
             $negotiation->save();
             
@@ -378,7 +409,7 @@ class NegotiationController extends Controller
                 'level' => self::APPROVAL_LEVEL,
                 'status' => 'pending',
                 'user_id' => Auth::id(),
-                'notes' => 'Submitted for internal approval'
+                'notes' => $request->notes ?? 'Submitted for internal approval'
             ]);
             
             // Notify approval team
@@ -404,15 +435,16 @@ class NegotiationController extends Controller
      */
     public function cancel(Negotiation $negotiation)
     {
-        if (in_array($negotiation->status, ['completed', 'cancelled'])) {
-            return response()->json(['message' => 'Cannot cancel a completed or already cancelled negotiation'], 403);
+        // Only allow cancellation if not in a final state
+        if (in_array($negotiation->status, [self::STATUS_COMPLETE, self::STATUS_CANCELLED, self::STATUS_REJECTED])) {
+            return response()->json(['message' => 'Cannot cancel a completed, rejected, or already cancelled negotiation'], 403);
         }
         
         try {
-            $negotiation->status = 'cancelled';
+            $negotiation->status = self::STATUS_CANCELLED;
             $negotiation->save();
             
-            // Notificar todas as partes envolvidas
+            // Notify all involved parties
             $this->notificationService->notifyNegotiationCancelled($negotiation);
             
             return response()->json([
@@ -432,8 +464,9 @@ class NegotiationController extends Controller
      */
     public function generateContract(Negotiation $negotiation)
     {
-        if ($negotiation->status !== 'approved') {
-            return response()->json(['message' => 'Can only generate contracts for approved negotiations'], 403);
+        // Allow contract generation for approved and partially complete negotiations
+        if (!in_array($negotiation->status, [self::STATUS_APPROVED, self::STATUS_COMPLETE, self::STATUS_PARTIALLY_COMPLETE])) {
+            return response()->json(['message' => 'Can only generate contracts for approved or completed negotiations'], 403);
         }
         
         try {
@@ -466,6 +499,7 @@ class NegotiationController extends Controller
         
         $negotiation = $item->negotiation;
         
+        // Can only respond if negotiation is submitted (to entity)
         if ($negotiation->status !== self::STATUS_SUBMITTED) {
             return response()->json(['message' => 'Can only respond to items in a submitted negotiation'], 403);
         }
@@ -489,30 +523,54 @@ class NegotiationController extends Controller
                 $rejectedCount = $negotiation->items()->where('status', 'rejected')->count();
                 $totalItems = $negotiation->items()->count();
                 
-                // Se todos os itens foram aprovados
+                // If all items were approved
                 if ($approvedCount == $totalItems) {
-                    $negotiation->status = self::STATUS_SUBMITTED;
+                    // If negotiation is internally approved, mark as complete (external approval)
+                    if ($negotiation->status === self::STATUS_APPROVED) {
+                        $negotiation->status = self::STATUS_COMPLETE;
+                        $negotiation->completed_at = now();
+                    } else {
+                        // Ready for internal approval
+                        $negotiation->status = self::STATUS_SUBMITTED;
+                    }
                 } 
-                // Se todos os itens foram rejeitados
+                // If all items were rejected
                 else if ($rejectedCount == $totalItems) {
                     $negotiation->status = self::STATUS_REJECTED;
+                    $negotiation->rejected_at = now();
                 } 
-                // Se alguns itens foram aprovados e outros rejeitados (aprovação parcial)
+                // If some items were approved and others rejected (partial approval)
                 else {
-                    $negotiation->status = self::STATUS_PARTIALLY_APPROVED;
+                    // If the negotiation was already approved internally, mark as partially complete
+                    if ($negotiation->status === self::STATUS_APPROVED) {
+                        $negotiation->status = self::STATUS_PARTIALLY_COMPLETE;
+                        $negotiation->completed_at = now();
+                    } else {
+                        $negotiation->status = self::STATUS_PARTIALLY_APPROVED;
+                    }
                 }
                 
                 $negotiation->save();
                 
-                // Se a negociação foi parcialmente aprovada, enviar notificação especial
+                // If the negotiation was partially approved, send special notification
                 if ($negotiation->status === self::STATUS_PARTIALLY_APPROVED) {
                     $this->notificationService->notifyPartialApproval($negotiation);
+                }
+                
+                // If the negotiation was completed, send completion notification
+                if ($negotiation->status === self::STATUS_COMPLETE) {
+                    $this->notificationService->notifyNegotiationCompleted($negotiation);
+                }
+                
+                // If the negotiation was partially completed, send partial completion notification
+                if ($negotiation->status === self::STATUS_PARTIALLY_COMPLETE) {
+                    $this->notificationService->notifyNegotiationPartiallyCompleted($negotiation);
                 }
             }
             
             DB::commit();
             
-            // Notificar o criador da negociação sobre a resposta
+            // Notify the negotiation creator about the response
             $this->notificationService->notifyItemResponse($item);
 
             return response()->json([
@@ -584,6 +642,11 @@ class NegotiationController extends Controller
             return response()->json(['message' => 'You do not have permission to approve negotiations'], 403);
         }
 
+        // Can only approve/reject negotiations that are pending approval
+        if ($negotiation->status !== self::STATUS_PENDING) {
+            return response()->json(['message' => 'Only pending negotiations can be approved or rejected'], 403);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -608,17 +671,18 @@ class NegotiationController extends Controller
                 ]);
             }
 
-            // If approved internally, submit to entity
-            $negotiation->status = self::STATUS_SUBMITTED;
-                $negotiation->save();
+            // If approved internally
+            $negotiation->status = self::STATUS_APPROVED;
+            $negotiation->approved_at = now();
+            $negotiation->save();
                 
-            // Notify entity representatives about the negotiation
-            $this->notificationService->notifyNegotiationSubmitted($negotiation);
+            // Notify about internal approval
+            $this->notificationService->notifyNegotiationApproved($negotiation);
 
             DB::commit();
             
             return response()->json([
-                'message' => 'Negotiation approved internally and submitted to entity',
+                'message' => 'Negotiation approved internally',
                 'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
             ]);
         } catch (\Exception $e) {
@@ -679,59 +743,95 @@ class NegotiationController extends Controller
     }
 
     /**
-     * Submit the negotiation for final approval after entity review.
+     * Mark a negotiation as complete after external approval.
      *
      * @param Negotiation $negotiation
      * @return \Illuminate\Http\JsonResponse
      */
-    public function submitForFinalApproval(Negotiation $negotiation)
+    public function markAsComplete(Request $request, Negotiation $negotiation)
     {
-        // Verificar se todos os itens foram respondidos pela entidade
-        $pendingItems = $negotiation->items()->where('status', 'pending')->count();
-        
-        if ($pendingItems > 0) {
+        // Verify that the negotiation is in approved status
+        if ($negotiation->status !== self::STATUS_APPROVED) {
             return response()->json([
-                'message' => 'Cannot submit for final approval while items are still pending entity response',
-                'pending_items' => $pendingItems
-            ], 400);
-        }
-        
-        // Verificar se a negociação está no status correto (submitted ou partially_approved)
-        if (!in_array($negotiation->status, [self::STATUS_SUBMITTED, self::STATUS_PARTIALLY_APPROVED])) {
-            return response()->json([
-                'message' => 'Only submitted or partially approved negotiations can be sent for final approval'
+                'message' => 'Only approved negotiations can be marked as complete',
             ], 403);
         }
         
         try {
             DB::beginTransaction();
             
-            // Set to approved if all items were approved by entity
-            $allApproved = $negotiation->items()->where('status', '!=', 'approved')->count() == 0;
+            // Mark as complete
+            $negotiation->status = self::STATUS_COMPLETE;
+            $negotiation->completed_at = now();
+            $negotiation->save();
             
-            if ($allApproved) {
-                $negotiation->status = self::STATUS_APPROVED;
-                $negotiation->approved_at = now();
-                $negotiation->save();
-                
-                $this->notificationService->notifyNegotiationApproved($negotiation);
-            } else {
-                // Some items were rejected or counter-offered
-                $negotiation->status = self::STATUS_PARTIALLY_APPROVED;
-                $negotiation->save();
-                
-                $this->notificationService->notifyPartialApproval($negotiation);
-            }
+            // Add to approval history
+            $negotiation->approvalHistory()->create([
+                'level' => 'external',
+                'status' => 'approve',
+                'user_id' => Auth::id(),
+                'notes' => $request->notes ?? 'Approved by external entity'
+            ]);
+            
+            // Notify about completion
+            $this->notificationService->notifyNegotiationCompleted($negotiation);
             
             DB::commit();
             
             return response()->json([
-                'message' => 'Negotiation processed after entity review',
+                'message' => 'Negotiation marked as complete',
                 'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to complete negotiation process', 'error' => $e->getMessage()], 500);
+            return response()->json(['message' => 'Failed to mark negotiation as complete', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Mark a negotiation as partially complete after external partial approval.
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function markAsPartiallyComplete(Request $request, Negotiation $negotiation)
+    {
+        // Verify that the negotiation is in approved status
+        if ($negotiation->status !== self::STATUS_APPROVED) {
+            return response()->json([
+                'message' => 'Only approved negotiations can be marked as partially complete',
+            ], 403);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            // Mark as partially complete
+            $negotiation->status = self::STATUS_PARTIALLY_COMPLETE;
+            $negotiation->completed_at = now();
+            $negotiation->save();
+            
+            // Add to approval history
+            $negotiation->approvalHistory()->create([
+                'level' => 'external',
+                'status' => 'partial_approve',
+                'user_id' => Auth::id(),
+                'notes' => $request->notes ?? 'Partially approved by external entity'
+            ]);
+            
+            // Notify about partial completion
+            $this->notificationService->notifyNegotiationPartiallyCompleted($negotiation);
+            
+            DB::commit();
+            
+            return response()->json([
+                'message' => 'Negotiation marked as partially complete',
+                'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to mark negotiation as partially complete', 'error' => $e->getMessage()], 500);
         }
     }
 } 

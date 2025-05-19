@@ -20,15 +20,11 @@ class Negotiation extends Model
     public const STATUS_SUBMITTED = 'submitted';
     public const STATUS_PENDING = 'pending';
     public const STATUS_COMPLETE = 'complete';
+    public const STATUS_PARTIALLY_COMPLETE = 'partially_complete';
     public const STATUS_APPROVED = 'approved';
     public const STATUS_PARTIALLY_APPROVED = 'partially_approved';
     public const STATUS_REJECTED = 'rejected';
     public const STATUS_CANCELLED = 'cancelled';
-    public const STATUS_PENDING_EXTERNAL_APPROVAL = 'pending_external_approval';
-    public const STATUS_EXTERNALLY_APPROVED = 'externally_approved';
-    public const STATUS_EXTERNALLY_REJECTED = 'externally_rejected';
-    public const STATUS_PENDING_REVIEW_AFTER_EXTERNAL = 'pending_review_after_external';
-    public const STATUS_EXTERNAL_REVIEW_REQUESTED = 'external_review_requested';
 
     /**
      * The attributes that are mass assignable.
@@ -76,15 +72,11 @@ class Negotiation extends Model
         'submitted' => 'Enviado',
         'pending' => 'Pendente',
         'complete' => 'Completo',
+        'partially_complete' => 'Parcialmente Completo',
         'approved' => 'Aprovado',
         'partially_approved' => 'Parcialmente Aprovado',
         'rejected' => 'Rejeitado',
         'cancelled' => 'Cancelado',
-        'pending_external_approval' => 'Pendente de Aprovação Externa',
-        'externally_approved' => 'Aprovado Externamente',
-        'externally_rejected' => 'Rejeitado Externamente',
-        'pending_review_after_external' => 'Pendente de Revisão Após Externa',
-        'external_review_requested' => 'Revisão Externa Solicitada',
     ];
 
     /**
