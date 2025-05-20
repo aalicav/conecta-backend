@@ -434,4 +434,26 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/entity-document-types', [EntityDocumentTypeController::class, 'store']);
     Route::put('/entity-document-types/{documentType}', [EntityDocumentTypeController::class, 'update']);
     Route::delete('/entity-document-types/{documentType}', [EntityDocumentTypeController::class, 'destroy']);
+});
+
+// Appointment routing
+Route::prefix('appointments')->group(function () {
+    Route::get('/', 'App\Http\Controllers\Api\AppointmentController@index');
+    Route::get('/pending-confirmation', 'App\Http\Controllers\Api\AppointmentController@pendingConfirmation');
+    Route::get('/{id}', 'App\Http\Controllers\Api\AppointmentController@getAppointmentDetails');
+    Route::post('/schedule', 'App\Http\Controllers\Api\AppointmentController@scheduleAutomatically');
+    Route::post('/exception', 'App\Http\Controllers\Api\AppointmentController@requestException');
+    Route::put('/{id}/confirm', 'App\Http\Controllers\Api\AppointmentController@confirm');
+    Route::get('/{id}/guide', 'App\Http\Controllers\Api\AppointmentController@generateGuide');
+    Route::get('/{id}/guide/download', 'App\Http\Controllers\Api\AppointmentController@downloadGuide');
+    Route::post('/{id}/attendance', 'App\Http\Controllers\Api\AppointmentController@confirmAttendance');
+    Route::post('/{id}/cancel', 'App\Http\Controllers\Api\AppointmentController@cancel');
+});
+
+// Scheduling exceptions routing
+Route::prefix('scheduling-exceptions')->group(function () {
+    Route::get('/', 'App\Http\Controllers\Api\SchedulingExceptionController@index');
+    Route::get('/{id}', 'App\Http\Controllers\Api\SchedulingExceptionController@show');
+    Route::post('/{id}/approve', 'App\Http\Controllers\Api\SchedulingExceptionController@approve');
+    Route::post('/{id}/reject', 'App\Http\Controllers\Api\SchedulingExceptionController@reject');
 }); 

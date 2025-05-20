@@ -1287,7 +1287,7 @@ class NotificationService
     }
 
     /**
-     * Notifica os usuários com permissão para aprovar uma negociação
+     * Notifica sobre uma negociação que requer aprovação
      *
      * @param Negotiation $negotiation
      * @param string $approvalLevel
@@ -1296,53 +1296,100 @@ class NotificationService
     public function notifyApprovalRequired(Negotiation $negotiation, string $approvalLevel): void
     {
         try {
-            // Buscar usuários com a permissão de aprovação ou papel relevante
-            $users = User::where(function($query) {
-                    $query->permission('approve_negotiations')
-                         ->orWhere(function($q) {
-                             $q->role(['super_admin', 'director', 'financial']);
-                         });
-                })
-                ->where('is_active', true)
-                ->where('id', '!=', Auth::id()) // Não notificar o usuário atual (que enviou para aprovação)
-                ->get();
-
-            if ($users->isEmpty()) {
-                Log::warning("Nenhum usuário encontrado com permissão para aprovar negociações", [
+            // Determinar os recipientes baseado no nível de aprovação
+            $recipients = collect();
+            $title = '';
+            $body = '';
+            $type = '';
+            
+            if ($approvalLevel === 'team') {
+                // Nível inicial de aprovação - notificar equipe jurídica e comercial
+                $recipients = User::role(['legal', 'commercial', 'super_admin'])
+                    ->where('is_active', true)
+                    ->get();
+                    
+                $title = 'Nova Negociação para Aprovação';
+                $body = "A negociação '{$negotiation->title}' foi submetida para aprovação interna.";
+                $type = 'negotiation_approval_team_required';
+                
+            } elseif ($approvalLevel === 'director') {
+                // Nível de diretoria
+                $recipients = User::role(['director', 'super_admin'])
+                    ->where('is_active', true)
+                    ->get();
+                    
+                $title = 'Aprovação de Diretor Necessária';
+                $body = "A negociação '{$negotiation->title}' foi aprovada pela equipe e aguarda a aprovação final da diretoria.";
+                $type = 'negotiation_approval_director_required';
+                
+            } elseif ($approvalLevel === 'financial') {
+                // Nível financeiro
+                $recipients = User::role(['financial', 'super_admin'])
+                    ->where('is_active', true)
+                    ->get();
+                    
+                $title = 'Aprovação Financeira Necessária';
+                $body = "A negociação '{$negotiation->title}' requer revisão da equipe financeira.";
+                $type = 'negotiation_approval_financial_required';
+                
+            } else {
+                // Padrão - enviar para super_admin
+                $recipients = User::role('super_admin')
+                    ->where('is_active', true)
+                    ->get();
+                    
+                $title = 'Aprovação Necessária';
+                $body = "A negociação '{$negotiation->title}' requer aprovação.";
+                $type = 'negotiation_approval_required';
+            }
+            
+            if ($recipients->isEmpty()) {
+                Log::info('No recipients found for negotiation approval notification', [
                     'negotiation_id' => $negotiation->id,
+                    'approval_level' => $approvalLevel,
                 ]);
                 return;
             }
-
-            // Verificar se existe a classe de notificação específica
-            $notificationClass = "App\\Notifications\\NegotiationApprovalRequired";
-            if (class_exists($notificationClass)) {
-                Notification::send($users, new $notificationClass($negotiation, $approvalLevel));
-                Log::info("Enviada notificação de aprovação necessária para " . $users->count() . " usuários");
+            
+            // Obter detalhes adicionais para a notificação
+            $entityName = $negotiation->negotiable ? $negotiation->negotiable->name : 'N/A';
+            $creatorName = $negotiation->creator ? $negotiation->creator->name : 'Sistema';
+            
+            // Calcular valores para resumo
+            $itemCount = $negotiation->items()->count();
+            $totalValue = $negotiation->items()->sum('proposed_value');
+            
+            if (class_exists('App\\Notifications\\NegotiationApprovalRequired')) {
+                Notification::send($recipients, new \App\Notifications\NegotiationApprovalRequired($negotiation, $approvalLevel));
+                Log::info("Sent negotiation approval required notification for negotiation #{$negotiation->id} to " . $recipients->count() . " users");
             } else {
-                // Fallback para o método antigo
-                $title = "Aprovação Necessária - {$negotiation->title}";
-                $body = "A negociação '{$negotiation->title}' precisa de sua aprovação.";
-
-                foreach ($users as $user) {
+                // Fallback para o método antigo caso a classe não exista
+                foreach ($recipients as $recipient) {
                     $this->create(
-                        userId: $user->id,
+                        userId: $recipient->id,
                         title: $title,
                         body: $body,
-                        type: 'approval_required',
+                        type: $type,
                         data: [
                             'negotiation_id' => $negotiation->id,
                             'title' => $negotiation->title,
-                            'submitted_by' => $negotiation->creator->name,
+                            'entity_name' => $entityName,
+                            'approval_level' => $approvalLevel,
+                            'creator_name' => $creatorName,
+                            'item_count' => $itemCount,
+                            'total_value' => $totalValue,
+                            'action_link' => "/negotiations/{$negotiation->id}/approval"
                         ]
                     );
                 }
-                Log::info("Criados registros de notificação de aprovação necessária para " . $users->count() . " usuários");
+                
+                Log::info("Created negotiation approval required notification records for negotiation #{$negotiation->id}");
             }
         } catch (\Exception $e) {
-            Log::error('Erro ao enviar notificação de aprovação necessária', [
+            Log::error('Error sending negotiation approval required notification', [
                 'error' => $e->getMessage(),
                 'negotiation_id' => $negotiation->id,
+                'approval_level' => $approvalLevel,
             ]);
         }
     }
@@ -1648,5 +1695,308 @@ class NotificationService
         ];
         
         return $statusLabels[$status] ?? $status;
+    }
+
+    /**
+     * Notifica sobre o envio de um contrato para o fluxo de aprovação
+     *
+     * @param Contract $contract
+     * @return void
+     */
+    public function notifyContractSubmittedForApproval(Contract $contract): void
+    {
+        try {
+            // Buscar equipe jurídica para revisão
+            $legalTeam = User::role(['legal', 'super_admin'])
+                ->where('is_active', true)
+                ->get();
+            
+            if ($legalTeam->isEmpty()) {
+                Log::info('No legal team members found for contract approval notification', [
+                    'contract_id' => $contract->id,
+                ]);
+                return;
+            }
+            
+            $entityName = $contract->contractable ? $contract->contractable->name : 'N/A';
+            $contractType = $this->getContractTypeLabel($contract->type);
+            
+            if (class_exists('App\\Notifications\\ContractSubmittedForApproval')) {
+                Notification::send($legalTeam, new \App\Notifications\ContractSubmittedForApproval($contract));
+                Log::info("Sent contract submitted for approval notification for contract #{$contract->id} to " . $legalTeam->count() . " legal team members");
+            } else {
+                // Fallback para o método antigo caso a classe não exista
+                foreach ($legalTeam as $recipient) {
+                    $this->create(
+                        userId: $recipient->id,
+                        title: 'Contrato Submetido para Análise Jurídica',
+                        body: "Um novo contrato para {$entityName} do tipo {$contractType} foi submetido para análise jurídica.",
+                        type: 'contract_submitted_for_approval',
+                        data: [
+                            'contract_id' => $contract->id,
+                            'contract_number' => $contract->contract_number,
+                            'entity_name' => $entityName,
+                            'contract_type' => $contractType,
+                            'submitted_by' => $contract->creator ? $contract->creator->name : 'Sistema',
+                            'action_link' => "/contracts/{$contract->id}/approval"
+                        ]
+                    );
+                }
+                
+                Log::info("Created contract submitted for approval notification records for contract #{$contract->id}");
+            }
+            
+            // Notificar equipe da entidade envolvida
+            $this->notifyEntityAboutContractStatus($contract, 'submitted_for_approval');
+            
+        } catch (\Exception $e) {
+            Log::error('Error sending contract submitted for approval notification', [
+                'error' => $e->getMessage(),
+                'contract_id' => $contract->id,
+            ]);
+        }
+    }
+    
+    /**
+     * Notifica sobre a mudança de status em um contrato
+     * 
+     * @param Contract $contract
+     * @param string $previousStatus
+     * @param string $notes
+     * @return void
+     */
+    public function notifyContractStatusChanged(Contract $contract, string $previousStatus, ?string $notes = null): void
+    {
+        try {
+            $usersToNotify = collect();
+            $currentStatus = $contract->status;
+            
+            // Determinar os destinatários com base no status atual
+            switch ($currentStatus) {
+                case 'legal_review':
+                    // Se foi rejeitado pelo jurídico e voltou para edição
+                    $usersToNotify = User::role(['commercial', 'super_admin'])
+                        ->where('is_active', true)
+                        ->get();
+                    break;
+                    
+                case 'commercial_review':
+                    // Após aprovação jurídica, notificar equipe comercial
+                    $usersToNotify = User::role(['commercial', 'super_admin'])
+                        ->where('is_active', true)
+                        ->get();
+                    break;
+                    
+                case 'pending_director_approval':
+                    // Após aprovação comercial, notificar diretores
+                    $usersToNotify = User::role(['director', 'super_admin'])
+                        ->where('is_active', true)
+                        ->get();
+                    break;
+                    
+                case 'approved':
+                    // Quando o contrato é aprovado, notificar todos os envolvidos
+                    $usersToNotify = User::role(['commercial', 'legal', 'director', 'super_admin'])
+                        ->where('is_active', true)
+                        ->get();
+                    
+                    // Adicionar o criador do contrato
+                    if ($contract->creator && $contract->creator->is_active) {
+                        $usersToNotify->push($contract->creator);
+                    }
+                    break;
+                    
+                case 'rejected':
+                    // Quando o contrato é rejeitado, notificar equipe comercial e o criador
+                    $usersToNotify = User::role(['commercial', 'super_admin'])
+                        ->where('is_active', true)
+                        ->get();
+                    
+                    // Adicionar o criador do contrato
+                    if ($contract->creator && $contract->creator->is_active) {
+                        $usersToNotify->push($contract->creator);
+                    }
+                    break;
+                    
+                default:
+                    // Para outros status, notificar super_admin
+                    $usersToNotify = User::role('super_admin')
+                        ->where('is_active', true)
+                        ->get();
+            }
+            
+            if ($usersToNotify->isEmpty()) {
+                Log::info('No recipients found for contract status change notification', [
+                    'contract_id' => $contract->id,
+                    'previous_status' => $previousStatus,
+                    'current_status' => $currentStatus,
+                ]);
+                return;
+            }
+            
+            $entityName = $contract->contractable ? $contract->contractable->name : 'N/A';
+            $contractType = $this->getContractTypeLabel($contract->type);
+            $statusFromLabel = $this->getContractStatusLabel($previousStatus);
+            $statusToLabel = $this->getContractStatusLabel($currentStatus);
+            
+            // Evitar notificações duplicadas
+            $usersToNotify = $usersToNotify->unique('id');
+            
+            if (class_exists('App\\Notifications\\ContractStatusChanged')) {
+                Notification::send($usersToNotify, new \App\Notifications\ContractStatusChanged($contract, $previousStatus, $notes));
+                Log::info("Sent contract status changed notification for contract #{$contract->id} from {$previousStatus} to {$currentStatus} to " . $usersToNotify->count() . " users");
+            } else {
+                // Fallback para o método antigo caso a classe não exista
+                foreach ($usersToNotify as $recipient) {
+                    $this->create(
+                        userId: $recipient->id,
+                        title: 'Status do Contrato Alterado',
+                        body: "O contrato #{$contract->contract_number} para {$entityName} mudou de '{$statusFromLabel}' para '{$statusToLabel}'.",
+                        type: 'contract_status_changed',
+                        data: [
+                            'contract_id' => $contract->id,
+                            'contract_number' => $contract->contract_number,
+                            'entity_name' => $entityName,
+                            'contract_type' => $contractType,
+                            'previous_status' => $previousStatus,
+                            'current_status' => $currentStatus,
+                            'notes' => $notes,
+                            'action_link' => "/contracts/{$contract->id}/approval"
+                        ]
+                    );
+                }
+                
+                Log::info("Created contract status changed notification records for contract #{$contract->id}");
+            }
+            
+            // Notificar equipe da entidade envolvida sobre a mudança de status
+            $this->notifyEntityAboutContractStatus($contract, 'status_changed', [
+                'previous_status' => $previousStatus,
+                'current_status' => $currentStatus
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error sending contract status changed notification', [
+                'error' => $e->getMessage(),
+                'contract_id' => $contract->id,
+                'previous_status' => $previousStatus,
+                'current_status' => $contract->status,
+            ]);
+        }
+    }
+    
+    /**
+     * Notifica a entidade associada ao contrato sobre mudanças de status
+     *
+     * @param Contract $contract
+     * @param string $notificationType
+     * @param array $additionalData
+     * @return void
+     */
+    protected function notifyEntityAboutContractStatus(Contract $contract, string $notificationType, array $additionalData = []): void
+    {
+        try {
+            // Buscar usuários associados à entidade
+            $entityType = $contract->contractable_type;
+            $entityId = $contract->contractable_id;
+            
+            $entityUsers = User::where(function($query) use ($entityType, $entityId) {
+                    $query->where('entity_type', $entityType)
+                          ->where('entity_id', $entityId);
+                })
+                ->where('is_active', true)
+                ->get();
+                
+            if ($entityUsers->isEmpty()) {
+                return;
+            }
+            
+            $entityName = $contract->contractable ? $contract->contractable->name : 'N/A';
+            $contractType = $this->getContractTypeLabel($contract->type);
+            $statusLabel = $this->getContractStatusLabel($contract->status);
+            
+            foreach ($entityUsers as $recipient) {
+                // Determinar a mensagem com base no tipo de notificação
+                if ($notificationType === 'submitted_for_approval') {
+                    $title = 'Contrato Enviado para Aprovação';
+                    $body = "O contrato #{$contract->contract_number} foi enviado para o processo de aprovação interna.";
+                } elseif ($notificationType === 'status_changed') {
+                    $previousStatus = $additionalData['previous_status'] ?? 'N/A';
+                    $currentStatus = $additionalData['current_status'] ?? $contract->status;
+                    $previousStatusLabel = $this->getContractStatusLabel($previousStatus);
+                    $currentStatusLabel = $this->getContractStatusLabel($currentStatus);
+                    
+                    $title = 'Status do Contrato Atualizado';
+                    $body = "O contrato #{$contract->contract_number} teve seu status alterado de '{$previousStatusLabel}' para '{$currentStatusLabel}'.";
+                } else {
+                    $title = 'Atualização em Contrato';
+                    $body = "O contrato #{$contract->contract_number} foi atualizado.";
+                }
+                
+                $this->create(
+                    userId: $recipient->id,
+                    title: $title,
+                    body: $body,
+                    type: 'contract_' . $notificationType,
+                    data: array_merge([
+                        'contract_id' => $contract->id,
+                        'contract_number' => $contract->contract_number,
+                        'entity_name' => $entityName,
+                        'contract_type' => $contractType,
+                        'status' => $contract->status,
+                        'action_link' => "/contracts/{$contract->id}"
+                    ], $additionalData)
+                );
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Error notifying entity about contract status', [
+                'error' => $e->getMessage(),
+                'contract_id' => $contract->id,
+                'notification_type' => $notificationType
+            ]);
+        }
+    }
+    
+    /**
+     * Obtém o rótulo legível para um tipo de contrato
+     *
+     * @param string $type
+     * @return string
+     */
+    private function getContractTypeLabel($type): string
+    {
+        $labels = [
+            'health_plan' => 'Plano de Saúde',
+            'clinic' => 'Clínica',
+            'professional' => 'Profissional',
+            'other' => 'Outro'
+        ];
+        
+        return $labels[$type] ?? ucfirst($type);
+    }
+    
+    /**
+     * Obtém o rótulo legível para um status de contrato
+     *
+     * @param string $status
+     * @return string
+     */
+    private function getContractStatusLabel($status): string
+    {
+        $labels = [
+            'draft' => 'Rascunho',
+            'pending_approval' => 'Pendente de Aprovação',
+            'legal_review' => 'Em Revisão Jurídica',
+            'commercial_review' => 'Em Revisão Comercial',
+            'pending_director_approval' => 'Aguardando Aprovação da Diretoria',
+            'approved' => 'Aprovado',
+            'rejected' => 'Rejeitado',
+            'cancelled' => 'Cancelado',
+            'expired' => 'Expirado',
+            'active' => 'Ativo'
+        ];
+        
+        return $labels[$status] ?? ucfirst(str_replace('_', ' ', $status));
     }
 } 

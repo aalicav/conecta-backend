@@ -135,13 +135,8 @@ class ContractApprovalController extends Controller
                 'status' => 'pending'
             ]);
             
-            // Send notification to legal team
-            $this->notificationService->sendToRole('legal', [
-                'title' => 'Novo contrato para análise jurídica',
-                'body' => "O contrato #{$contract->contract_number} está aguardando análise jurídica.",
-                'action_link' => "/contracts/{$contract->id}/approval",
-                'icon' => 'file-text',
-            ]);
+            // Use the new notification method instead
+            $this->notificationService->notifyContractSubmittedForApproval($contract);
             
             DB::commit();
             
@@ -198,25 +193,31 @@ class ContractApprovalController extends Controller
             DB::beginTransaction();
             
             // Find the legal review approval record
-            $approvalRecord = $contract->approvals()->where('step', 'legal_review')->first();
-            
-            if (!$approvalRecord) {
+            $legalApproval = $contract->approvals()
+                ->where('step', 'legal_review')
+                ->first();
+                
+            if (!$legalApproval) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Legal review record not found'
+                    'message' => 'Legal review approval record not found'
                 ], 404);
             }
             
-            // Update approval record
-            $approvalRecord->user_id = Auth::id();
-            $approvalRecord->status = $validated['action'] === 'approve' ? 'completed' : 'rejected';
-            $approvalRecord->notes = $validated['notes'];
-            $approvalRecord->completed_at = now();
-            $approvalRecord->save();
+            $previousStatus = $contract->status;
+            
+            // Update the approval record
+            $legalApproval->update([
+                'user_id' => Auth::id(),
+                'status' => $validated['action'] === 'approve' ? 'completed' : 'rejected',
+                'notes' => $validated['notes'],
+                'suggested_changes' => $validated['suggested_changes'] ?? null,
+                'completed_at' => now()
+            ]);
             
             if ($validated['action'] === 'approve') {
-                // Update contract status
-                $contract->status = 'legal_review';
+                // Move to commercial review
+                $contract->status = 'commercial_review';
                 $contract->save();
                 
                 // Create commercial review approval record
@@ -225,35 +226,23 @@ class ContractApprovalController extends Controller
                     'status' => 'pending'
                 ]);
                 
-                // Send notification to commercial team
-                $this->notificationService->sendToRole('commercial', [
-                    'title' => 'Contrato aprovado pelo Jurídico',
-                    'body' => "O contrato #{$contract->contract_number} foi aprovado pelo Jurídico e aguarda liberação comercial.",
-                    'action_link' => "/contracts/{$contract->id}/approval",
-                    'icon' => 'file-text',
-                ]);
+                // Use the new notification method
+                $this->notificationService->notifyContractStatusChanged($contract, $previousStatus, $validated['notes']);
             } else {
-                // Reject - return to draft
-                $contract->status = 'draft';
+                // Rejected by legal
+                $contract->status = 'legal_review';
                 $contract->save();
                 
-                // Send notification to creator
-                $this->notificationService->sendToUser($contract->creator_id, [
-                    'title' => 'Contrato rejeitado pelo Jurídico',
-                    'body' => "O contrato #{$contract->contract_number} foi rejeitado pelo Jurídico e precisa de revisão.",
-                    'action_link' => "/contracts/{$contract->id}/edit",
-                    'icon' => 'file-text',
-                ]);
+                // Use the new notification method
+                $this->notificationService->notifyContractStatusChanged($contract, $previousStatus, $validated['notes']);
             }
             
             DB::commit();
             
             return response()->json([
                 'status' => 'success',
-                'message' => $validated['action'] === 'approve' 
-                    ? 'Contract approved by legal team' 
-                    : 'Contract rejected by legal team',
-                'data' => $contract->fresh(['contractable', 'creator', 'approvals'])
+                'message' => 'Legal review completed successfully',
+                'data' => $contract->load(['contractable', 'creator', 'approvals'])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -286,7 +275,7 @@ class ContractApprovalController extends Controller
             $contract = Contract::findOrFail($id);
             
             // Ensure contract is in the correct status
-            if ($contract->status !== 'legal_review') {
+            if ($contract->status !== 'commercial_review') {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Contract is not awaiting commercial review'
@@ -302,24 +291,29 @@ class ContractApprovalController extends Controller
             DB::beginTransaction();
             
             // Find the commercial review approval record
-            $approvalRecord = $contract->approvals()->where('step', 'commercial_review')->first();
-            
-            if (!$approvalRecord) {
+            $commercialApproval = $contract->approvals()
+                ->where('step', 'commercial_review')
+                ->first();
+                
+            if (!$commercialApproval) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Commercial review record not found'
+                    'message' => 'Commercial review approval record not found'
                 ], 404);
             }
             
-            // Update approval record
-            $approvalRecord->user_id = Auth::id();
-            $approvalRecord->status = $validated['action'] === 'approve' ? 'completed' : 'rejected';
-            $approvalRecord->notes = $validated['notes'];
-            $approvalRecord->completed_at = now();
-            $approvalRecord->save();
+            $previousStatus = $contract->status;
+            
+            // Update the approval record
+            $commercialApproval->update([
+                'user_id' => Auth::id(),
+                'status' => $validated['action'] === 'approve' ? 'completed' : 'rejected',
+                'notes' => $validated['notes'],
+                'completed_at' => now()
+            ]);
             
             if ($validated['action'] === 'approve') {
-                // Update contract status - transition to pending director approval
+                // Move to director approval
                 $contract->status = 'pending_director_approval';
                 $contract->save();
                 
@@ -329,57 +323,23 @@ class ContractApprovalController extends Controller
                     'status' => 'pending'
                 ]);
                 
-                // Get all directors
-                $directors = \App\Models\User::role('director')->get();
-                
-                // If Dr. Ítalo is specifically in the system, prioritize sending to him
-                $drItalo = $directors->first(function($user) {
-                    return strpos(strtolower($user->name), 'ítalo') !== false || strpos(strtolower($user->name), 'italo') !== false;
-                });
-                
-                // Send notification to Dr. Ítalo if found, otherwise to all directors
-                if ($drItalo) {
-                    $this->notificationService->sendToUser($drItalo->id, [
-                        'title' => 'Contrato aguardando aprovação final',
-                        'body' => "O contrato #{$contract->contract_number} foi aprovado pela equipe Comercial e aguarda sua aprovação final, Dr. Ítalo.",
-                        'action_link' => "/contracts/{$contract->id}/approval",
-                        'icon' => 'file-text',
-                        'priority' => 'high'
-                    ]);
-                } else {
-                    // Send notification to director role
-                    $this->notificationService->sendToRole('director', [
-                        'title' => 'Contrato aguardando aprovação final',
-                        'body' => "O contrato #{$contract->contract_number} foi aprovado pela equipe Comercial e aguarda aprovação da Direção.",
-                        'action_link' => "/contracts/{$contract->id}/approval",
-                        'icon' => 'file-text',
-                    ]);
-                }
-                
-                // Also log this transition for auditing
-                Log::info("Contract #{$contract->contract_number} approved by commercial team and sent for final director approval");
+                // Use the new notification method
+                $this->notificationService->notifyContractStatusChanged($contract, $previousStatus, $validated['notes']);
             } else {
-                // Reject - return to draft for revision
-                $contract->status = 'draft';
+                // Rejected by commercial
+                $contract->status = 'legal_review';
                 $contract->save();
                 
-                // Send notification to creator
-                $this->notificationService->sendToUser($contract->creator_id, [
-                    'title' => 'Contrato rejeitado pela equipe Comercial',
-                    'body' => "O contrato #{$contract->contract_number} foi rejeitado pela equipe Comercial e precisa de revisão.",
-                    'action_link' => "/contracts/{$contract->id}/edit",
-                    'icon' => 'file-text',
-                ]);
+                // Use the new notification method
+                $this->notificationService->notifyContractStatusChanged($contract, $previousStatus, $validated['notes']);
             }
             
             DB::commit();
             
             return response()->json([
                 'status' => 'success',
-                'message' => $validated['action'] === 'approve' 
-                    ? 'Contract approved by commercial team and sent for director approval' 
-                    : 'Contract rejected by commercial team',
-                'data' => $contract->fresh(['contractable', 'creator', 'approvals'])
+                'message' => 'Commercial review completed successfully',
+                'data' => $contract->load(['contractable', 'creator', 'approvals'])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -400,7 +360,7 @@ class ContractApprovalController extends Controller
     }
 
     /**
-     * Director approval of contract.
+     * Director final approval of contract.
      *
      * @param Request $request
      * @param int $id
@@ -428,207 +388,59 @@ class ContractApprovalController extends Controller
             DB::beginTransaction();
             
             // Find the director approval record
-            $approvalRecord = $contract->approvals()->where('step', 'director_approval')->first();
-            
-            if (!$approvalRecord) {
+            $directorApproval = $contract->approvals()
+                ->where('step', 'director_approval')
+                ->first();
+                
+            if (!$directorApproval) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Director approval record not found'
                 ], 404);
             }
             
-            // Update approval record
-            $approvalRecord->user_id = Auth::id();
-            $approvalRecord->status = $validated['action'] === 'approve' ? 'completed' : 'rejected';
-            $approvalRecord->notes = $validated['notes'];
-            $approvalRecord->completed_at = now();
-            $approvalRecord->save();
+            $previousStatus = $contract->status;
+            
+            // Update the approval record
+            $directorApproval->update([
+                'user_id' => Auth::id(),
+                'status' => $validated['action'] === 'approve' ? 'completed' : 'rejected',
+                'notes' => $validated['notes'],
+                'completed_at' => now()
+            ]);
             
             if ($validated['action'] === 'approve') {
-                // Update contract status to approved
+                // Fully approved
                 $contract->status = 'approved';
                 $contract->approved_at = now();
-                $contract->approved_by = Auth::id();
                 $contract->save();
                 
-                // Log this final approval
-                Log::info("Contract #{$contract->contract_number} received final approval from director", [
-                    'contract_id' => $contract->id,
-                    'director_id' => Auth::id(),
-                    'director_name' => Auth::user()->name
+                // Add final approval record
+                $contract->approvals()->create([
+                    'step' => 'approved',
+                    'user_id' => Auth::id(),
+                    'status' => 'completed',
+                    'notes' => 'Contract fully approved',
+                    'completed_at' => now()
                 ]);
                 
-                // Notify multiple parties about the approval
-                
-                // 1. Notify the creator
-                $this->notificationService->sendToUser($contract->creator_id, [
-                    'title' => 'Contrato Aprovado pela Direção',
-                    'body' => "O contrato #{$contract->contract_number} foi aprovado por Dr. Ítalo e está pronto para assinatura.",
-                    'action_link' => "/contracts/{$contract->id}",
-                    'icon' => 'check-circle',
-                ]);
-                
-                // 2. Notify the commercial team
-                $this->notificationService->sendToRole('commercial', [
-                    'title' => 'Contrato Aprovado pela Direção',
-                    'body' => "O contrato #{$contract->contract_number} foi aprovado pela Direção e está pronto para assinatura. Favor proceder com o processo de assinatura digital.",
-                    'action_link' => "/contracts/{$contract->id}",
-                    'icon' => 'check-circle',
-                ]);
-                
-                // 3. Notify the legal team
-                $this->notificationService->sendToRole('legal', [
-                    'title' => 'Contrato Aprovado pela Direção',
-                    'body' => "O contrato #{$contract->contract_number} foi aprovado pela Direção e está pronto para assinatura.",
-                    'action_link' => "/contracts/{$contract->id}",
-                    'icon' => 'check-circle',
-                ]);
-                
-                // 4. If this is a contract for an entity, notify the entity admin
-                if ($contract->contractable_type && $contract->contractable_id) {
-                    // Find admins for this entity
-                    $entityAdmins = [];
-                    
-                    if (strpos($contract->contractable_type, 'HealthPlan') !== false) {
-                        $entityAdmins = \App\Models\User::role('plan_admin')
-                            ->where('entity_id', $contract->contractable_id)
-                            ->get();
-                    } elseif (strpos($contract->contractable_type, 'Clinic') !== false) {
-                        $entityAdmins = \App\Models\User::role('clinic_admin')
-                            ->where('entity_id', $contract->contractable_id)
-                            ->get();
-                    }
-                    
-                    foreach ($entityAdmins as $admin) {
-                        $this->notificationService->sendToUser($admin->id, [
-                            'title' => 'Contrato Aprovado para Assinatura',
-                            'body' => "Um contrato envolvendo sua organização foi aprovado e será enviado para assinatura digital em breve.",
-                            'action_link' => "/contracts/{$contract->id}",
-                            'icon' => 'check-circle',
-                        ]);
-                    }
-                }
-                
-                // 5. Automatically prepare for electronic signature
-                // Get contractable entity details for signature
-                $signers = [];
-                
-                // Add INVICTA signer (typically director)
-                $signers[] = [
-                    'name' => Auth::user()->name,
-                    'email' => Auth::user()->email,
-                    'cpf' => Auth::user()->cpf ?? null,
-                ];
-                
-                // Add entity signer based on contractable type
-                if ($contract->contractable) {
-                    $contractable = $contract->contractable;
-                    
-                    // Determine the appropriate contact for signing
-                    if (method_exists($contractable, 'getLegalRepresentativeAttribute') && $contractable->legal_representative) {
-                        $signers[] = [
-                            'name' => $contractable->legal_representative,
-                            'email' => $contractable->legal_representative_email,
-                            'cpf' => $contractable->legal_representative_cpf ?? null,
-                        ];
-                    } elseif (property_exists($contractable, 'responsible_name') && $contractable->responsible_name) {
-                        $signers[] = [
-                            'name' => $contractable->responsible_name,
-                            'email' => $contractable->responsible_email,
-                            'cpf' => $contractable->responsible_cpf ?? null,
-                        ];
-                    } elseif (property_exists($contractable, 'contact_name') && $contractable->contact_name) {
-                        $signers[] = [
-                            'name' => $contractable->contact_name,
-                            'email' => $contractable->contact_email,
-                            'cpf' => null,
-                        ];
-                    }
-                }
-                
-                // Send for electronic signature if we have valid signers
-                if (count($signers) > 1) {
-                    try {
-                        // Get the AutentiqueService instance
-                        $autentiqueService = app(\App\Services\AutentiqueService::class);
-                        
-                        // Send contract for signature
-                        $result = $autentiqueService->sendContractForSignature($contract, $signers);
-                        
-                        if ($result['success']) {
-                            Log::info("Contract #{$contract->contract_number} automatically sent for electronic signature", [
-                                'contract_id' => $contract->id,
-                                'signers' => $signers
-                            ]);
-                        } else {
-                            Log::error("Failed to automatically send contract for signature", [
-                                'contract_id' => $contract->id,
-                                'error' => $result['message']
-                            ]);
-                            
-                            // Notify commercial team about the failure
-                            $this->notificationService->sendToRole('commercial', [
-                                'title' => 'Falha no Envio Automático para Assinatura',
-                                'body' => "O contrato #{$contract->contract_number} foi aprovado, mas não pôde ser enviado automaticamente para assinatura. Por favor, verifique e envie manualmente.",
-                                'action_link' => "/contracts/{$contract->id}",
-                                'icon' => 'alert-triangle',
-                                'priority' => 'high'
-                            ]);
-                        }
-                    } catch (\Exception $e) {
-                        Log::error("Exception during automatic signature sending: " . $e->getMessage(), [
-                            'contract_id' => $contract->id,
-                            'exception' => $e
-                        ]);
-                    }
-                } else {
-                    // Notify commercial team that manual signature setup is needed
-                    $this->notificationService->sendToRole('commercial', [
-                        'title' => 'Configuração de Assinatura Necessária',
-                        'body' => "O contrato #{$contract->contract_number} foi aprovado, mas precisa de configuração manual para assinatura eletrônica.",
-                        'action_link' => "/contracts/{$contract->id}/signature",
-                        'icon' => 'edit-3',
-                        'priority' => 'high'
-                    ]);
-                }
-                
+                // Use the new notification method
+                $this->notificationService->notifyContractStatusChanged($contract, $previousStatus, $validated['notes']);
             } else {
-                // Reject - return to draft or previous step based on rejection reason
-                if ($request->has('rejection_target') && $request->input('rejection_target') === 'commercial') {
-                    // Send back to commercial review
-                    $contract->status = 'legal_review';
-                    
-                    // Send notification to commercial team
-                    $this->notificationService->sendToRole('commercial', [
-                        'title' => 'Contrato Devolvido pela Direção',
-                        'body' => "O contrato #{$contract->contract_number} foi devolvido pela Direção para revisão comercial.",
-                        'action_link' => "/contracts/{$contract->id}/approval",
-                        'icon' => 'arrow-left-circle',
-                    ]);
-                } else {
-                    // Default: return to draft
-                    $contract->status = 'draft';
-                    
-                    // Send notification to creator
-                    $this->notificationService->sendToUser($contract->creator_id, [
-                        'title' => 'Contrato Rejeitado pela Direção',
-                        'body' => "O contrato #{$contract->contract_number} foi rejeitado pela Direção e precisa de revisão completa.",
-                        'action_link' => "/contracts/{$contract->id}/edit",
-                        'icon' => 'x-circle',
-                    ]);
-                }
-                
+                // Rejected by director
+                $contract->status = 'commercial_review';
                 $contract->save();
+                
+                // Use the new notification method
+                $this->notificationService->notifyContractStatusChanged($contract, $previousStatus, $validated['notes']);
             }
             
             DB::commit();
             
             return response()->json([
                 'status' => 'success',
-                'message' => $validated['action'] === 'approve' 
-                    ? 'Contract approved by director' 
-                    : 'Contract rejected by director',
-                'data' => $contract->fresh(['contractable', 'creator', 'approvals'])
+                'message' => 'Director review completed successfully',
+                'data' => $contract->load(['contractable', 'creator', 'approvals'])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();

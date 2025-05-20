@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\Appointment;
 use Carbon\Carbon;
 use App\Services\SchedulingConfigService;
+use App\Services\SchedulingExceptionService;
 
 class SchedulingExceptionController extends Controller
 {
@@ -32,16 +33,23 @@ class SchedulingExceptionController extends Controller
     protected $scheduler;
 
     /**
+     * @var SchedulingExceptionService
+     */
+    protected $exceptionService;
+
+    /**
      * Create a new controller instance.
      * 
      * @param NotificationService $notificationService
      * @param AppointmentScheduler $scheduler
+     * @param SchedulingExceptionService $exceptionService
      */
-    public function __construct(NotificationService $notificationService, AppointmentScheduler $scheduler)
+    public function __construct(NotificationService $notificationService, AppointmentScheduler $scheduler, SchedulingExceptionService $exceptionService)
     {
         $this->middleware('auth:sanctum');
         $this->notificationService = $notificationService;
         $this->scheduler = $scheduler;
+        $this->exceptionService = $exceptionService;
     }
 
     /**
