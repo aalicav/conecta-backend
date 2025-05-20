@@ -76,6 +76,64 @@ class UserManagementController extends Controller
         ]);
 
         if ($validator->fails()) {
+            // Check if the validation error is due to a unique email constraint
+            $errors = $validator->errors();
+            if ($errors->has('email') && str_contains($errors->first('email'), 'já foi utilizado')) {
+                // Check if the email exists in a soft-deleted user
+                $existingUser = User::withTrashed()->where('email', $request->email)->whereNotNull('deleted_at')->first();
+                
+                if ($existingUser) {
+                    // Restore the user and update their details
+                    $existingUser->restore();
+                    $existingUser->name = $request->name;
+                    
+                    // Generate password if not provided
+                    $password = $request->password ?? Str::random(10);
+                    $existingUser->password = Hash::make($password);
+                    $existingUser->save();
+                    
+                    // Sync roles if provided
+                    if ($request->has('roles')) {
+                        // Check for restricted roles
+                        foreach ($request->roles as $role) {
+                            if (in_array($role, $this->restrictedRoles)) {
+                                return response()->json([
+                                    'message' => 'Cannot assign restricted roles (plan_admin, professional, clinic_admin)',
+                                    'success' => false
+                                ], 403);
+                            }
+                        }
+                        
+                        $existingUser->syncRoles($request->roles);
+                    }
+                    
+                    // Sync permissions if provided
+                    if ($request->has('permissions')) {
+                        $existingUser->syncPermissions($request->permissions);
+                    }
+                    
+                    // Send welcome email
+                    try {
+                        Mail::send('emails.welcome_new_user', [
+                            'name' => $existingUser->name,
+                            'email' => $existingUser->email,
+                            'password' => $password
+                        ], function ($message) use ($existingUser) {
+                            $message->to($existingUser->email)
+                                ->subject('Bem-vindo ao sistema!');
+                        });
+                    } catch (\Exception $e) {
+                        \Log::error('Error sending welcome email: ' . $e->getMessage());
+                    }
+                    
+                    return response()->json([
+                        'message' => 'User restored and updated successfully',
+                        'data' => $existingUser->load('roles', 'permissions'),
+                        'success' => true
+                    ], 201);
+                }
+            }
+            
             return response()->json([
                 'message' => 'Validation error',
                 'errors' => $validator->errors(),
