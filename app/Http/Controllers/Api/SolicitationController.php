@@ -141,12 +141,30 @@ class SolicitationController extends Controller
                 ], 422);
             }
 
-            // Verify that the health plan is active
+            // Get health plan
             $healthPlan = HealthPlan::findOrFail($request->health_plan_id);
+
+            // Check if health plan is approved
             if (!$healthPlan->approved_at) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Health plan is not active'
+                    'message' => 'Health plan is not approved'
+                ], 422);
+            }
+
+            // Check if health plan has signed contract
+            if (!$healthPlan->has_signed_contract) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Health plan has not signed the contract'
+                ], 422);
+            }
+
+            // Check if health plan has pending status (which means it has been edited and needs re-approval)
+            if ($healthPlan->status !== 'approved') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Health plan has been edited and requires re-approval'
                 ], 422);
             }
 

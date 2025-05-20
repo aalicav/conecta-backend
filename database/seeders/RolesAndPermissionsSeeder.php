@@ -62,6 +62,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'cancel negotiations',
             'respond to negotiations',
             'counter negotiations',
+            'approve_negotiations',
             'generate contracts from negotiations',
 
             // Patient permissions
@@ -149,6 +150,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'edit negotiations',
             'submit negotiations',
             'cancel negotiations',
+            'approve_negotiations',
             'generate contracts from negotiations',
         ]);
 

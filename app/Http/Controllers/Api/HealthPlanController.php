@@ -268,25 +268,27 @@ class HealthPlanController extends Controller
                     $documentData = $request->input("documents")[$index];
                     
                     // Process file
-                    $filePath = $documentFile->store('health_plans/documents/' . $healthPlan->id, 'public');
-                    
-                    // Create document
-                    $document = $healthPlan->documents()->create([
-                        'type' => $documentData['type'],
-                        'description' => $documentData['description'],
-                        'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
-                        'file_path' => $filePath,
-                        'file_name' => $documentFile->getClientOriginalName(),
-                        'file_type' => $documentFile->getClientMimeType(),
-                        'file_size' => $documentFile->getSize(),
-                        'reference_date' => $documentData['reference_date'] ?? null,
-                        'expiration_date' => $documentData['expiration_date'] ?? null,
-                        'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? null,
-                        'uploaded_by' => Auth::id(),
-                        'user_id' => $admin->id,
-                    ]);
-                    
-                    $uploadedDocuments[] = $document;
+                    if ($documentFile && $documentFile->isValid()) {
+                        $filePath = $documentFile->store('health_plans/documents/' . $healthPlan->id, 'public');
+                        
+                        // Create document
+                        $document = $healthPlan->documents()->create([
+                            'type' => $documentData['type'],
+                            'description' => $documentData['description'],
+                            'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
+                            'file_path' => $filePath,
+                            'file_name' => $documentFile->getClientOriginalName(),
+                            'file_type' => $documentFile->getClientMimeType(),
+                            'file_size' => $documentFile->getSize(),
+                            'reference_date' => $documentData['reference_date'] ?? null,
+                            'expiration_date' => $documentData['expiration_date'] ?? null,
+                            'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? null,
+                            'uploaded_by' => Auth::id(),
+                            'user_id' => $admin->id,
+                        ]);
+                        
+                        $uploadedDocuments[] = $document;
+                    }
                 }
             }
             
@@ -425,6 +427,20 @@ class HealthPlanController extends Controller
                 // Handle logo upload
                 $logoPath = $request->file('logo')->store('health_plans/' . $health_plan->id, 'public');
                 $health_plan->logo = $logoPath;
+            }
+
+            // Reset approval status if health plan was previously approved
+            // This ensures the health plan must be re-approved after being edited
+            if ($health_plan->status === 'approved') {
+                $health_plan->status = 'pending';
+                $health_plan->approved_at = null;
+                $health_plan->has_signed_contract = false; // Reset contract signature status
+                
+                // Log the status change
+                Log::info('Health plan requires re-approval after being edited', [
+                    'health_plan_id' => $health_plan->id,
+                    'health_plan_name' => $health_plan->name
+                ]);
             }
 
             // Save the health plan
