@@ -12,6 +12,7 @@ use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
+use App\Mail\WelcomeUserMail;
 
 class UserManagementController extends Controller
 {
@@ -114,14 +115,14 @@ class UserManagementController extends Controller
                     
                     // Send welcome email
                     try {
-                        Mail::send('emails.welcome_new_user', [
+                        $userData = [
                             'name' => $existingUser->name,
                             'email' => $existingUser->email,
                             'password' => $password
-                        ], function ($message) use ($existingUser) {
-                            $message->to($existingUser->email)
-                                ->subject('Bem-vindo ao sistema!');
-                        });
+                        ];
+                        
+                        \Illuminate\Support\Facades\Mail::to($existingUser->email)
+                            ->send(new WelcomeUserMail($userData));
                     } catch (\Exception $e) {
                         \Log::error('Error sending welcome email: ' . $e->getMessage());
                     }
@@ -174,16 +175,16 @@ class UserManagementController extends Controller
 
         // Enviar e-mail de boas-vindas com a senha
         try {
-            Mail::send('emails.welcome_new_user', [
+            $userData = [
                 'name' => $user->name,
                 'email' => $user->email,
                 'password' => $password
-            ], function ($message) use ($user) {
-                $message->to($user->email)
-                    ->subject('Bem-vindo ao sistema!');
-            });
+            ];
+            
+            \Illuminate\Support\Facades\Mail::to($user->email)
+                ->send(new WelcomeUserMail($userData));
         } catch (\Exception $e) {
-            // Logar erro, mas não impedir criação
+            \Log::error('Error sending welcome email: ' . $e->getMessage());
         }
 
         return response()->json([
