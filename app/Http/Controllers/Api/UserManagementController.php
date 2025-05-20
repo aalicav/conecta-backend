@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Mail;
 
 class UserManagementController extends Controller
 {
@@ -66,7 +68,7 @@ class UserManagementController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8',
+            'password' => 'sometimes|string|min:8',
             'roles' => 'sometimes|array',
             'roles.*' => 'string|exists:roles,name',
             'permissions' => 'sometimes|array',
@@ -93,10 +95,13 @@ class UserManagementController extends Controller
             }
         }
 
+        // Gerar senha aleatória se não for informada
+        $password = $request->password ?? Str::random(10);
+
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
-            'password' => Hash::make($request->password),
+            'password' => Hash::make($password),
         ]);
 
         // Assign roles if provided
@@ -107,6 +112,20 @@ class UserManagementController extends Controller
         // Assign direct permissions if provided
         if ($request->has('permissions')) {
             $user->givePermissionTo($request->permissions);
+        }
+
+        // Enviar e-mail de boas-vindas com a senha
+        try {
+            Mail::send('emails.welcome_new_user', [
+                'name' => $user->name,
+                'email' => $user->email,
+                'password' => $password
+            ], function ($message) use ($user) {
+                $message->to($user->email)
+                    ->subject('Bem-vindo ao sistema!');
+            });
+        } catch (\Exception $e) {
+            // Logar erro, mas não impedir criação
         }
 
         return response()->json([
