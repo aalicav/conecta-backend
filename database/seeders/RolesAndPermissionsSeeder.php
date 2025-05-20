@@ -110,6 +110,14 @@ class RolesAndPermissionsSeeder extends Seeder
             // Audit log permissions
             'view audit logs',
             'export audit logs',
+            
+            // User management permissions
+            'view users',
+            'create users',
+            'edit users',
+            'delete users',
+            'assign roles',
+            'assign permissions',
         ];
 
         // Get existing permissions

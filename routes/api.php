@@ -456,4 +456,23 @@ Route::prefix('scheduling-exceptions')->group(function () {
     Route::get('/{id}', 'App\Http\Controllers\Api\SchedulingExceptionController@show');
     Route::post('/{id}/approve', 'App\Http\Controllers\Api\SchedulingExceptionController@approve');
     Route::post('/{id}/reject', 'App\Http\Controllers\Api\SchedulingExceptionController@reject');
+});
+
+/*
+|--------------------------------------------------------------------------
+| User Management Routes (Super Admin Only)
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth:sanctum', 'role:super_admin'])->group(function () {
+    Route::get('/users', [App\Http\Controllers\Api\UserManagementController::class, 'index']);
+    Route::post('/users', [App\Http\Controllers\Api\UserManagementController::class, 'store']);
+    Route::get('/users/{user}', [App\Http\Controllers\Api\UserManagementController::class, 'show']);
+    Route::put('/users/{user}', [App\Http\Controllers\Api\UserManagementController::class, 'update']);
+    Route::delete('/users/{user}', [App\Http\Controllers\Api\UserManagementController::class, 'destroy']);
+    
+    Route::get('/roles', [App\Http\Controllers\Api\UserManagementController::class, 'getRoles']);
+    Route::get('/permissions', [App\Http\Controllers\Api\UserManagementController::class, 'getPermissions']);
+    
+    Route::put('/users/{user}/roles', [App\Http\Controllers\Api\UserManagementController::class, 'updateRoles']);
+    Route::put('/users/{user}/permissions', [App\Http\Controllers\Api\UserManagementController::class, 'updatePermissions']);
 }); 
