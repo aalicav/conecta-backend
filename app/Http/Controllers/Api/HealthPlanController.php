@@ -263,31 +263,31 @@ class HealthPlanController extends Controller
             // Process documents if provided
             $uploadedDocuments = [];
             if ($request->has('documents')) {
-                foreach ($request->file('documents') as $index => $documentFile) {
-                    // Get document data
-                    $documentData = $request->input("documents")[$index];
-                    
-                    // Process file
-                    if ($documentFile && $documentFile->isValid()) {
-                        $filePath = $documentFile->store('health_plans/documents/' . $healthPlan->id, 'public');
+                foreach ($request->input('documents') as $index => $documentData) {
+                    if ($request->hasFile("documents.{$index}.file")) {
+                        $documentFile = $request->file("documents.{$index}.file");
                         
-                        // Create document
-                        $document = $healthPlan->documents()->create([
-                            'type' => $documentData['type'],
-                            'description' => $documentData['description'],
-                            'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
-                            'file_path' => $filePath,
-                            'file_name' => $documentFile->getClientOriginalName(),
-                            'file_type' => $documentFile->getClientMimeType(),
-                            'file_size' => $documentFile->getSize(),
-                            'reference_date' => $documentData['reference_date'] ?? null,
-                            'expiration_date' => $documentData['expiration_date'] ?? null,
-                            'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? null,
-                            'uploaded_by' => Auth::id(),
-                            'user_id' => $admin->id,
-                        ]);
-                        
-                        $uploadedDocuments[] = $document;
+                        if ($documentFile && $documentFile->isValid()) {
+                            $filePath = $documentFile->store('health_plans/documents/' . $healthPlan->id, 'public');
+                            
+                            // Create document
+                            $document = $healthPlan->documents()->create([
+                                'type' => $documentData['type'],
+                                'description' => $documentData['description'],
+                                'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
+                                'file_path' => $filePath,
+                                'file_name' => $documentFile->getClientOriginalName(),
+                                'file_type' => $documentFile->getClientMimeType(),
+                                'file_size' => $documentFile->getSize(),
+                                'reference_date' => $documentData['reference_date'] ?? null,
+                                'expiration_date' => $documentData['expiration_date'] ?? null,
+                                'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? null,
+                                'uploaded_by' => Auth::id(),
+                                'user_id' => $admin->id,
+                            ]);
+                            
+                            $uploadedDocuments[] = $document;
+                        }
                     }
                 }
             }
