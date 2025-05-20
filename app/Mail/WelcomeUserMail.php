@@ -12,11 +12,25 @@ class WelcomeUserMail extends Mailable
     use Queueable, SerializesModels;
 
     /**
-     * The user data.
+     * The user's name.
      *
-     * @var array
+     * @var string
      */
-    public $data;
+    public $name;
+
+    /**
+     * The user's email.
+     *
+     * @var string
+     */
+    public $email;
+
+    /**
+     * The user's password.
+     *
+     * @var string
+     */
+    public $password;
 
     /**
      * Create a new message instance.
@@ -26,7 +40,9 @@ class WelcomeUserMail extends Mailable
      */
     public function __construct(array $data)
     {
-        $this->data = $data;
+        $this->name = $data['name'];
+        $this->email = $data['email'];
+        $this->password = $data['password'];
     }
 
     /**
