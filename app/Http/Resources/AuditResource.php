@@ -43,7 +43,7 @@ class AuditResource extends JsonResource
                 return [
                     'id' => $this->auditable_id,
                     'type' => $this->auditable_type,
-                    'name' => method_exists($model, 'getName') ? $model->getName() : (
+                    'name' => ($model && method_exists($model, 'getName')) ? $model->getName() : (
                         $model && isset($model->name) ? $model->name : null
                     ),
                 ];
