@@ -16,11 +16,11 @@ class ContractApproval extends Model
      */
     protected $fillable = [
         'contract_id',
-        'step',
+        'type',
         'status',
-        'user_id',
-        'notes',
-        'completed_at',
+        'approved_at',
+        'approved_by',
+        'notes'
     ];
 
     /**
@@ -29,7 +29,7 @@ class ContractApproval extends Model
      * @var array
      */
     protected $casts = [
-        'completed_at' => 'datetime',
+        'approved_at' => 'datetime',
     ];
 
     /**
@@ -43,9 +43,9 @@ class ContractApproval extends Model
     /**
      * Get the user who performed this approval action.
      */
-    public function user()
+    public function approver()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'approved_by');
     }
 
     /**
