@@ -772,6 +772,24 @@ class NotificationService
             }
             
             Notification::send($validators, new ProfessionalRegistrationSubmitted($professional));
+            
+            // Send WhatsApp notifications
+            foreach ($validators as $validator) {
+                if ($validator->phone) {
+                    try {
+                        $this->whatsAppService->sendNewProfessionalNotification(
+                            $validator,
+                            $professional
+                        );
+                    } catch (\Exception $whatsappError) {
+                        Log::error("Failed to send WhatsApp notification for new professional registration to {$validator->phone}", [
+                            'error' => $whatsappError->getMessage(),
+                            'professional_id' => $professional->id
+                        ]);
+                    }
+                }
+            }
+            
             Log::info("Sent professional registration submitted notification for professional #{$professional->id} to " . $validators->count() . " validators");
         } catch (\Exception $e) {
             Log::error("Failed to send professional registration submitted notification: " . $e->getMessage());
@@ -949,6 +967,14 @@ class NotificationService
                                 $recipient,
                                 $actionUrl
                             ));
+
+                        // Enviar notificação do WhatsApp
+                        if ($recipient->phone) {
+                            $this->whatsAppService->sendNegotiationCreatedNotification(
+                                $recipient,
+                                $negotiation
+                            );
+                        }
                     } catch (\Exception $emailError) {
                         Log::error("Failed to send email for negotiation created to {$recipient->email}", [
                             'error' => $emailError->getMessage(),

@@ -11,6 +11,8 @@ use App\Models\HealthPlan;
 use App\Models\Appointment;
 use App\Models\WhatsappMessage;
 use Carbon\Carbon;
+use App\Models\Negotiation;
+use App\Models\User;
 
 class WhatsAppService
 {
@@ -45,6 +47,16 @@ class WhatsAppService
     const TEMPLATE_NPS_PERGUNTA = 'HX54700067ab72934ecc4c39e855281a83';
     const TEMPLATE_NPS_SURVEY = 'HX936970d99660f9bc527eede3c57b646a';
     const TEMPLATE_COPY_MENSAGEM_OPERADORA = 'HX933d81b51955fd09e063b959e3b7007e';
+    const TEMPLATE_NEGOTIATION_CREATED = 'HXac200d96a677a800c1cf940884d25457';
+    const TEMPLATE_NEW_PROFESSIONAL = 'HX537cd859a24a94b9bb7dcf8f87705ea9';
+    const TEMPLATE_DISPONIBILIDADE_PRESTADOR = 'SID_A_SER_INSERIDO_DISPONIBILIDADE_PRESTADOR';
+    const TEMPLATE_CONFIRMACAO_ATENDIMENTO = 'SID_A_SER_INSERIDO_CONFIRMACAO_ATENDIMENTO';
+    const TEMPLATE_PAGAMENTO_REALIZADO = 'SID_A_SER_INSERIDO_PAGAMENTO_REALIZADO';
+    const TEMPLATE_LEMBRETE_NOTA_FISCAL = 'SID_A_SER_INSERIDO_LEMBRETE_NOTA_FISCAL';
+    const TEMPLATE_TAREFA_CRITICA = 'SID_A_SER_INSERIDO_TAREFA_CRITICA';
+    const TEMPLATE_APROVACAO_PENDENTE = 'SID_A_SER_INSERIDO_APROVACAO_PENDENTE';
+    const TEMPLATE_PACIENTE_AUSENTE = 'SID_A_SER_INSERIDO_PACIENTE_AUSENTE';
+    const TEMPLATE_PREPARO_EXAME = 'SID_A_SER_INSERIDO_PREPARO_EXAME';
     
     /**
      * The template builder instance.
@@ -550,7 +562,15 @@ class WhatsAppService
                 'nps_survey' => self::TEMPLATE_NPS_SURVEY,
                 'nps_survey_prestador' => self::TEMPLATE_NPS_SURVEY_PRESTADOR,
                 'nps_pergunta' => self::TEMPLATE_NPS_PERGUNTA,
-                'copy_menssagem_operadora' => self::TEMPLATE_COPY_MENSAGEM_OPERADORA
+                'copy_menssagem_operadora' => self::TEMPLATE_COPY_MENSAGEM_OPERADORA,
+                'disponibilidade_prestador' => self::TEMPLATE_DISPONIBILIDADE_PRESTADOR,
+                'confirmacao_atendimento' => self::TEMPLATE_CONFIRMACAO_ATENDIMENTO,
+                'pagamento_realizado' => self::TEMPLATE_PAGAMENTO_REALIZADO,
+                'lembrete_nota_fiscal' => self::TEMPLATE_LEMBRETE_NOTA_FISCAL,
+                'tarefa_critica' => self::TEMPLATE_TAREFA_CRITICA,
+                'aprovacao_pendente' => self::TEMPLATE_APROVACAO_PENDENTE,
+                'paciente_ausente' => self::TEMPLATE_PACIENTE_AUSENTE,
+                'preparo_exame' => self::TEMPLATE_PREPARO_EXAME
             ];
             
             $templateSid = $templateMap[$payload['template']] ?? null;
@@ -934,4 +954,470 @@ class WhatsAppService
                 ];
         }
     }
-} 
+
+    /**
+     * Send a WhatsApp notification about a new negotiation created.
+     *
+     * @param  User $user
+     * @param  Negotiation $negotiation
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendNegotiationCreatedNotification($user, $negotiation)
+    {
+        if (!$user || !$user->phone || !$negotiation) {
+            Log::warning('Missing data for negotiation created notification', [
+                'user_id' => $user->id ?? null,
+                'negotiation_id' => $negotiation->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $variables = $this->templateBuilder->buildNegotiationCreated(
+                $user->name,
+                (string) $negotiation->id
+            );
+
+            return $this->sendTemplateMessage(
+                $user->phone,
+                self::TEMPLATE_NEGOTIATION_CREATED,
+                $variables,
+                'App\\Models\\Negotiation',
+                $negotiation->id
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send negotiation created WhatsApp notification', [
+                'user_id' => $user->id,
+                'negotiation_id' => $negotiation->id,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send a WhatsApp notification about a new professional registration.
+     *
+     * @param  User $user
+     * @param  Professional $professional
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendNewProfessionalNotification($user, $professional)
+    {
+        if (!$user || !$user->phone || !$professional) {
+            Log::warning('Missing data for new professional notification', [
+                'user_id' => $user->id ?? null,
+                'professional_id' => $professional->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+            
+            $variables = $this->templateBuilder->buildNewProfessional(
+                $professional->name,
+                $specialty,
+                (string) $professional->id
+            );
+
+            return $this->sendTemplateMessage(
+                $user->phone,
+                self::TEMPLATE_NEW_PROFESSIONAL,
+                $variables,
+                'App\\Models\\Professional',
+                $professional->id
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send new professional WhatsApp notification', [
+                'user_id' => $user->id,
+                'professional_id' => $professional->id,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send provider availability request notification
+     *
+     * @param User $provider
+     * @param Patient $patient
+     * @param string $serviceType
+     * @param string $date
+     * @param string $time
+     * @param string $requestId
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendProviderAvailabilityRequest(
+        $provider,
+        $patient,
+        string $serviceType,
+        string $date,
+        string $time,
+        string $requestId
+    ) {
+        if (!$provider || !$provider->phone) {
+            Log::warning('Missing data for provider availability request', [
+                'provider_id' => $provider->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $variables = $this->templateBuilder->buildProviderAvailabilityRequest(
+                $provider->name,
+                $patient->name,
+                $serviceType,
+                $date,
+                $time,
+                $requestId
+            );
+
+            return $this->sendTemplateMessage(
+                $provider->phone,
+                self::TEMPLATE_DISPONIBILIDADE_PRESTADOR,
+                $variables,
+                'App\\Models\\Appointment',
+                null
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send provider availability request notification', [
+                'provider_id' => $provider->id,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send service completion request notification
+     *
+     * @param User $provider
+     * @param Patient $patient
+     * @param string $time
+     * @param Appointment $appointment
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendServiceCompletionRequest(
+        $provider,
+        $patient,
+        string $time,
+        $appointment
+    ) {
+        if (!$provider || !$provider->phone) {
+            Log::warning('Missing data for service completion request', [
+                'provider_id' => $provider->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $variables = $this->templateBuilder->buildServiceCompletionRequest(
+                $provider->name,
+                $patient->name,
+                $time,
+                (string) $appointment->id
+            );
+
+            return $this->sendTemplateMessage(
+                $provider->phone,
+                self::TEMPLATE_CONFIRMACAO_ATENDIMENTO,
+                $variables,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send service completion request notification', [
+                'provider_id' => $provider->id,
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send payment notification to provider
+     *
+     * @param User $provider
+     * @param string $amount
+     * @param string $paymentId
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendPaymentNotification(
+        $provider,
+        string $amount,
+        string $paymentId
+    ) {
+        if (!$provider || !$provider->phone) {
+            Log::warning('Missing data for payment notification', [
+                'provider_id' => $provider->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $variables = $this->templateBuilder->buildPaymentNotification(
+                $provider->name,
+                $amount,
+                $paymentId
+            );
+
+            return $this->sendTemplateMessage(
+                $provider->phone,
+                self::TEMPLATE_PAGAMENTO_REALIZADO,
+                $variables,
+                'App\\Models\\Payment',
+                $paymentId
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send payment notification', [
+                'provider_id' => $provider->id,
+                'payment_id' => $paymentId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send invoice reminder to provider
+     *
+     * @param User $provider
+     * @param string $pendingCount
+     * @param string $documentRequestId
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendInvoiceReminder(
+        $provider,
+        string $pendingCount,
+        string $documentRequestId
+    ) {
+        if (!$provider || !$provider->phone) {
+            Log::warning('Missing data for invoice reminder', [
+                'provider_id' => $provider->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $variables = $this->templateBuilder->buildInvoiceReminder(
+                $provider->name,
+                $pendingCount,
+                $documentRequestId
+            );
+
+            return $this->sendTemplateMessage(
+                $provider->phone,
+                self::TEMPLATE_LEMBRETE_NOTA_FISCAL,
+                $variables,
+                'App\\Models\\DocumentRequest',
+                $documentRequestId
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send invoice reminder', [
+                'provider_id' => $provider->id,
+                'document_request_id' => $documentRequestId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send critical task alert to team member
+     *
+     * @param User $user
+     * @param string $taskType
+     * @param string $taskDescription
+     * @param string $priority
+     * @param string $taskId
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendCriticalTaskAlert(
+        $user,
+        string $taskType,
+        string $taskDescription,
+        string $priority,
+        string $taskId
+    ) {
+        if (!$user || !$user->phone) {
+            Log::warning('Missing data for critical task alert', [
+                'user_id' => $user->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $variables = $this->templateBuilder->buildCriticalTaskAlert(
+                $taskType,
+                $taskDescription,
+                $priority,
+                $taskId
+            );
+
+            return $this->sendTemplateMessage(
+                $user->phone,
+                self::TEMPLATE_TAREFA_CRITICA,
+                $variables,
+                'App\\Models\\Task',
+                $taskId
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send critical task alert', [
+                'user_id' => $user->id,
+                'task_id' => $taskId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send approval pending notification
+     *
+     * @param User $approver
+     * @param string $approvalType
+     * @param string $requesterName
+     * @param string $dateRequested
+     * @param string $approvalId
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendApprovalPendingNotification(
+        $approver,
+        string $approvalType,
+        string $requesterName,
+        string $dateRequested,
+        string $approvalId
+    ) {
+        if (!$approver || !$approver->phone) {
+            Log::warning('Missing data for approval pending notification', [
+                'approver_id' => $approver->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $variables = $this->templateBuilder->buildApprovalPendingNotification(
+                $approvalType,
+                $requesterName,
+                $dateRequested,
+                $approvalId
+            );
+
+            return $this->sendTemplateMessage(
+                $approver->phone,
+                self::TEMPLATE_APROVACAO_PENDENTE,
+                $variables,
+                'App\\Models\\Approval',
+                $approvalId
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send approval pending notification', [
+                'approver_id' => $approver->id,
+                'approval_id' => $approvalId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send no-show notification to health plan
+     *
+     * @param User $healthPlanContact
+     * @param string $patientName
+     * @param string $appointmentDate
+     * @param string $appointmentTime
+     * @param string $providerName
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendNoShowNotification(
+        $healthPlanContact,
+        string $patientName,
+        string $appointmentDate,
+        string $appointmentTime,
+        string $providerName
+    ) {
+        if (!$healthPlanContact || !$healthPlanContact->phone) {
+            Log::warning('Missing data for no-show notification', [
+                'contact_id' => $healthPlanContact->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $variables = $this->templateBuilder->buildNoShowNotification(
+                $patientName,
+                $appointmentDate,
+                $appointmentTime,
+                $providerName
+            );
+
+            return $this->sendTemplateMessage(
+                $healthPlanContact->phone,
+                self::TEMPLATE_PACIENTE_AUSENTE,
+                $variables,
+                'App\\Models\\HealthPlan',
+                $healthPlanContact->health_plan_id
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send no-show notification', [
+                'contact_id' => $healthPlanContact->id,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send exam preparation instructions to patient
+     *
+     * @param Patient $patient
+     * @param string $examType
+     * @param string $examDate
+     * @param string $examTime
+     * @param string $examId
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendExamPreparationInstructions(
+        $patient,
+        string $examType,
+        string $examDate,
+        string $examTime,
+        string $examId
+    ) {
+        if (!$patient || !$patient->phone) {
+            Log::warning('Missing data for exam preparation instructions', [
+                'patient_id' => $patient->id ?? null
+            ]);
+            return null;
+        }
+
+        try {
+            $variables = $this->templateBuilder->buildExamPreparationInstructions(
+                $patient->name,
+                $examType,
+                $examDate,
+                $examTime,
+                $examId
+            );
+
+            return $this->sendTemplateMessage(
+                $patient->phone,
+                self::TEMPLATE_PREPARO_EXAME,
+                $variables,
+                'App\\Models\\Appointment',
+                $examId
+            );
+        } catch (Exception $e) {
+            Log::error('Failed to send exam preparation instructions', [
+                'patient_id' => $patient->id,
+                'exam_id' => $examId,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+}

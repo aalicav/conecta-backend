@@ -11,42 +11,355 @@ use Carbon\Carbon;
 class WhatsAppTemplateBuilder
 {
     /**
-     * Build appointment reminder template payload for a patient
+     * Build the appointment reminder template data
      *
-     * @param Patient $patient
-     * @param Professional $professional
-     * @param Appointment $appointment
+     * @param string $patientName
+     * @param string $professionalName
+     * @param string $specialty
+     * @param string $appointmentDate
+     * @param string $appointmentTime
      * @param string $clinicAddress
      * @param string $appointmentToken
      * @return array
      */
     public function buildAppointmentReminder(
-        Patient $patient,
-        Professional $professional,
-        Appointment $appointment,
+        string $patientName,
+        string $professionalName,
+        string $specialty,
+        string $appointmentDate,
+        string $appointmentTime,
         string $clinicAddress,
         string $appointmentToken
     ): array {
-        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
-        $appointmentTime = Carbon::parse($appointment->scheduled_time)->format('H:i');
-        
-        $providerTitle = $professional->professional_type === 'doctor' ? 'Dr.' : 'Especialista';
-        
         return [
-            'to' => $this->getPatientPhone($patient),
-            'template' => 'agendamento_cliente',
-            'variables' => [
-                '1' => $patient->name,
-                '2' => "{$providerTitle} {$professional->name}",
-                '3' => $professional->specialty,
-                '4' => $appointmentDate,
-                '5' => $appointmentTime,
-                '6' => $clinicAddress,
-                '7' => $appointmentToken
-            ]
+            '1' => $patientName,
+            '2' => $professionalName,
+            '3' => $specialty,
+            '4' => $appointmentDate,
+            '5' => $appointmentTime,
+            '6' => $clinicAddress,
+            '7' => $appointmentToken
         ];
     }
-    
+
+    /**
+     * Build the NPS survey template data
+     *
+     * @param string $patientName
+     * @param string $appointmentDate
+     * @param string $professionalName
+     * @param string $specialty
+     * @param string $appointmentId
+     * @return array
+     */
+    public function buildNpsSurvey(
+        string $patientName,
+        string $appointmentDate,
+        string $professionalName,
+        string $specialty,
+        string $appointmentId
+    ): array {
+        return [
+            '1' => $patientName,
+            '2' => $appointmentDate,
+            '3' => $professionalName,
+            '4' => $specialty,
+            '5' => $appointmentId
+        ];
+    }
+
+    /**
+     * Build the NPS provider survey template data
+     *
+     * @param string $patientName
+     * @param string $professionalName
+     * @param string $appointmentDate
+     * @param string $appointmentId
+     * @return array
+     */
+    public function buildNpsProviderSurvey(
+        string $patientName,
+        string $professionalName,
+        string $appointmentDate,
+        string $appointmentId
+    ): array {
+        return [
+            '1' => $patientName,
+            '2' => $professionalName,
+            '3' => $appointmentDate,
+            '4' => $appointmentId
+        ];
+    }
+
+    /**
+     * Build the NPS question template data
+     *
+     * @param string $appointmentId
+     * @return array
+     */
+    public function buildNpsQuestion(string $appointmentId): array
+    {
+        return [
+            '1' => $appointmentId
+        ];
+    }
+
+    /**
+     * Build the operator message template data
+     *
+     * @param string $operatorName
+     * @param string $patientName
+     * @param string $professionalName
+     * @param string $specialty
+     * @param string $appointmentDate
+     * @param string $appointmentTime
+     * @param string $clinicAddress
+     * @return array
+     */
+    public function buildOperatorMessage(
+        string $operatorName,
+        string $patientName,
+        string $professionalName,
+        string $specialty,
+        string $appointmentDate,
+        string $appointmentTime,
+        string $clinicAddress
+    ): array {
+        return [
+            '1' => $operatorName,
+            '2' => $patientName,
+            '3' => $professionalName,
+            '4' => $specialty,
+            '5' => $appointmentDate,
+            '6' => $appointmentTime,
+            '7' => $clinicAddress
+        ];
+    }
+
+    /**
+     * Build the negotiation created template data
+     *
+     * @param string $userName
+     * @param string $negotiationId
+     * @return array
+     */
+    public function buildNegotiationCreated(
+        string $userName,
+        string $negotiationId
+    ): array {
+        return [
+            '1' => $userName,
+            '2' => $negotiationId
+        ];
+    }
+
+    /**
+     * Build the new professional template data
+     *
+     * @param string $professionalName
+     * @param string $specialty
+     * @param string $professionalId
+     * @return array
+     */
+    public function buildNewProfessional(
+        string $professionalName,
+        string $specialty,
+        string $professionalId
+    ): array {
+        return [
+            '1' => $professionalName,
+            '2' => $specialty,
+            '3' => $professionalId
+        ];
+    }
+
+    /**
+     * Build provider availability confirmation template data
+     *
+     * @param string $providerName
+     * @param string $patientName
+     * @param string $serviceType
+     * @param string $date
+     * @param string $time
+     * @param string $requestId
+     * @return array
+     */
+    public function buildProviderAvailabilityRequest(
+        string $providerName,
+        string $patientName,
+        string $serviceType,
+        string $date,
+        string $time,
+        string $requestId
+    ): array {
+        return [
+            '1' => $providerName,
+            '2' => $patientName,
+            '3' => $serviceType,
+            '4' => $date,
+            '5' => $time,
+            '6' => $requestId
+        ];
+    }
+
+    /**
+     * Build service completion confirmation template data
+     *
+     * @param string $providerName
+     * @param string $patientName
+     * @param string $time
+     * @param string $appointmentId
+     * @return array
+     */
+    public function buildServiceCompletionRequest(
+        string $providerName,
+        string $patientName,
+        string $time,
+        string $appointmentId
+    ): array {
+        return [
+            '1' => $providerName,
+            '2' => $patientName,
+            '3' => $time,
+            '4' => $appointmentId
+        ];
+    }
+
+    /**
+     * Build payment notification template data
+     *
+     * @param string $providerName
+     * @param string $amount
+     * @param string $paymentId
+     * @return array
+     */
+    public function buildPaymentNotification(
+        string $providerName,
+        string $amount,
+        string $paymentId
+    ): array {
+        return [
+            '1' => $providerName,
+            '2' => $amount,
+            '3' => $paymentId
+        ];
+    }
+
+    /**
+     * Build invoice reminder template data
+     *
+     * @param string $providerName
+     * @param string $pendingCount
+     * @param string $documentRequestId
+     * @return array
+     */
+    public function buildInvoiceReminder(
+        string $providerName,
+        string $pendingCount,
+        string $documentRequestId
+    ): array {
+        return [
+            '1' => $providerName,
+            '2' => $pendingCount,
+            '3' => $documentRequestId
+        ];
+    }
+
+    /**
+     * Build critical task alert template data
+     *
+     * @param string $taskType
+     * @param string $taskDescription
+     * @param string $priority
+     * @param string $taskId
+     * @return array
+     */
+    public function buildCriticalTaskAlert(
+        string $taskType,
+        string $taskDescription,
+        string $priority,
+        string $taskId
+    ): array {
+        return [
+            '1' => $taskType,
+            '2' => $taskDescription,
+            '3' => $priority,
+            '4' => $taskId
+        ];
+    }
+
+    /**
+     * Build approval pending notification template data
+     *
+     * @param string $approvalType
+     * @param string $requesterName
+     * @param string $dateRequested
+     * @param string $approvalId
+     * @return array
+     */
+    public function buildApprovalPendingNotification(
+        string $approvalType,
+        string $requesterName,
+        string $dateRequested,
+        string $approvalId
+    ): array {
+        return [
+            '1' => $approvalType,
+            '2' => $requesterName,
+            '3' => $dateRequested,
+            '4' => $approvalId
+        ];
+    }
+
+    /**
+     * Build no-show notification template data
+     *
+     * @param string $patientName
+     * @param string $appointmentDate
+     * @param string $appointmentTime
+     * @param string $providerName
+     * @return array
+     */
+    public function buildNoShowNotification(
+        string $patientName,
+        string $appointmentDate,
+        string $appointmentTime,
+        string $providerName
+    ): array {
+        return [
+            '1' => $patientName,
+            '2' => $appointmentDate,
+            '3' => $appointmentTime,
+            '4' => $providerName
+        ];
+    }
+
+    /**
+     * Build exam preparation instructions template data
+     *
+     * @param string $patientName
+     * @param string $examType
+     * @param string $examDate
+     * @param string $examTime
+     * @param string $examId
+     * @return array
+     */
+    public function buildExamPreparationInstructions(
+        string $patientName,
+        string $examType,
+        string $examDate,
+        string $examTime,
+        string $examId
+    ): array {
+        return [
+            '1' => $patientName,
+            '2' => $examType,
+            '3' => $examDate,
+            '4' => $examTime,
+            '5' => $examId
+        ];
+    }
+
     /**
      * Build appointment cancellation template payload
      *
@@ -74,115 +387,6 @@ class WhatsAppTemplateBuilder
             'to' => $this->getPatientPhone($patient),
             'template' => 'agendamento_confirmado',
             'variables' => []
-        ];
-    }
-    
-    /**
-     * Build NPS survey template payload
-     *
-     * @param Patient $patient
-     * @param Professional $professional
-     * @param Appointment $appointment
-     * @return array
-     */
-    public function buildNpsSurvey(
-        Patient $patient,
-        Professional $professional,
-        Appointment $appointment
-    ): array {
-        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
-        
-        return [
-            'to' => $this->getPatientPhone($patient),
-            'template' => 'nps_survey',
-            'variables' => [
-                '1' => $patient->name,
-                '2' => $appointmentDate,
-                '3' => $professional->name,
-                '4' => $professional->specialty,
-                '5' => $appointment->id
-            ]
-        ];
-    }
-    
-    /**
-     * Build provider-specific NPS survey template payload
-     *
-     * @param Patient $patient
-     * @param Professional $professional
-     * @param Appointment $appointment
-     * @return array
-     */
-    public function buildProviderNpsSurvey(
-        Patient $patient, 
-        Professional $professional,
-        Appointment $appointment
-    ): array {
-        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
-        
-        return [
-            'to' => $this->getPatientPhone($patient),
-            'template' => 'nps_survey_prestador',
-            'variables' => [
-                '2' => $professional->name,
-                '3' => $appointmentDate,
-                '4' => $appointment->id
-            ]
-        ];
-    }
-    
-    /**
-     * Build NPS question template payload
-     *
-     * @param Patient $patient
-     * @param Appointment $appointment
-     * @return array
-     */
-    public function buildNpsQuestion(Patient $patient, Appointment $appointment): array
-    {
-        return [
-            'to' => $this->getPatientPhone($patient),
-            'template' => 'nps_pergunta',
-            'variables' => [
-                '1' => $appointment->id
-            ]
-        ];
-    }
-    
-    /**
-     * Build operator notification template payload
-     *
-     * @param string $operatorPhone
-     * @param string $operatorName
-     * @param Patient $patient
-     * @param Professional $professional
-     * @param Appointment $appointment
-     * @param string $clinicAddress
-     * @return array
-     */
-    public function buildOperatorNotification(
-        string $operatorPhone,
-        string $operatorName,
-        Patient $patient,
-        Professional $professional,
-        Appointment $appointment,
-        string $clinicAddress
-    ): array {
-        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
-        $appointmentTime = Carbon::parse($appointment->scheduled_time)->format('H:i');
-        
-        return [
-            'to' => $operatorPhone,
-            'template' => 'copy_menssagem_operadora',
-            'variables' => [
-                '1' => $operatorName,
-                '2' => $patient->name,
-                '3' => $professional->name,
-                '4' => $professional->specialty,
-                '5' => $appointmentDate,
-                '6' => $appointmentTime,
-                '7' => $clinicAddress
-            ]
         ];
     }
     
