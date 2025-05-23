@@ -298,7 +298,7 @@ class HealthPlanController extends Controller
             // Send welcome email if requested
             if ($request->input('send_welcome_email', false)) {
                 try {
-                    Notification::send($admin, new HealthPlanCreated($healthPlan, $plainPassword));
+                    Notification::send($admin, new HealthPlanCreated($healthPlan));
                 } catch (\Exception $e) {
                     Log::warning('Failed to send welcome email to health plan admin', [
                         'health_plan_id' => $healthPlan->id,
@@ -1540,10 +1540,14 @@ class HealthPlanController extends Controller
             \App\Jobs\ContractExpirationAlert::dispatch($document)
                 ->delay($alertDate);
 
-            // Schedule recurring alerts if contract is not renewed
-            $recurringAlert = new \App\Jobs\RecurringContractExpirationAlert($document);
-            $recurringAlert->dispatch($document)
-                ->delay($expirationDate);
+            // Find the associated contract
+            if ($document->type === 'contract' && $document->documentable instanceof \App\Models\HealthPlan) {
+                $contract = $document->documentable->contract;
+                if ($contract) {
+                    $recurringAlert = new \App\Jobs\RecurringContractExpirationAlert($contract);
+                    $recurringAlert->dispatch($contract)->delay($expirationDate);
+                }
+            }
 
         } catch (\Exception $e) {
             Log::error('Error scheduling contract expiration alerts: ' . $e->getMessage());

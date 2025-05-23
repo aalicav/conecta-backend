@@ -82,6 +82,11 @@ class AppointmentScheduler
             // Get patient and procedure details
             $patient = Patient::findOrFail($solicitation->patient_id);
             $procedure = TussProcedure::findOrFail($solicitation->tuss_id);
+            
+            // Check if $procedure is a Collection and extract the first item
+            if ($procedure instanceof \Illuminate\Database\Eloquent\Collection) {
+                $procedure = $procedure->first();
+            }
 
             // Check if we have patient location data
             $patientLat = $solicitation->preferred_location_lat;
@@ -90,6 +95,11 @@ class AppointmentScheduler
             // If no explicit location is provided, try to geocode patient's address
             if (!$patientLat || !$patientLng) {
                 Log::info("No explicit location provided for solicitation #{$solicitation->id}, trying to geocode patient address");
+                
+                // Check if $patient is a Collection and extract the first item
+                if ($patient instanceof \Illuminate\Database\Eloquent\Collection) {
+                    $patient = $patient->first();
+                }
                 
                 $address = $this->buildFullAddress($patient);
                 if ($address) {
@@ -620,7 +630,7 @@ class AppointmentScheduler
             // Maior peso para PREÇO conforme solicitado pelo Dr. Ítalo
             $candidate['score'] = (0.6 * $normalizedPrice) + (0.4 * $normalizedDistance);
             
-            Log::debug("Candidato: {$candidate['name']}, Distância: {$candidate['distance']}km, Preço: R${$candidate['price']}, Pontuação: {$candidate['score']}");
+            Log::debug("Candidato: {$candidate['name']}, Distância: {$candidate['distance']}km, Preço: R$" . $candidate['price'] . ", Pontuação: {$candidate['score']}");
         }
         
         // Ordenar candidatos por pontuação (maior para menor)
@@ -630,7 +640,7 @@ class AppointmentScheduler
         
         // Retornar o melhor candidato
         $bestProvider = $candidates[0];
-        Log::info("Melhor prestador encontrado: {$bestProvider['name']} (Distância: {$bestProvider['distance']}km, Preço: R${$bestProvider['price']})");
+        Log::info("Melhor prestador encontrado: {$bestProvider['name']} (Distância: {$bestProvider['distance']}km, Preço: R$" . $bestProvider['price'] . ")");
         
         return $bestProvider;
     }

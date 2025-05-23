@@ -18,10 +18,10 @@ class ContractController extends Controller
 {
     protected $autentiqueService;
     
-    public function __construct(AutentiqueService $autentiqueService)
+    public function __construct()
     {
         $this->middleware('auth:api');
-        $this->autentiqueService = $autentiqueService;
+        $this->autentiqueService = new AutentiqueService();
     }
 
     /**

@@ -25,6 +25,9 @@ use Carbon\Carbon;
 
 class SolicitationController extends Controller
 {
+    protected SchedulingService $schedulingService;
+    protected NotificationService $notificationService;
+
     /**
      * Create a new controller instance.
      */
@@ -32,9 +35,7 @@ class SolicitationController extends Controller
     {
         $this->middleware('auth:sanctum');
         $this->schedulingService = new SchedulingService();
-        $this->notificationService = new NotificationService(
-            new WhatsAppService()
-        );
+        $this->notificationService = new NotificationService();
     }
 
     /**

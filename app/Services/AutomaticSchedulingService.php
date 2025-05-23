@@ -31,9 +31,9 @@ class AutomaticSchedulingService
      * @param NotificationService $notificationService
      * @return void
      */
-    public function __construct(NotificationService $notificationService)
+    public function __construct()
     {
-        $this->notificationService = $notificationService;
+        $this->notificationService = new NotificationService();
     }
 
     /**
@@ -408,7 +408,7 @@ class AutomaticSchedulingService
      * @param float $lon2
      * @return float Distance in kilometers
      */
-    protected function calculateDistance($lat1, $lon1, $lat2, $lon2)
+    protected function calculateDistance($lat1, $lon1, $lat2, $lon2): float | null
     {
         if (!$lat1 || !$lon1 || !$lat2 || !$lon2) {
             return null;

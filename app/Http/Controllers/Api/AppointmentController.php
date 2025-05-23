@@ -23,6 +23,11 @@ use App\Services\SchedulingExceptionService;
 use App\Services\DocumentGenerationService;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\AppointmentGuide;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class AppointmentController extends Controller
 {
@@ -46,6 +51,11 @@ class AppointmentController extends Controller
      */
     protected $documentService;
 
+    /** 
+     * @var NotificationService
+     */
+    protected $notificationService;
+
     /**
      * Create a new controller instance.
      *
@@ -57,18 +67,14 @@ class AppointmentController extends Controller
      * @return void
      */
     public function __construct(
-        NotificationService $notificationService,
-        AutomaticSchedulingService $automaticSchedulingService,
-        AppointmentConfirmationService $confirmationService,
-        SchedulingExceptionService $exceptionService,
-        DocumentGenerationService $documentService
+
     ) {
         $this->middleware('auth:sanctum');
-        $this->notificationService = $notificationService;
-        $this->automaticSchedulingService = $automaticSchedulingService;
-        $this->confirmationService = $confirmationService;
-        $this->exceptionService = $exceptionService;
-        $this->documentService = $documentService;
+        $this->notificationService = new NotificationService();
+        $this->automaticSchedulingService = new AutomaticSchedulingService();
+        $this->confirmationService = new AppointmentConfirmationService();
+        $this->exceptionService = new SchedulingExceptionService();
+        $this->documentService = new DocumentGenerationService();
     }
 
     /**
@@ -637,7 +643,12 @@ class AppointmentController extends Controller
             }
 
             // Get the solicitation
-            $solicitation = \App\Models\Solicitation::findOrFail($request->solicitation_id);
+            $solicitation = Solicitation::findOrFail($request->solicitation_id);
+            
+            // Check if solicitation is a Collection and extract the first item if needed
+            if ($solicitation instanceof \Illuminate\Database\Eloquent\Collection) {
+                $solicitation = $solicitation->first();
+            }
 
             // Check if user has permission to create appointment for this solicitation
             if (!$this->canAccessSolicitation($solicitation)) {
@@ -660,7 +671,7 @@ class AppointmentController extends Controller
             $provider = $providerClass::findOrFail($request->provider_id);
 
             // For clinics, check if they offer the required procedure
-            if ($providerClass === \App\Models\Clinic::class) {
+            if ($providerClass === Clinic::class) {
                 $procedureOffered = $provider->procedures()
                     ->where('tuss_procedure_id', $solicitation->tuss_id)
                     ->exists();
@@ -674,7 +685,7 @@ class AppointmentController extends Controller
             }
 
             // For professionals, check if they offer the required procedure
-            if ($providerClass === \App\Models\Professional::class) {
+            if ($providerClass === Professional::class) {
                 $procedureOffered = $provider->procedures()
                     ->where('tuss_procedure_id', $solicitation->tuss_id)
                     ->exists();
@@ -688,13 +699,13 @@ class AppointmentController extends Controller
             }
 
             // Create the appointment
-            $appointment = new \App\Models\Appointment([
+            $appointment = new Appointment([
                 'solicitation_id' => $solicitation->id,
                 'provider_type' => $request->provider_type,
                 'provider_id' => $request->provider_id,
                 'scheduled_date' => $request->scheduled_date,
                 'notes' => $request->notes,
-                'status' => \App\Models\Appointment::STATUS_SCHEDULED,
+                'status' => Appointment::STATUS_SCHEDULED,
                 'created_by' => Auth::id(),
             ]);
 
@@ -705,7 +716,7 @@ class AppointmentController extends Controller
             $solicitation->save();
 
             // Send notification
-            $this->notificationService->notifyAppointmentCreated($appointment);
+            $this->notificationService->notifyAppointmentScheduled($appointment);
 
             // Reload relationships
             $appointment->load([
@@ -848,6 +859,11 @@ class AppointmentController extends Controller
             
             $solicitation = Solicitation::findOrFail($request->solicitation_id);
             
+            // Check if solicitation is a Collection and extract the first item if needed
+            if ($solicitation instanceof \Illuminate\Database\Eloquent\Collection) {
+                $solicitation = $solicitation->first();
+            }
+            
             // Check if solicitation is in a valid state for scheduling
             if (!$solicitation->isPending() && !$solicitation->isFailed()) {
                 return response()->json([
@@ -918,6 +934,11 @@ class AppointmentController extends Controller
         
         try {
             $solicitation = Solicitation::findOrFail($request->solicitation_id);
+            
+            // Check if solicitation is a Collection and extract the first item if needed
+            if ($solicitation instanceof \Illuminate\Database\Eloquent\Collection) {
+                $solicitation = $solicitation->first();
+            }
             
             // Check if solicitation is in a valid state for scheduling
             if (!$solicitation->isPending() && !$solicitation->isFailed()) {
@@ -1304,6 +1325,398 @@ class AppointmentController extends Controller
                 'message' => 'Failed to cancel appointment',
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
+        }
+    }
+
+    /**
+     * Get appointments that need 48-hour confirmation.
+     *
+     * @return JsonResponse
+     */
+    public function getPendingConfirmations(): JsonResponse
+    {
+        try {
+            // Get appointments scheduled for the next 2-3 days that haven't been confirmed yet
+            $startDate = Carbon::now()->addHours(47);
+            $endDate = Carbon::now()->addHours(49);
+            
+            $appointments = Appointment::with(['solicitation.patient', 'solicitation.tuss', 'provider'])
+                ->whereBetween('scheduled_date', [$startDate, $endDate])
+                ->where('status', 'scheduled')
+                ->whereNull('pre_confirmed_at')
+                ->get();
+                
+            return response()->json([
+                'success' => true,
+                'data' => $appointments->map(function($appointment) {
+                    return [
+                        'id' => $appointment->id,
+                        'scheduled_date' => $appointment->scheduled_date,
+                        'patient_name' => $appointment->solicitation->patient->name,
+                        'patient_phone' => $appointment->solicitation->patient->phone,
+                        'procedure_name' => $appointment->solicitation->tuss->name,
+                        'provider_name' => $appointment->provider->name ?? 'N/A',
+                        'provider_type' => class_basename($appointment->provider_type),
+                        'provider_id' => $appointment->provider_id
+                    ];
+                })
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting pending confirmations: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao buscar confirmações pendentes',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Confirm appointment 48 hours before.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function confirm48h(Request $request, int $id): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'confirmed' => 'required|boolean',
+                'confirmation_notes' => 'nullable|string'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $appointment = Appointment::findOrFail($id);
+            
+            if ($appointment->status !== 'scheduled') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Appointment cannot be confirmed in its current state'
+                ], 422);
+            }
+
+            // Update appointment with confirmation data
+            $appointment->pre_confirmed_at = now();
+            $appointment->pre_confirmed_by = Auth::id();
+            $appointment->pre_confirmation_notes = $request->confirmation_notes;
+            
+            // If not confirmed, mark as missed
+            if (!$request->confirmed) {
+                $appointment->status = 'missed';
+                $appointment->missed_at = now();
+                $appointment->missed_reason = 'Patient unavailable at 48h confirmation';
+            }
+            
+            $appointment->save();
+            
+            // If confirmed, notify finance department
+            if ($request->confirmed) {
+                // Trigger finance department notification for payment
+                $this->notificationService->notifyFinanceDepartment($appointment);
+                
+                // Generate and send guide to provider
+                $this->generateAndSendGuide($appointment);
+            } else {
+                // Notify health plan about patient absence
+                $this->notificationService->notifyHealthPlanAboutAbsence($appointment);
+                
+                // Notify finance department about the absence
+                $this->notificationService->notifyFinanceDepartmentAboutAbsence($appointment);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $request->confirmed ? 'Appointment confirmed successfully' : 'Appointment marked as missed',
+                'data' => $appointment
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error confirming appointment: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error confirming appointment',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate and send appointment guide to provider.
+     *
+     * @param Appointment $appointment
+     * @return bool
+     */
+    protected function generateAndSendGuide(Appointment $appointment): bool
+    {
+        try {
+            // Load relationships
+            $appointment->load(['solicitation.patient', 'solicitation.healthPlan', 'solicitation.tuss', 'provider']);
+            
+            // Generate unique token for the guide
+            $token = Str::random(32);
+            $appointment->guide_token = $token;
+            $appointment->guide_generated_at = now();
+            $appointment->save();
+            
+            // Generate PDF guide
+            $pdf = PDF::loadView('pdfs.appointment_guide', [
+                'appointment' => $appointment,
+                'token' => $token
+            ]);
+            
+            // Save guide to storage
+            $filename = 'guide_' . $appointment->id . '_' . time() . '.pdf';
+            $path = Storage::disk('guides')->put($filename, $pdf->output());
+            
+            // Record guide path
+            $appointment->guide_path = $filename;
+            $appointment->save();
+            
+            // Send guide to provider via email
+            if ($appointment->provider_type === 'App\\Models\\Clinic') {
+                $clinic = $appointment->provider;
+                if ($clinic && $clinic->email) {
+                    Mail::to($clinic->email)
+                        ->send(new AppointmentGuide($appointment, $pdf->output()));
+                }
+            } elseif ($appointment->provider_type === 'App\\Models\\Professional') {
+                $professional = $appointment->provider;
+                if ($professional && $professional->email) {
+                    Mail::to($professional->email)
+                        ->send(new AppointmentGuide($appointment, $pdf->output()));
+                }
+            }
+            
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Error generating guide: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Generate appointment verification token and send notification links.
+     *
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function generateVerificationToken(int $id): JsonResponse
+    {
+        try {
+            $appointment = Appointment::findOrFail($id);
+            
+            if ($appointment->status !== 'scheduled' || !$appointment->pre_confirmed_at) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Appointment cannot have verification token generated in its current state'
+                ], 422);
+            }
+            
+            // Generate unique token
+            $token = Str::random(32);
+            $appointment->verification_token = $token;
+            $appointment->verification_token_expires_at = now()->addHours(24);
+            $appointment->save();
+            
+            // Send verification link to patient and provider
+            $verificationUrl = url("/verify-appointment/{$token}");
+            
+            // Send to patient via WhatsApp and email
+            $this->notificationService->sendAppointmentVerificationToPatient(
+                $appointment->solicitation->patient,
+                $verificationUrl,
+                $appointment
+            );
+            
+            // Send to provider
+            if ($appointment->provider_type === 'App\\Models\\Clinic') {
+                $clinic = $appointment->provider;
+                if ($clinic && $clinic->email) {
+                    $this->notificationService->sendAppointmentVerificationToProvider(
+                        $clinic,
+                        $verificationUrl,
+                        $appointment
+                    );
+                }
+            } elseif ($appointment->provider_type === 'App\\Models\\Professional') {
+                $professional = $appointment->provider;
+                if ($professional && $professional->email) {
+                    $this->notificationService->sendAppointmentVerificationToProvider(
+                        $professional,
+                        $verificationUrl,
+                        $appointment
+                    );
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Verification token generated and sent successfully',
+                'data' => [
+                    'verification_url' => $verificationUrl
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error generating verification token: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error generating verification token',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Verify appointment completion based on token.
+     *
+     * @param string $token
+     * @return JsonResponse
+     */
+    public function verifyAppointment(string $token): JsonResponse
+    {
+        try {
+            $appointment = Appointment::where('verification_token', $token)
+                ->where('verification_token_expires_at', '>', now())
+                ->first();
+                
+            if (!$appointment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid or expired verification token'
+                ], 404);
+            }
+            
+            // Load relationships
+            $appointment->load(['solicitation.patient', 'solicitation.tuss', 'provider']);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Valid verification token',
+                'data' => [
+                    'appointment_id' => $appointment->id,
+                    'scheduled_date' => $appointment->scheduled_date,
+                    'patient_name' => $appointment->solicitation->patient->name,
+                    'procedure_name' => $appointment->solicitation->tuss->name,
+                    'provider_name' => $appointment->provider->name ?? 'N/A',
+                    'provider_type' => class_basename($appointment->provider_type),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error verifying appointment: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error verifying appointment',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Confirm appointment completion or absence based on token.
+     *
+     * @param Request $request
+     * @param string $token
+     * @return JsonResponse
+     */
+    public function confirmAppointment(Request $request, string $token): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'confirmed' => 'required|boolean',
+                'notes' => 'nullable|string',
+                'guide_image' => 'nullable|string', // Base64 encoded image
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $appointment = Appointment::where('verification_token', $token)
+                ->where('verification_token_expires_at', '>', now())
+                ->first();
+                
+            if (!$appointment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid or expired verification token'
+                ], 404);
+            }
+            
+            if ($appointment->status !== 'scheduled') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Appointment cannot be confirmed in its current state'
+                ], 422);
+            }
+            
+            // Process guide image if provided
+            if ($request->guide_image) {
+                $imageData = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $request->guide_image));
+                $filename = 'signed_guide_' . $appointment->id . '_' . time() . '.jpg';
+                Storage::disk('guides')->put($filename, $imageData);
+                $appointment->signed_guide_path = $filename;
+            }
+            
+            // Update appointment status
+            if ($request->confirmed) {
+                $appointment->status = 'completed';
+                $appointment->completed_at = now();
+                $appointment->completion_notes = $request->notes;
+            } else {
+                $appointment->status = 'missed';
+                $appointment->missed_at = now();
+                $appointment->missed_reason = $request->notes ?: 'Patient did not show up';
+                
+                // Notify health plan about patient absence
+                $this->notificationService->notifyHealthPlanAboutAbsence($appointment);
+                
+                // Notify finance department about the absence
+                $this->notificationService->notifyFinanceDepartmentAboutAbsence($appointment);
+            }
+            
+            // Invalidate verification token
+            $appointment->verification_token_expires_at = now()->subMinute();
+            $appointment->save();
+            
+            // Check if all appointments for the solicitation are completed
+            $solicitation = $appointment->solicitation;
+            $allCompleted = true;
+            
+            foreach ($solicitation->appointments as $app) {
+                if ($app->status !== 'completed' && $app->status !== 'cancelled') {
+                    $allCompleted = false;
+                    break;
+                }
+            }
+            
+            // If all appointments are completed, mark the solicitation as completed
+            if ($allCompleted) {
+                $solicitation->markAsCompleted();
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => $request->confirmed ? 'Appointment confirmed as completed' : 'Appointment marked as missed',
+                'data' => $appointment
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error confirming appointment completion: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error confirming appointment completion',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 } 

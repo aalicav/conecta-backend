@@ -12,6 +12,7 @@ use App\Models\NegotiationItem;
 use App\Models\Contract;
 use App\Models\HealthPlan;
 use App\Models\Clinic;
+use App\Models\Notification as ModelNotification;
 use App\Notifications\AppointmentCancelled;
 use App\Notifications\AppointmentCompleted;
 use App\Notifications\AppointmentConfirmed;
@@ -28,6 +29,9 @@ use App\Notifications\ProfessionalContractLinked;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class NotificationService
 {
@@ -44,9 +48,9 @@ class NotificationService
      * @param  \App\Services\WhatsAppService  $whatsAppService
      * @return void
      */
-    public function __construct(WhatsAppService $whatsAppService)
+    public function __construct()
     {
-        $this->whatsAppService = $whatsAppService;
+        $this->whatsAppService = new WhatsAppService();
     }
 
     /**
@@ -334,13 +338,18 @@ class NotificationService
             
             $professional = null;
             if ($appointment->provider_type === 'App\\Models\\Professional') {
-                $professional = \App\Models\Professional::find($appointment->provider_id);
+                $professional = Professional::find($appointment->provider_id);
             } else {
                 // For clinics, we don't have a specific professional
                 return;
             }
             
             if ($professional && $patient) {
+                // Check if $professional is a Collection and extract the first item
+                if ($professional instanceof \Illuminate\Database\Eloquent\Collection) {
+                    $professional = $professional->first();
+                }
+                
                 $this->whatsAppService->sendAppointmentReminderToPatient(
                     $patient,
                     $professional,
@@ -436,13 +445,18 @@ class NotificationService
             
             $professional = null;
             if ($appointment->provider_type === 'App\\Models\\Professional') {
-                $professional = \App\Models\Professional::find($appointment->provider_id);
+                $professional = Professional::find($appointment->provider_id);
             } else {
                 // For clinics, we don't have a specific professional to rate
                 return;
             }
             
             if ($professional && $patient) {
+                // Check if $professional is a Collection and extract the first item
+                if ($professional instanceof \Illuminate\Database\Eloquent\Collection) {
+                    $professional = $professional->first();
+                }
+                
                 $this->whatsAppService->sendNpsSurveyToPatient(
                     $patient,
                     $professional,
@@ -466,12 +480,12 @@ class NotificationService
     protected function getClinicAddress(Appointment $appointment): ?string
     {
         if ($appointment->provider_type === 'App\\Models\\Clinic') {
-            $clinic = \App\Models\Clinic::find($appointment->provider_id);
+            $clinic = Clinic::find($appointment->provider_id);
             if ($clinic) {
                 return $clinic->address . ', ' . $clinic->city . ' - ' . $clinic->state;
             }
         } elseif ($appointment->provider_type === 'App\\Models\\Professional') {
-            $professional = \App\Models\Professional::find($appointment->provider_id);
+            $professional = Professional::find($appointment->provider_id);
             if ($professional && $professional->clinic) {
                 return $professional->clinic->address . ', ' . $professional->clinic->city . ' - ' . $professional->clinic->state;
             }
@@ -870,7 +884,7 @@ class NotificationService
             $data['type'] = $type;
         }
         
-        return \App\Models\Notification::create([
+        return ModelNotification::create([
             'user_id' => $userId,
             'title' => $title,
             'body' => $body,
@@ -1294,9 +1308,18 @@ class NotificationService
      * @param NegotiationItem $item
      * @return void
      */
-    public function notifyCounterOffer(NegotiationItem $item): void
+    public function notifyCounterOffer($item): void
     {
         try {
+            // Handle both single items and collections
+            if ($item instanceof \Illuminate\Database\Eloquent\Collection) {
+                // If a collection was passed, use the first item
+                if ($item->isEmpty()) {
+                    return;
+                }
+                $item = $item->first();
+            }
+            
             $negotiation = $item->negotiation;
             $creator = $negotiation->creator;
             $currentUserId = Auth::id();
@@ -1358,7 +1381,7 @@ class NotificationService
         } catch (\Exception $e) {
             Log::error('Error sending counter offer notification', [
                 'error' => $e->getMessage(),
-                'item_id' => $item->id,
+                'item_id' => $item instanceof \Illuminate\Database\Eloquent\Collection ? 'collection' : $item->id,
             ]);
         }
     }
@@ -1902,6 +1925,1009 @@ class NotificationService
             Log::error('Error sending negotiation fork notification', [
                 'error' => $e->getMessage(),
                 'original_negotiation_id' => $originalNegotiation->id
+            ]);
+        }
+    }
+
+    /**
+     * Notify finance department about upcoming appointment payment.
+     *
+     * @param Appointment $appointment
+     * @return void
+     */
+    public function notifyFinanceDepartment(Appointment $appointment): void
+    {
+        try {
+            // Get finance department users
+            $financeUsers = User::role(['financial', 'finance_admin'])
+                ->where('is_active', true)
+                ->get();
+            
+            if ($financeUsers->isEmpty()) {
+                Log::info("No finance users to notify about appointment #{$appointment->id}");
+                return;
+            }
+
+            // Prepare notification data
+            $data = [
+                'title' => 'Pagamento de Prestador Pendente',
+                'body' => "Um agendamento foi confirmado e está pronto para pagamento ao prestador.",
+                'action_link' => "/appointments/{$appointment->id}",
+                'action_text' => 'Ver Detalhes',
+                'icon' => 'credit-card',
+                'type' => 'payment_notification',
+                'appointment_id' => $appointment->id,
+                'provider_type' => class_basename($appointment->provider_type),
+                'provider_id' => $appointment->provider_id,
+                'provider_name' => $appointment->provider->name ?? 'N/A',
+                'scheduled_date' => $appointment->scheduled_date,
+            ];
+
+            // Send to all finance department users
+            foreach ($financeUsers as $user) {
+                $user->notify(new \Illuminate\Notifications\DatabaseNotification($data));
+                
+                // Send email
+                if ($user->email) {
+                    try {
+                        Mail::to($user->email)
+                            ->send(new \App\Mail\PaymentNeeded(
+                                $appointment,
+                                $user,
+                                url("/appointments/{$appointment->id}")
+                            ));
+                    } catch (\Exception $emailError) {
+                        Log::error("Failed to send payment email to {$user->email}", [
+                            'error' => $emailError->getMessage(),
+                            'appointment_id' => $appointment->id
+                        ]);
+                    }
+                }
+            }
+            
+            Log::info("Sent finance department notification for appointment #{$appointment->id} to " . $financeUsers->count() . " users");
+        } catch (\Exception $e) {
+            Log::error("Failed to send finance department notification: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notify health plan about patient absence.
+     *
+     * @param Appointment $appointment
+     * @return void
+     */
+    public function notifyHealthPlanAboutAbsence(Appointment $appointment): void
+    {
+        try {
+            // Get health plan admins
+            $healthPlanId = $appointment->solicitation->health_plan_id;
+            $healthPlanAdmins = User::role('plan_admin')
+                ->where('health_plan_id', $healthPlanId)
+                ->where('is_active', true)
+                ->get();
+            
+            if ($healthPlanAdmins->isEmpty()) {
+                Log::info("No health plan admins to notify about absence for appointment #{$appointment->id}");
+                return;
+            }
+
+            // Prepare notification data
+            $patientName = $appointment->solicitation->patient->name ?? 'Paciente';
+            $data = [
+                'title' => 'Paciente Ausente em Agendamento',
+                'body' => "O paciente {$patientName} não compareceu ao agendamento.",
+                'action_link' => "/appointments/{$appointment->id}",
+                'action_text' => 'Ver Detalhes',
+                'icon' => 'alert-circle',
+                'type' => 'absence_notification',
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->solicitation->patient_id,
+                'patient_name' => $patientName,
+                'scheduled_date' => $appointment->scheduled_date,
+            ];
+
+            // Send to all health plan admins
+            foreach ($healthPlanAdmins as $admin) {
+                $admin->notify(new \Illuminate\Notifications\DatabaseNotification($data));
+                
+                // Send email
+                if ($admin->email) {
+                    try {
+                        Mail::to($admin->email)
+                            ->send(new \App\Mail\PatientAbsence(
+                                $appointment,
+                                $admin,
+                                url("/appointments/{$appointment->id}")
+                            ));
+                    } catch (\Exception $emailError) {
+                        Log::error("Failed to send absence email to {$admin->email}", [
+                            'error' => $emailError->getMessage(),
+                            'appointment_id' => $appointment->id
+                        ]);
+                    }
+                }
+            }
+            
+            Log::info("Sent health plan notification about absence for appointment #{$appointment->id} to " . $healthPlanAdmins->count() . " users");
+        } catch (\Exception $e) {
+            Log::error("Failed to send health plan notification about absence: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notify finance department about patient absence.
+     *
+     * @param Appointment $appointment
+     * @return void
+     */
+    public function notifyFinanceDepartmentAboutAbsence(Appointment $appointment): void
+    {
+        try {
+            // Get finance department users
+            $financeUsers = User::role(['financial', 'finance_admin'])
+                ->where('is_active', true)
+                ->get();
+            
+            if ($financeUsers->isEmpty()) {
+                Log::info("No finance users to notify about absence for appointment #{$appointment->id}");
+                return;
+            }
+
+            // Check if payment was already made
+            $isPaid = false; // Determine this based on your payment tracking mechanism
+            
+            // Prepare notification data
+            $patientName = $appointment->solicitation->patient->name ?? 'Paciente';
+            $data = [
+                'title' => 'Paciente Ausente - Possível Estorno',
+                'body' => "O paciente {$patientName} não compareceu ao agendamento" . 
+                    ($isPaid ? " que já foi pago ao prestador" : ""),
+                'action_link' => "/appointments/{$appointment->id}",
+                'action_text' => 'Ver Detalhes',
+                'icon' => 'credit-card',
+                'type' => 'absence_payment_notification',
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->solicitation->patient_id,
+                'patient_name' => $patientName,
+                'scheduled_date' => $appointment->scheduled_date,
+                'is_paid' => $isPaid,
+            ];
+
+            // Send to all finance department users
+            foreach ($financeUsers as $user) {
+                $user->notify(new \Illuminate\Notifications\DatabaseNotification($data));
+                
+                // Send email
+                if ($user->email) {
+                    try {
+                        Mail::to($user->email)
+                            ->send(new \App\Mail\PatientAbsenceFinance(
+                                $appointment,
+                                $user,
+                                $isPaid,
+                                url("/appointments/{$appointment->id}")
+                            ));
+                    } catch (\Exception $emailError) {
+                        Log::error("Failed to send absence finance email to {$user->email}", [
+                            'error' => $emailError->getMessage(),
+                            'appointment_id' => $appointment->id
+                        ]);
+                    }
+                }
+            }
+            
+            Log::info("Sent finance department notification about absence for appointment #{$appointment->id} to " . $financeUsers->count() . " users");
+        } catch (\Exception $e) {
+            Log::error("Failed to send finance department notification about absence: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send appointment verification link to patient.
+     *
+     * @param Patient $patient
+     * @param string $verificationUrl
+     * @param Appointment $appointment
+     * @return void
+     */
+    public function sendAppointmentVerificationToPatient(Patient $patient, string $verificationUrl, Appointment $appointment): void
+    {
+        try {
+            // Send via email if available
+            if ($patient->email) {
+                Mail::to($patient->email)
+                    ->send(new \App\Mail\AppointmentVerification(
+                        $appointment,
+                        $patient,
+                        $verificationUrl,
+                        'patient'
+                    ));
+            }
+            
+            // Send via WhatsApp if available
+            if ($patient->phone) {
+                $this->whatsAppService->sendAppointmentVerificationToPatient(
+                    $patient,
+                    $verificationUrl,
+                    $appointment
+                );
+            }
+            
+            Log::info("Sent appointment verification to patient #{$patient->id} for appointment #{$appointment->id}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send appointment verification to patient: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send appointment verification link to provider.
+     *
+     * @param mixed $provider
+     * @param string $verificationUrl
+     * @param Appointment $appointment
+     * @return void
+     */
+    public function sendAppointmentVerificationToProvider($provider, string $verificationUrl, Appointment $appointment): void
+    {
+        try {
+            // Send via email if available
+            if ($provider->email) {
+                Mail::to($provider->email)
+                    ->send(new \App\Mail\AppointmentVerification(
+                        $appointment,
+                        $provider,
+                        $verificationUrl,
+                        'provider'
+                    ));
+            }
+            
+            // Send via WhatsApp if available
+            if ($provider->phone) {
+                $this->whatsAppService->sendAppointmentVerificationToProvider(
+                    $provider,
+                    $verificationUrl,
+                    $appointment
+                );
+            }
+            
+            $providerType = get_class($provider);
+            $providerId = $provider->id;
+            
+            Log::info("Sent appointment verification to provider {$providerType} #{$providerId} for appointment #{$appointment->id}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send appointment verification to provider: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send guide to provider.
+     *
+     * @param Appointment $appointment
+     * @param string $guidePath
+     * @return void
+     */
+    public function sendGuideToProvider(Appointment $appointment, string $guidePath): void
+    {
+        try {
+            $provider = $appointment->provider;
+            
+            if (!$provider) {
+                Log::warning("No provider found for appointment #{$appointment->id}");
+                return;
+            }
+            
+            // Determinar email do prestador
+            $providerEmail = null;
+            
+            if ($appointment->provider_type === 'App\\Models\\Clinic') {
+                $providerEmail = $provider->email;
+            } elseif ($appointment->provider_type === 'App\\Models\\Professional') {
+                $providerEmail = $provider->email;
+            }
+            
+            // Enviar guia por email se tiver endereço
+            if ($providerEmail) {
+                try {
+                    Mail::to($providerEmail)
+                        ->send(new \App\Mail\AppointmentGuide(
+                            $appointment,
+                            $guidePath
+                        ));
+                    
+                    Log::info("Appointment guide sent to provider via email for appointment #{$appointment->id}");
+                } catch (\Exception $emailError) {
+                    Log::error("Failed to send guide email to provider: " . $emailError->getMessage(), [
+                        'appointment_id' => $appointment->id,
+                        'provider_email' => $providerEmail
+                    ]);
+                }
+            }
+            
+            // Enviar mensagem WhatsApp se tiver número de telefone
+            if ($provider->phone) {
+                try {
+                    $message = "A guia de atendimento para o paciente {$appointment->solicitation->patient->name} está disponível. Por favor, acesse o sistema para visualizá-la.";
+                    
+                    $this->whatsAppService->sendTextMessage(
+                        $provider->phone,
+                        $message,
+                        get_class($appointment),
+                        $appointment->id
+                    );
+                    
+                    Log::info("Appointment guide notification sent to provider via WhatsApp for appointment #{$appointment->id}");
+                } catch (\Exception $whatsappError) {
+                    Log::error("Failed to send guide WhatsApp to provider: " . $whatsappError->getMessage(), [
+                        'appointment_id' => $appointment->id,
+                        'provider_phone' => $provider->phone
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to send guide to provider: " . $e->getMessage(), [
+                'appointment_id' => $appointment->id,
+                'exception' => $e
+            ]);
+        }
+    }
+
+    /**
+     * Generate and send verification token for appointment.
+     *
+     * @param Appointment $appointment
+     * @return string|null The verification token
+     */
+    public function generateAppointmentVerificationToken(Appointment $appointment): ?string
+    {
+        try {
+            // Gerar token único
+            $token = Str::random(32);
+            
+            // Salvar token no agendamento
+            $appointment->verification_token = $token;
+            $appointment->verification_token_expires_at = Carbon::now()->addHours(24);
+            $appointment->save();
+            
+            Log::info("Generated verification token for appointment #{$appointment->id}");
+            
+            return $token;
+        } catch (\Exception $e) {
+            Log::error("Failed to generate verification token: " . $e->getMessage(), [
+                'appointment_id' => $appointment->id,
+                'exception' => $e
+            ]);
+            
+            return null;
+        }
+    }
+
+    /**
+     * Notify relevant users when a contract is submitted for approval.
+     *
+     * @param \App\Models\Contract $contract
+     * @return void
+     */
+    public function notifyContractSubmittedForApproval($contract): void
+    {
+        try {
+            // Notify legal team
+            $legalTeam = User::role('legal')->where('is_active', true)->get();
+            
+            if ($legalTeam->isNotEmpty()) {
+                $data = [
+                    'title' => 'Novo Contrato para Aprovação',
+                    'body' => "Um novo contrato ({$contract->contract_number}) foi submetido para aprovação e requer revisão legal.",
+                    'action_link' => "/contracts/{$contract->id}/review",
+                    'action_text' => 'Revisar Contrato',
+                    'icon' => 'file-text',
+                    'type' => 'contract_approval'
+                ];
+                
+                $this->sendToRole('legal', $data);
+                
+                Log::info("Sent contract submitted for approval notification for contract #{$contract->id} to legal team");
+            }
+            
+            // Notify contract creator
+            if ($contract->created_by) {
+                $creator = User::find($contract->created_by);
+                
+                if ($creator && $creator->is_active) {
+                    $creator->notify(new \Illuminate\Notifications\DatabaseNotification([
+                        'title' => 'Contrato Submetido para Aprovação',
+                        'body' => "Seu contrato ({$contract->contract_number}) foi submetido para aprovação e está aguardando revisão legal.",
+                        'action_url' => "/contracts/{$contract->id}",
+                        'action_text' => 'Ver Detalhes',
+                        'icon' => 'file-text',
+                        'type' => 'contract_submitted'
+                    ]));
+                    
+                    Log::info("Sent contract submitted notification to creator #{$creator->id} for contract #{$contract->id}");
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to send contract submitted for approval notification: " . $e->getMessage(), [
+                'contract_id' => $contract->id,
+                'exception' => $e
+            ]);
+        }
+    }
+
+    /**
+     * Notify relevant users when a contract status changes.
+     *
+     * @param \App\Models\Contract $contract
+     * @param string $previousStatus
+     * @param string|null $notes
+     * @return void
+     */
+    public function notifyContractStatusChanged($contract, string $previousStatus, ?string $notes = null): void
+    {
+        try {
+            $statusMap = [
+                'draft' => 'Rascunho',
+                'pending_approval' => 'Aguardando Aprovação',
+                'legal_review' => 'Em Revisão Legal',
+                'commercial_review' => 'Em Revisão Comercial',
+                'pending_director_approval' => 'Aguardando Aprovação do Diretor',
+                'approved' => 'Aprovado',
+                'rejected' => 'Rejeitado',
+                'expired' => 'Expirado',
+                'cancelled' => 'Cancelado'
+            ];
+            
+            $currentStatusText = $statusMap[$contract->status] ?? $contract->status;
+            $previousStatusText = $statusMap[$previousStatus] ?? $previousStatus;
+            
+            // Determine roles to notify based on current status
+            $roles = [];
+            
+            switch ($contract->status) {
+                case 'legal_review':
+                    $roles[] = 'legal';
+                    break;
+                case 'commercial_review':
+                    $roles[] = 'commercial';
+                    break;
+                case 'pending_director_approval':
+                    $roles[] = 'director';
+                    break;
+                case 'approved':
+                    $roles = ['legal', 'commercial', 'director'];
+                    break;
+            }
+            
+            // Always notify the contract creator
+            $creator = User::find($contract->created_by);
+            
+            if ($creator && $creator->is_active) {
+                $notesText = $notes ? " Observações: {$notes}" : '';
+                
+                $creator->notify(new \Illuminate\Notifications\DatabaseNotification([
+                    'title' => 'Status do Contrato Alterado',
+                    'body' => "O status do contrato ({$contract->contract_number}) foi alterado de '{$previousStatusText}' para '{$currentStatusText}'.{$notesText}",
+                    'action_url' => "/contracts/{$contract->id}",
+                    'action_text' => 'Ver Detalhes',
+                    'icon' => 'file-text',
+                    'type' => 'contract_status_changed'
+                ]));
+                
+                Log::info("Sent contract status changed notification to creator #{$creator->id} for contract #{$contract->id}");
+            }
+            
+            // Notify relevant roles
+            foreach ($roles as $role) {
+                $data = [
+                    'title' => 'Contrato Requer Sua Atenção',
+                    'body' => "Um contrato ({$contract->contract_number}) requer sua revisão. Status atual: {$currentStatusText}.",
+                    'action_link' => "/contracts/{$contract->id}/review",
+                    'action_text' => 'Revisar Contrato',
+                    'icon' => 'file-text',
+                    'type' => 'contract_needs_review'
+                ];
+                
+                $this->sendToRole($role, $data, $contract->created_by);
+                
+                Log::info("Sent contract needs review notification for contract #{$contract->id} to {$role} role");
+            }
+            
+            // If contract is fully approved, notify the contractable entity
+            if ($contract->status === 'approved') {
+                $this->notifyContractableEntityAboutApproval($contract);
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to send contract status changed notification: " . $e->getMessage(), [
+                'contract_id' => $contract->id,
+                'previous_status' => $previousStatus,
+                'current_status' => $contract->status,
+                'exception' => $e
+            ]);
+        }
+    }
+    
+    /**
+     * Notify the contractable entity (professional, clinic, etc.) when their contract is approved.
+     *
+     * @param \App\Models\Contract $contract
+     * @return void
+     */
+    protected function notifyContractableEntityAboutApproval($contract): void
+    {
+        try {
+            $contractable = $contract->contractable;
+            
+            if (!$contractable) {
+                return;
+            }
+            
+            // Determine entity type and get associated users
+            $entityUsers = collect();
+            
+            if ($contractable instanceof \App\Models\Professional) {
+                // Professional contract
+                $user = User::where('professional_id', $contractable->id)
+                    ->where('is_active', true)
+                    ->first();
+                    
+                if ($user) {
+                    $entityUsers->push($user);
+                }
+            } elseif ($contractable instanceof \App\Models\Clinic) {
+                // Clinic contract
+                $users = User::where('clinic_id', $contractable->id)
+                    ->where('is_active', true)
+                    ->get();
+                    
+                $entityUsers = $entityUsers->merge($users);
+            } elseif ($contractable instanceof \App\Models\HealthPlan) {
+                // Health plan contract
+                $users = User::where('health_plan_id', $contractable->id)
+                    ->where('is_active', true)
+                    ->get();
+                    
+                $entityUsers = $entityUsers->merge($users);
+            }
+            
+            // Notify each entity user
+            foreach ($entityUsers as $user) {
+                $user->notify(new \Illuminate\Notifications\DatabaseNotification([
+                    'title' => 'Contrato Aprovado',
+                    'body' => "Seu contrato ({$contract->contract_number}) foi aprovado e está agora ativo.",
+                    'action_url' => "/contracts/{$contract->id}",
+                    'action_text' => 'Ver Contrato',
+                    'icon' => 'check-circle',
+                    'type' => 'contract_approved'
+                ]));
+                
+                Log::info("Sent contract approved notification to entity user #{$user->id} for contract #{$contract->id}");
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to notify contractable entity about approval: " . $e->getMessage(), [
+                'contract_id' => $contract->id,
+                'exception' => $e
+            ]);
+        }
+    }
+
+    /**
+     * Send notification to a specific user.
+     *
+     * @param int $userId The ID of the user to notify
+     * @param array $data The notification data (title, body, action_link, icon, etc.)
+     * @return void
+     */
+    public function sendToUser(int $userId, array $data): void
+    {
+        try {
+            // Find the user
+            $user = User::where('id', $userId)
+                ->where('is_active', true)
+                ->first();
+            
+            if (!$user) {
+                Log::warning("User #{$userId} not found or inactive for notification");
+                return;
+            }
+            
+            // Create a generic notification
+            $notificationData = [
+                'title' => $data['title'] ?? 'Nova Notificação',
+                'body' => $data['body'] ?? '',
+                'action_url' => $data['action_link'] ?? null,
+                'action_text' => $data['action_text'] ?? 'Ver Detalhes',
+                'icon' => $data['icon'] ?? null,
+                'priority' => $data['priority'] ?? 'normal',
+                'type' => $data['type'] ?? 'general',
+                'data' => [
+                    'type' => $data['type'] ?? 'general'
+                ]
+            ];
+            
+            $user->notify(new \Illuminate\Notifications\DatabaseNotification($notificationData));
+            
+            // Handle additional channels if specified
+            if (isset($data['channels']) && is_array($data['channels'])) {
+                // If WhatsApp is requested and user has a phone number
+                if (in_array('whatsapp', $data['channels']) && $user->phone) {
+                    try {
+                        $this->whatsAppService->sendTextMessage(
+                            $user->phone,
+                            $data['body'],
+                            'App\\Models\\User',
+                            $user->id
+                        );
+                    } catch (\Exception $e) {
+                        Log::error("Failed to send WhatsApp notification to user #{$userId}: " . $e->getMessage());
+                    }
+                }
+                
+                // If email is requested and user has an email
+                if (in_array('email', $data['channels']) && $user->email) {
+                    try {
+                        \Illuminate\Support\Facades\Mail::to($user->email)
+                            ->send(new \App\Mail\GeneralNotification(
+                                $data['title'],
+                                $data['body'],
+                                $data['action_link'] ?? null
+                            ));
+                    } catch (\Exception $e) {
+                        Log::error("Failed to send email notification to user #{$userId}: " . $e->getMessage());
+                    }
+                }
+            }
+            
+            Log::info("Sent notification to user #{$userId}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send notification to user #{$userId}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notify about approval required for a negotiation.
+     *
+     * @param Negotiation $negotiation
+     * @param string $level
+     * @return void
+     */
+    public function notifyApprovalRequired(Negotiation $negotiation, string $level): void
+    {
+        try {
+            // Determine users to notify based on approval level
+            $usersToNotify = collect();
+            
+            // Different notifications based on level
+            switch ($level) {
+                case 'team':
+                    // Notify all team members who can approve
+                    $usersToNotify = User::role(['commercial', 'financial', 'legal'])
+                        ->where('is_active', true)
+                        ->get();
+                    break;
+                    
+                case 'director':
+                    // Notify directors
+                    $usersToNotify = User::role(['director', 'super_admin'])
+                        ->where('is_active', true)
+                        ->get();
+                    break;
+                    
+                default:
+                    // Default approval level - notify commercial and financial teams
+                    $usersToNotify = User::role(['commercial', 'financial', 'super_admin'])
+                        ->where('is_active', true)
+                        ->get();
+            }
+            
+            if ($usersToNotify->isEmpty()) {
+                Log::info("No users found to notify about approval required for negotiation #{$negotiation->id}");
+                return;
+            }
+            
+            // Negotiation details for notification
+            $entityName = $negotiation->negotiable ? $negotiation->negotiable->name : 'Entidade';
+            $itemCount = $negotiation->items()->count();
+            
+            // Send notifications to each user
+            foreach ($usersToNotify as $user) {
+                // Database notification
+                $this->create(
+                    userId: $user->id,
+                    title: 'Aprovação de Negociação Necessária',
+                    body: "A negociação '{$negotiation->title}' com {$entityName} requer sua aprovação. Contém {$itemCount} itens para análise.",
+                    type: 'approval_required',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'level' => $level,
+                        'entity_name' => $entityName,
+                        'item_count' => $itemCount
+                    ]
+                );
+                
+                // Email notification
+                try {
+                    $actionUrl = url("/negotiations/{$negotiation->id}/review");
+                    
+                    Mail::to($user->email)
+                        ->send(new \App\Mail\GeneralNotification(
+                            "Aprovação de Negociação Necessária",
+                            "A negociação '{$negotiation->title}' com {$entityName} requer sua aprovação.\n\nDetalhes:\n- Número de itens: {$itemCount}\n- Nível de aprovação: " . ucfirst($level),
+                            $actionUrl
+                        ));
+                } catch (\Exception $emailError) {
+                    Log::error("Failed to send approval required email to {$user->email}", [
+                        'error' => $emailError->getMessage(),
+                        'negotiation_id' => $negotiation->id
+                    ]);
+                }
+            }
+            
+            Log::info("Sent approval required notification for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
+        } catch (\Exception $e) {
+            Log::error("Failed to send approval required notification: " . $e->getMessage(), [
+                'negotiation_id' => $negotiation->id,
+                'level' => $level
+            ]);
+        }
+    }
+
+    /**
+     * Notify about partial approval of a negotiation.
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function notifyPartialApproval(Negotiation $negotiation): void
+    {
+        try {
+            // Notify the creator of the negotiation
+            $creator = $negotiation->creator;
+            if (!$creator || !$creator->is_active) {
+                return;
+            }
+            
+            // Get entity name for the notification
+            $entityName = $negotiation->negotiable ? $negotiation->negotiable->name : 'Entidade';
+            
+            // Gather statistics about the negotiation
+            $totalItems = $negotiation->items()->count();
+            $approvedItems = $negotiation->items()->where('status', 'approved')->count();
+            
+            // Database notification
+            $this->create(
+                userId: $creator->id,
+                title: 'Negociação Parcialmente Aprovada',
+                body: "Sua negociação '{$negotiation->title}' com {$entityName} foi parcialmente aprovada. {$approvedItems} de {$totalItems} itens foram aprovados.",
+                type: 'partial_approval',
+                data: [
+                    'negotiation_id' => $negotiation->id,
+                    'title' => $negotiation->title,
+                    'total_items' => $totalItems,
+                    'approved_items' => $approvedItems,
+                    'entity_name' => $entityName
+                ]
+            );
+            
+            // Email notification
+            try {
+                $actionUrl = url("/negotiations/{$negotiation->id}");
+                
+                Mail::to($creator->email)
+                    ->send(new \App\Mail\GeneralNotification(
+                        "Negociação Parcialmente Aprovada",
+                        "Sua negociação '{$negotiation->title}' com {$entityName} foi parcialmente aprovada.\n\nDetalhes:\n- Total de itens: {$totalItems}\n- Itens aprovados: {$approvedItems}\n\nPróximos passos: A negociação agora precisa de aprovação final.",
+                        $actionUrl
+                    ));
+            } catch (\Exception $emailError) {
+                Log::error("Failed to send partial approval email to {$creator->email}", [
+                    'error' => $emailError->getMessage(),
+                    'negotiation_id' => $negotiation->id
+                ]);
+            }
+            
+            Log::info("Sent partial approval notification for negotiation #{$negotiation->id} to user #{$creator->id}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send partial approval notification: " . $e->getMessage(), [
+                'negotiation_id' => $negotiation->id
+            ]);
+        }
+    }
+
+    /**
+     * Notify about full approval of a negotiation.
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function notifyNegotiationApproved(Negotiation $negotiation): void
+    {
+        try {
+            // Collect users to notify
+            $usersToNotify = collect();
+            
+            // Add creator
+            $creator = $negotiation->creator;
+            if ($creator && $creator->is_active) {
+                $usersToNotify->push($creator);
+            }
+            
+            // Add entity representatives
+            $entityType = $negotiation->negotiable_type;
+            $entityId = $negotiation->negotiable_id;
+            
+            $entityUsers = User::where(function($query) use ($entityType, $entityId) {
+                    $query->where('entity_type', $entityType)
+                          ->where('entity_id', $entityId);
+                })
+                ->where('is_active', true)
+                ->get();
+                
+            foreach ($entityUsers as $user) {
+                if (!$usersToNotify->contains('id', $user->id)) {
+                    $usersToNotify->push($user);
+                }
+            }
+            
+            if ($usersToNotify->isEmpty()) {
+                Log::info("No users to notify about negotiation approval for negotiation #{$negotiation->id}");
+                return;
+            }
+            
+            // Get entity name for the notification
+            $entityName = $negotiation->negotiable ? $negotiation->negotiable->name : 'Entidade';
+            
+            // Statistics about the negotiation
+            $totalItems = $negotiation->items()->count();
+            $approvedItems = $negotiation->items()->where('status', 'approved')->count();
+            
+            // Send notifications to each user
+            foreach ($usersToNotify as $user) {
+                // Database notification
+                $this->create(
+                    userId: $user->id,
+                    title: 'Negociação Aprovada',
+                    body: "A negociação '{$negotiation->title}' foi totalmente aprovada e está pronta para ser finalizada.",
+                    type: 'negotiation_approved',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'total_items' => $totalItems,
+                        'approved_items' => $approvedItems,
+                        'entity_name' => $entityName
+                    ]
+                );
+                
+                // Email notification
+                try {
+                    $actionUrl = url("/negotiations/{$negotiation->id}");
+                    
+                    Mail::to($user->email)
+                        ->send(new \App\Mail\GeneralNotification(
+                            "Negociação Aprovada",
+                            "A negociação '{$negotiation->title}' com {$entityName} foi totalmente aprovada.\n\nDetalhes:\n- Total de itens: {$totalItems}\n- Itens aprovados: {$approvedItems}\n\nPróximos passos: A negociação está pronta para ser finalizada com a entidade.",
+                            $actionUrl
+                        ));
+                } catch (\Exception $emailError) {
+                    Log::error("Failed to send negotiation approved email to {$user->email}", [
+                        'error' => $emailError->getMessage(),
+                        'negotiation_id' => $negotiation->id
+                    ]);
+                }
+            }
+            
+            Log::info("Sent negotiation approved notification for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
+        } catch (\Exception $e) {
+            Log::error("Failed to send negotiation approved notification: " . $e->getMessage(), [
+                'negotiation_id' => $negotiation->id
+            ]);
+        }
+    }
+
+    /**
+     * Notify about status rollback of a negotiation.
+     *
+     * @param Negotiation $negotiation
+     * @param string $previousStatus
+     * @param string $newStatus
+     * @param string $reason
+     * @return void
+     */
+    public function notifyStatusRollback(Negotiation $negotiation, string $previousStatus, string $newStatus, string $reason): void
+    {
+        try {
+            // Map status codes to readable text
+            $statusMap = [
+                'draft' => 'Rascunho',
+                'submitted' => 'Submetido',
+                'pending' => 'Em Análise',
+                'pending_approval' => 'Aguardando Aprovação',
+                'pending_director_approval' => 'Aguardando Aprovação do Diretor',
+                'approved' => 'Aprovado',
+                'rejected' => 'Rejeitado',
+                'complete' => 'Completo',
+                'partially_complete' => 'Parcialmente Completo',
+                'cancelled' => 'Cancelado',
+                'forked' => 'Bifurcado'
+            ];
+            
+            $previousStatusText = $statusMap[$previousStatus] ?? $previousStatus;
+            $newStatusText = $statusMap[$newStatus] ?? $newStatus;
+            
+            // Determine who to notify
+            $usersToNotify = collect();
+            
+            // Add creator if not current user
+            $currentUserId = Auth::id();
+            $creator = $negotiation->creator;
+            
+            if ($creator && $creator->id !== $currentUserId && $creator->is_active) {
+                $usersToNotify->push($creator);
+            }
+            
+            // Add relevant administrators
+            $admins = User::role(['super_admin', 'commercial', 'financial', 'legal'])
+                ->where('is_active', true)
+                ->where('id', '!=', $currentUserId)
+                ->get();
+                
+            foreach ($admins as $admin) {
+                if (!$usersToNotify->contains('id', $admin->id)) {
+                    $usersToNotify->push($admin);
+                }
+            }
+            
+            if ($usersToNotify->isEmpty()) {
+                Log::info("No users to notify about status rollback for negotiation #{$negotiation->id}");
+                return;
+            }
+            
+            // Current user for the notification
+            $currentUser = Auth::user();
+            $currentUserName = $currentUser ? $currentUser->name : 'Sistema';
+            
+            // Send notifications to each user
+            foreach ($usersToNotify as $user) {
+                // Database notification
+                $this->create(
+                    userId: $user->id,
+                    title: 'Status da Negociação Revertido',
+                    body: "O status da negociação '{$negotiation->title}' foi revertido de '{$previousStatusText}' para '{$newStatusText}' por {$currentUserName}. Motivo: {$reason}",
+                    type: 'status_rollback',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'previous_status' => $previousStatus,
+                        'new_status' => $newStatus,
+                        'reason' => $reason,
+                        'rolled_back_by' => $currentUserName
+                    ]
+                );
+                
+                // Email notification
+                try {
+                    $actionUrl = url("/negotiations/{$negotiation->id}");
+                    
+                    Mail::to($user->email)
+                        ->send(new \App\Mail\GeneralNotification(
+                            "Status da Negociação Revertido",
+                            "O status da negociação '{$negotiation->title}' foi revertido de '{$previousStatusText}' para '{$newStatusText}' por {$currentUserName}.\n\nMotivo: {$reason}\n\nPor favor, verifique a negociação para mais detalhes.",
+                            $actionUrl
+                        ));
+                } catch (\Exception $emailError) {
+                    Log::error("Failed to send status rollback email to {$user->email}", [
+                        'error' => $emailError->getMessage(),
+                        'negotiation_id' => $negotiation->id
+                    ]);
+                }
+            }
+            
+            Log::info("Sent status rollback notification for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
+        } catch (\Exception $e) {
+            Log::error("Failed to send status rollback notification: " . $e->getMessage(), [
+                'negotiation_id' => $negotiation->id,
+                'previous_status' => $previousStatus,
+                'new_status' => $newStatus
             ]);
         }
     }

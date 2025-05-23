@@ -25,9 +25,9 @@ class SchedulingExceptionService
      * @param NotificationService $notificationService
      * @return void
      */
-    public function __construct(NotificationService $notificationService)
+    public function __construct()
     {
-        $this->notificationService = $notificationService;
+        $this->notificationService = new NotificationService();
     }
 
     /**

@@ -26,12 +26,10 @@ class AppointmentConfirmationService
      * @param DocumentGenerationService $documentService
      * @return void
      */
-    public function __construct(
-        NotificationService $notificationService, 
-        DocumentGenerationService $documentService
-    ) {
-        $this->notificationService = $notificationService;
-        $this->documentService = $documentService;
+    public function __construct()
+    {
+        $this->notificationService = new NotificationService();
+        $this->documentService = new DocumentGenerationService();
     }
 
     /**

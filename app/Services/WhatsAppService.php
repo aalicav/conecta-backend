@@ -617,10 +617,16 @@ class WhatsAppService
     ) {
         $token = $this->templateBuilder->generateAppointmentToken($appointment);
         
+        $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
+        $appointmentTime = Carbon::parse($appointment->scheduled_date)->format('H:i');
+        
         $payload = $this->templateBuilder->buildAppointmentReminder(
-            $patient,
-            $professional,
-            $appointment,
+            $patient->name,
+            $professional->name,
+            $specialty,
+            $appointmentDate,
+            $appointmentTime,
             $clinicAddress,
             $token
         );
@@ -667,10 +673,15 @@ class WhatsAppService
         Professional $professional,
         Appointment $appointment
     ) {
+        $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
+        
         $payload = $this->templateBuilder->buildNpsSurvey(
-            $patient,
-            $professional,
-            $appointment
+            $patient->name,
+            $appointmentDate,
+            $professional->name,
+            $specialty,
+            (string)$appointment->id
         );
         
         return $this->sendFromTemplate($payload);
@@ -689,10 +700,13 @@ class WhatsAppService
         Professional $professional,
         Appointment $appointment
     ) {
-        $payload = $this->templateBuilder->buildProviderNpsSurvey(
-            $patient,
-            $professional,
-            $appointment
+        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
+        
+        $payload = $this->templateBuilder->buildNpsProviderSurvey(
+            $patient->name,
+            $professional->name,
+            $appointmentDate,
+            (string)$appointment->id
         );
         
         return $this->sendFromTemplate($payload);
@@ -707,7 +721,7 @@ class WhatsAppService
      */
     public function sendNpsQuestionToPatient(Patient $patient, Appointment $appointment)
     {
-        $payload = $this->templateBuilder->buildNpsQuestion($patient, $appointment);
+        $payload = $this->templateBuilder->buildNpsQuestion((string)$appointment->id);
         
         return $this->sendFromTemplate($payload);
     }
@@ -731,14 +745,23 @@ class WhatsAppService
         Appointment $appointment,
         string $clinicAddress
     ) {
-        $payload = $this->templateBuilder->buildOperatorNotification(
-            $operatorPhone,
-            $operatorName,
-            $patient,
-            $professional,
-            $appointment,
-            $clinicAddress
-        );
+        $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
+        $appointmentTime = Carbon::parse($appointment->scheduled_date)->format('H:i');
+        
+        $payload = [
+            'to' => $operatorPhone,
+            'template' => 'copy_menssagem_operadora',
+            'variables' => $this->templateBuilder->buildOperatorMessage(
+                $operatorName,
+                $patient->name,
+                $professional->name,
+                $specialty,
+                $appointmentDate,
+                $appointmentTime,
+                $clinicAddress
+            )
+        ];
         
         return $this->sendFromTemplate($payload);
     }
@@ -1417,6 +1440,86 @@ class WhatsAppService
                 'exam_id' => $examId,
                 'error' => $e->getMessage()
             ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send appointment verification to patient
+     *
+     * @param Patient $patient
+     * @param string $verificationUrl
+     * @param Appointment $appointment
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendAppointmentVerificationToPatient(
+        Patient $patient,
+        string $verificationUrl,
+        Appointment $appointment
+    ) {
+        try {
+            if (!$patient->phone) {
+                Log::warning("Cannot send verification message: patient #{$patient->id} has no phone number");
+                return null;
+            }
+            
+            $message = "Olá {$patient->name}, confirme sua presença no atendimento agendado para " .
+                Carbon::parse($appointment->scheduled_date)->format('d/m/Y') . " às " .
+                Carbon::parse($appointment->scheduled_date)->format('H:i') . ".\n\n" .
+                "Acesse o link: {$verificationUrl}";
+            
+            return $this->sendTextMessage(
+                $patient->phone,
+                $message,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+        } catch (Exception $e) {
+            Log::error("Failed to send appointment verification to patient: " . $e->getMessage(), [
+                'patient_id' => $patient->id,
+                'appointment_id' => $appointment->id
+            ]);
+            
+            return null;
+        }
+    }
+    
+    /**
+     * Send appointment verification to provider
+     *
+     * @param mixed $provider
+     * @param string $verificationUrl
+     * @param Appointment $appointment
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendAppointmentVerificationToProvider(
+        $provider,
+        string $verificationUrl,
+        Appointment $appointment
+    ) {
+        try {
+            if (!$provider->phone) {
+                Log::warning("Cannot send verification message: provider has no phone number");
+                return null;
+            }
+            
+            $message = "Olá {$provider->name}, confirme a realização do atendimento agendado para " .
+                Carbon::parse($appointment->scheduled_date)->format('d/m/Y') . " às " .
+                Carbon::parse($appointment->scheduled_date)->format('H:i') . ".\n\n" .
+                "Acesse o link: {$verificationUrl}";
+            
+            return $this->sendTextMessage(
+                $provider->phone,
+                $message,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+        } catch (Exception $e) {
+            Log::error("Failed to send appointment verification to provider: " . $e->getMessage(), [
+                'provider_id' => $provider->id ?? 'unknown',
+                'appointment_id' => $appointment->id
+            ]);
+            
             return null;
         }
     }

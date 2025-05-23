@@ -475,4 +475,24 @@ Route::middleware(['auth:sanctum', 'role:super_admin'])->group(function () {
     
     Route::put('/users/{user}/roles', [App\Http\Controllers\Api\UserManagementController::class, 'updateRoles']);
     Route::put('/users/{user}/permissions', [App\Http\Controllers\Api\UserManagementController::class, 'updatePermissions']);
-}); 
+});
+
+// Novas rotas para confirmação e verificação de agendamentos
+Route::get('/appointments/pending-confirmations', [AppointmentController::class, 'getPendingConfirmations'])
+    ->middleware(['auth:sanctum', 'permission:manage_appointments']);
+    
+Route::post('/appointments/{id}/confirm-48h', [AppointmentController::class, 'confirm48h'])
+    ->middleware(['auth:sanctum', 'permission:manage_appointments']);
+    
+Route::post('/appointments/{id}/send-guide', [AppointmentController::class, 'sendGuide'])
+    ->middleware(['auth:sanctum', 'permission:manage_appointments']);
+    
+Route::get('/appointments/{id}/download-guide', [AppointmentController::class, 'downloadGuide'])
+    ->middleware(['auth:sanctum', 'permission:manage_appointments']);
+    
+Route::post('/appointments/{id}/generate-verification', [AppointmentController::class, 'generateVerificationToken'])
+    ->middleware(['auth:sanctum', 'permission:manage_appointments']);
+    
+// Rotas públicas para verificação de agendamentos (acessíveis por token)
+Route::get('/appointments/verify/{token}', [AppointmentController::class, 'verifyAppointment']);
+Route::post('/appointments/confirm/{token}', [AppointmentController::class, 'confirmAppointment']); 

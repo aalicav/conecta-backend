@@ -749,10 +749,16 @@ class NegotiationController extends Controller
                     'notes' => $itemData['notes'] ?? $item->notes,
                 ]);
                 
-                // Notify about the counter offer
-                $this->notificationService->notifyCounterOffer($item);
-                
-                $updatedItems[] = new NegotiationItemResource($item->fresh(['tuss']));
+                // Check if item is a collection and extract the first item if needed
+                if ($item instanceof \Illuminate\Database\Eloquent\Collection) {
+                    if (!$item->isEmpty()) {
+                        $this->notificationService->notifyCounterOffer($item->first());
+                        $updatedItems[] = new NegotiationItemResource($item->first()->fresh(['tuss']));
+                    }
+                } else {
+                    $this->notificationService->notifyCounterOffer($item);
+                    $updatedItems[] = new NegotiationItemResource($item->fresh(['tuss']));
+                }
             }
             
             // Verificar se todos os itens foram respondidos após as atualizações em lote
