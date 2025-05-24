@@ -2,28 +2,18 @@
 
 namespace App\Notifications\Channels;
 
+use App\Services\WhatsAppService;
+use App\Notifications\Messages\WhatsAppMessage;
 use Illuminate\Notifications\Notification;
-use Twilio\Rest\Client;
 use Illuminate\Support\Facades\Log;
 
 class WhatsAppChannel
 {
-    /**
-     * The Twilio client instance.
-     *
-     * @var \Twilio\Rest\Client
-     */
-    protected $twilio;
+    protected WhatsAppService $whatsAppService;
 
-    /**
-     * Create a new WhatsApp channel instance.
-     *
-     * @param  \Twilio\Rest\Client  $twilio
-     * @return void
-     */
-    public function __construct(Client $twilio)
+    public function __construct(WhatsAppService $whatsAppService)
     {
-        $this->twilio = $twilio;
+        $this->whatsAppService = $whatsAppService;
     }
 
     /**
@@ -36,76 +26,50 @@ class WhatsAppChannel
     public function send($notifiable, Notification $notification)
     {
         if (!method_exists($notification, 'toWhatsApp')) {
+            Log::warning('toWhatsApp method not defined on notification: ' . get_class($notification));
             return;
         }
 
+        /** @var WhatsAppMessage $message */
         $message = $notification->toWhatsApp($notifiable);
 
-        // Skip if WhatsApp is disabled or phone number is missing
-        if (empty($message) || !$this->canReceiveWhatsApp($notifiable)) {
+        if (!$message instanceof WhatsAppMessage) {
+            Log::warning('toWhatsApp method did not return a WhatsAppMessage instance for notification: ' . get_class($notification));
             return;
         }
 
-        $to = $this->getRecipientWhatsAppNumber($notifiable);
-        $from = config('services.twilio.whatsapp_from');
+        if (empty($message->recipientPhone)) {
+            if (method_exists($notifiable, 'routeNotificationFor') && $notifiable->routeNotificationFor('whatsapp')) {
+                $message->to($notifiable->routeNotificationFor('whatsapp'));
+            } elseif (isset($notifiable->phone)) {
+                $message->to($notifiable->phone); // Fallback to a generic 'phone' attribute
+            }
+        }
+
+        if (empty($message->recipientPhone)) {
+            Log::warning('No recipient phone number for WhatsApp notification: ' . get_class($notification) . ' to ' . get_class($notifiable));
+            return;
+        }
         
         try {
-            // Standard message
-            if (is_string($message)) {
-                $this->twilio->messages->create(
-                    "whatsapp:$to",
-                    [
-                        'from' => "whatsapp:$from",
-                        'body' => $message,
-                    ]
-                );
-            } 
-            // Template message
-            else if (is_array($message) && isset($message['template'])) {
-                $this->twilio->messages->create(
-                    "whatsapp:$to",
-                    [
-                        'from' => "whatsapp:$from",
-                        'contentSid' => $message['template'],
-                        'contentVariables' => json_encode($message['variables'] ?? []),
-                        'messagingServiceSid' => config('services.twilio.messaging_service_sid'),
-                    ]
-                );
-            }
+            // Delegate to the actual WhatsAppService to send the templated message
+            $this->whatsAppService->sendTemplateMessage(
+                $message->recipientPhone,
+                $message->templateName,
+                $message->parameters
+            );
+            Log::info('WhatsApp notification sent via WhatsAppChannel', [
+                'notification' => get_class($notification),
+                'recipient' => $message->recipientPhone,
+                'template' => $message->templateName
+            ]);
         } catch (\Exception $e) {
-            Log::error('WhatsApp notification failed: ' . $e->getMessage());
+            Log::error('Failed to send WhatsApp notification via WhatsAppChannel', [
+                'error' => $e->getMessage(),
+                'notification' => get_class($notification),
+                'recipient' => $message->recipientPhone,
+                'template' => $message->templateName
+            ]);
         }
-    }
-
-    /**
-     * Get the phone number for the notification.
-     *
-     * @param  mixed  $notifiable
-     * @return string|null
-     */
-    protected function getRecipientWhatsAppNumber($notifiable)
-    {
-        if ($notifiable->routeNotificationFor('whatsapp')) {
-            return $notifiable->routeNotificationFor('whatsapp');
-        }
-
-        if (isset($notifiable->phone_number)) {
-            return $notifiable->phone_number;
-        }
-
-        return null;
-    }
-
-    /**
-     * Determine if the notifiable entity can receive WhatsApp messages.
-     *
-     * @param  mixed  $notifiable
-     * @return bool
-     */
-    protected function canReceiveWhatsApp($notifiable)
-    {
-        return 
-            !empty($this->getRecipientWhatsAppNumber($notifiable)) && 
-            (!method_exists($notifiable, 'canReceiveWhatsApp') || $notifiable->canReceiveWhatsApp());
     }
 } 

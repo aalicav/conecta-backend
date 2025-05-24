@@ -8,6 +8,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
+use App\Models\User;
+use App\Notifications\Channels\WhatsAppChannel;
+use App\Notifications\Messages\WhatsAppMessage;
 
 class NegotiationApproved extends Notification
 {
@@ -39,7 +42,11 @@ class NegotiationApproved extends Notification
      */
     public function via($notifiable)
     {
-        return ['database'];
+        $channels = ['database'];
+        if ($notifiable instanceof User && $notifiable->phone) {
+            $channels[] = WhatsAppChannel::class;
+        }
+        return $channels;
     }
 
     /**
@@ -82,5 +89,29 @@ class NegotiationApproved extends Notification
             'type' => 'negotiation_approved',
             'created_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * Get the WhatsApp representation of the notification.
+     *
+     * @param  mixed  $notifiable
+     * @return \App\Notifications\Messages\WhatsAppMessage
+     */
+    public function toWhatsApp($notifiable): WhatsAppMessage
+    {
+        $recipientName = $notifiable->name ?? 'Usuário';
+        $approvedBy = Auth::user() ? Auth::user()->name : 'Sistema';
+        $totalApproved = number_format($this->negotiation->items->sum('approved_value'), 2, ',', '.');
+
+        return (new WhatsAppMessage)
+            ->template('negotiation_approved')
+            ->to($notifiable->phone)
+            ->parameters([
+                '1' => $recipientName,
+                '2' => $this->negotiation->title,
+                '3' => $approvedBy,
+                '4' => "R$ {$totalApproved}",
+                '5' => url("/negotiations/{$this->negotiation->id}")
+            ]);
     }
 } 

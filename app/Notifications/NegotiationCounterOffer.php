@@ -7,6 +7,9 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use App\Models\User;
+use App\Notifications\Channels\WhatsAppChannel;
+use App\Notifications\Messages\WhatsAppMessage;
 
 class NegotiationCounterOffer extends Notification
 {
@@ -38,7 +41,11 @@ class NegotiationCounterOffer extends Notification
      */
     public function via($notifiable)
     {
-        return ['database'];
+        $channels = ['database'];
+        if ($notifiable instanceof User && $notifiable->phone) {
+            $channels[] = WhatsAppChannel::class;
+        }
+        return $channels;
     }
 
     /**
@@ -68,5 +75,29 @@ class NegotiationCounterOffer extends Notification
             'counter_value' => $this->item->approved_value,
             'negotiation_title' => $negotiation->title,
         ];
+    }
+
+    /**
+     * Get the WhatsApp representation of the notification.
+     *
+     * @param  mixed  $notifiable
+     * @return \App\Notifications\Messages\WhatsAppMessage
+     */
+    public function toWhatsApp($notifiable): WhatsAppMessage
+    {
+        $recipientName = $notifiable->name ?? 'Usuário';
+        $tussName = $this->item->tuss ? $this->item->tuss->name : 'Procedimento';
+        $formattedValue = number_format($this->item->approved_value, 2, ',', '.');
+
+        return (new WhatsAppMessage)
+            ->template('negotiation_counter_offer')
+            ->to($notifiable->phone)
+            ->parameters([
+                '1' => $recipientName,
+                '2' => $this->item->negotiation->title,
+                '3' => $tussName,
+                '4' => "R$ {$formattedValue}",
+                '5' => url("/negotiations/{$this->item->negotiation->id}")
+            ]);
     }
 } 

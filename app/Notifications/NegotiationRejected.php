@@ -8,6 +8,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
+use App\Models\User;
+use App\Notifications\Channels\WhatsAppChannel;
+use App\Notifications\Messages\WhatsAppMessage;
 
 class NegotiationRejected extends Notification
 {
@@ -39,7 +42,11 @@ class NegotiationRejected extends Notification
      */
     public function via($notifiable)
     {
-        return ['database'];
+        $channels = ['database'];
+        if ($notifiable instanceof User && $notifiable->phone) {
+            $channels[] = WhatsAppChannel::class;
+        }
+        return $channels;
     }
 
     /**
@@ -114,5 +121,41 @@ class NegotiationRejected extends Notification
             'type' => 'negotiation_rejected',
             'created_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * Get the WhatsApp representation of the notification.
+     *
+     * @param  mixed  $notifiable
+     * @return \App\Notifications\Messages\WhatsAppMessage
+     */
+    public function toWhatsApp($notifiable): WhatsAppMessage
+    {
+        $recipientName = $notifiable->name ?? 'Usuário';
+        $rejectedBy = Auth::user() ? Auth::user()->name : 'Sistema';
+        
+        // Find the most recent rejection notes
+        $rejectionNotes = '';
+        if ($this->negotiation->approval_history && count($this->negotiation->approval_history) > 0) {
+            $rejections = collect($this->negotiation->approval_history)
+                ->where('status', 'rejected')
+                ->sortByDesc('created_at');
+            
+            if ($rejections->count() > 0) {
+                $lastRejection = $rejections->first();
+                $rejectionNotes = $lastRejection->notes ?? '';
+            }
+        }
+
+        return (new WhatsAppMessage)
+            ->template('negotiation_rejected')
+            ->to($notifiable->phone)
+            ->parameters([
+                '1' => $recipientName,
+                '2' => $this->negotiation->title,
+                '3' => $rejectedBy,
+                '4' => $rejectionNotes ?: 'Nenhuma observação fornecida',
+                '5' => url("/negotiations/{$this->negotiation->id}")
+            ]);
     }
 } 

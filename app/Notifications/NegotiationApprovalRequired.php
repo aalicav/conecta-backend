@@ -3,10 +3,13 @@
 namespace App\Notifications;
 
 use App\Models\Negotiation;
+use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use App\Notifications\Channels\WhatsAppChannel;
+use App\Notifications\Messages\WhatsAppMessage;
 
 class NegotiationApprovalRequired extends Notification
 {
@@ -47,7 +50,11 @@ class NegotiationApprovalRequired extends Notification
      */
     public function via($notifiable)
     {
-        return ['database'];
+        $channels = ['database'];
+        if ($notifiable instanceof User && $notifiable->phone) {
+            $channels[] = WhatsAppChannel::class;
+        }
+        return $channels;
     }
 
     /**
@@ -98,5 +105,35 @@ class NegotiationApprovalRequired extends Notification
             'type' => 'approval_required',
             'created_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * Get the WhatsApp representation of the notification.
+     *
+     * @param  mixed  $notifiable
+     * @return \App\Notifications\Messages\WhatsAppMessage
+     */
+    public function toWhatsApp($notifiable): WhatsAppMessage
+    {
+        $recipientName = $notifiable->name ?? 'Usuário';
+        $levelNames = [
+            'commercial' => 'Comercial',
+            'financial' => 'Financeira',
+            'management' => 'Gestão',
+            'legal' => 'Jurídica',
+            'direction' => 'Diretoria'
+        ];
+        $levelName = $levelNames[$this->approvalLevel] ?? $this->approvalLevel;
+
+        return (new WhatsAppMessage)
+            ->template('negotiation_approval_required')
+            ->to($notifiable->phone)
+            ->parameters([
+                '1' => $recipientName,
+                '2' => $this->negotiation->title,
+                '3' => $levelName,
+                '4' => $this->negotiation->creator->name ?? 'Usuário',
+                '5' => url("/negotiations/{$this->negotiation->id}")
+            ]);
     }
 } 

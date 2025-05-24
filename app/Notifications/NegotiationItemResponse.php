@@ -3,10 +3,13 @@
 namespace App\Notifications;
 
 use App\Models\NegotiationItem;
+use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use App\Notifications\Channels\WhatsAppChannel;
+use App\Notifications\Messages\WhatsAppMessage;
 
 class NegotiationItemResponse extends Notification
 {
@@ -38,7 +41,11 @@ class NegotiationItemResponse extends Notification
      */
     public function via($notifiable)
     {
-        return ['database'];
+        $channels = ['database'];
+        if ($notifiable instanceof User && $notifiable->phone) {
+            $channels[] = WhatsAppChannel::class;
+        }
+        return $channels;
     }
 
     /**
@@ -84,5 +91,40 @@ class NegotiationItemResponse extends Notification
             'approved_value' => $this->item->approved_value,
             'negotiation_title' => $negotiation->title,
         ];
+    }
+
+    /**
+     * Get the WhatsApp representation of the notification.
+     *
+     * @param  mixed  $notifiable
+     * @return \App\Notifications\Messages\WhatsAppMessage
+     */
+    public function toWhatsApp($notifiable): WhatsAppMessage
+    {
+        $recipientName = $notifiable->name ?? 'Usuário';
+        $tussName = $this->item->tuss ? $this->item->tuss->name : 'Procedimento';
+        $statusText = match($this->item->status) {
+            'approved' => 'aprovado',
+            'rejected' => 'rejeitado',
+            default => 'respondido'
+        };
+        
+        $formattedValue = '';
+        if ($this->item->status === 'approved' && $this->item->approved_value) {
+            $formattedValue = number_format($this->item->approved_value, 2, ',', '.');
+        }
+
+        return (new WhatsAppMessage)
+            ->template('negotiation_item_response')
+            ->to($notifiable->phone)
+            ->parameters([
+                '1' => $recipientName,
+                '2' => $this->item->negotiation->title,
+                '3' => $tussName,
+                '4' => $statusText,
+                '5' => $formattedValue ? "R$ {$formattedValue}" : "N/A",
+                '6' => $this->item->notes ?: "Nenhuma observação",
+                '7' => url("/negotiations/{$this->item->negotiation->id}")
+            ]);
     }
 } 
