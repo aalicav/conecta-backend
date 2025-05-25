@@ -7,6 +7,8 @@ use App\Http\Resources\ClinicResource;
 use App\Models\Clinic;
 use App\Models\Document;
 use App\Models\Address;
+use App\Models\User;
+use App\Models\Role;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -15,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Mail;
 
 class ClinicController extends Controller
 {
@@ -128,9 +132,6 @@ class ClinicController extends Controller
                 'cnpj' => 'required|string|max:18|unique:clinics,cnpj',
                 'description' => 'nullable|string',
                 'cnes' => 'nullable|string|max:20',
-                'technical_director' => 'required|string|max:255',
-                'technical_director_document' => 'required|string|max:20',
-                'technical_director_professional_id' => 'required|string|max:20',
                 'parent_clinic_id' => 'nullable|exists:clinics,id',
                 'address' => 'nullable|string|max:255',
                 'city' => 'nullable|string|max:100',
@@ -155,6 +156,7 @@ class ClinicController extends Controller
                 'phones.*.type' => 'required|string|in:mobile,landline,whatsapp,fax',
                 'phones.*.is_whatsapp' => 'sometimes|boolean',
                 'phones.*.is_primary' => 'sometimes|boolean',
+                'email' => 'required|email|unique:users,email',
             ]);
 
             if ($validator->fails()) {
@@ -217,6 +219,57 @@ class ClinicController extends Controller
                     'longitude' => $request->longitude,
                     'is_primary' => true,
                 ]);
+            }
+
+            // Create user account and send welcome email
+            $plainPassword = Str::random(10);
+            $clinicUser = User::create([
+                'name' => $clinic->name,
+                'email' => $request->email,
+                'password' => bcrypt($plainPassword),
+                'entity_id' => $clinic->id,
+                'entity_type' => Clinic::class,
+                'is_active' => false,
+            ]);
+
+            // Assign clinic_admin role
+            $role = Role::where('name', 'clinic_admin')->first();
+            if ($role) {
+                $clinicUser->assignRole($role);
+            }
+
+            // Send welcome email with password
+            if ($clinicUser) {
+                // Get company data from config
+                $companyName = config('app.name');
+                $companyAddress = config('app.address', 'Address not available');
+                $companyCity = config('app.city', 'City not available');
+                $companyState = config('app.state', 'State not available');
+                $supportEmail = config('app.support_email', 'support@example.com');
+                $supportPhone = config('app.support_phone', '(00) 0000-0000');
+                $socialMedia = [
+                    'Facebook' => 'https://facebook.com/' . config('app.social.facebook', ''),
+                    'Instagram' => 'https://instagram.com/' . config('app.social.instagram', ''),
+                ];
+                
+                // Send welcome email
+                Mail::send('emails.welcome_user', [
+                    'user' => $clinicUser,
+                    'password' => $plainPassword,
+                    'loginUrl' => config('app.frontend_url') . '/login',
+                    'companyName' => $companyName,
+                    'companyAddress' => $companyAddress,
+                    'companyCity' => $companyCity,
+                    'companyState' => $companyState,
+                    'supportEmail' => $supportEmail,
+                    'supportPhone' => $supportPhone,
+                    'socialMedia' => $socialMedia,
+                    'entityType' => 'Clínica',
+                    'clinic' => $clinic
+                ], function ($message) use ($clinicUser) {
+                    $message->to($clinicUser->email, $clinicUser->name)
+                            ->subject('Bem-vindo ao ' . config('app.name') . ' - Detalhes da sua conta');
+                });
             }
 
             DB::commit();
