@@ -15,6 +15,7 @@ return new class extends Migration
             $table->dropColumn('technical_director');
             $table->dropColumn('technical_director_document');
             $table->dropColumn('technical_director_professional_id');
+            $table->dropIndex("clinics_parent_clinic_id_foreign");
             $table->dropColumn('parent_clinic_id');
             $table->dropColumn('address');
             $table->dropColumn('city');
