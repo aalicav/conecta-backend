@@ -189,6 +189,9 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::post('/test', [NotificationController::class, 'test']);
         Route::post('/test-email', [NotificationController::class, 'testEmail']);
     });
+
+    // Notifications
+    Route::post('/notifications/pending-registrations', [NotificationController::class, 'notifyPendingRegistrations']);
 });
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {

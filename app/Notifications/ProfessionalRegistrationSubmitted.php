@@ -2,12 +2,11 @@
 
 namespace App\Notifications;
 
-use App\Models\Professional;
-use App\Notifications\Channels\WhatsAppChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use App\Models\Professional;
 
 class ProfessionalRegistrationSubmitted extends Notification implements ShouldQueue
 {
@@ -30,17 +29,7 @@ class ProfessionalRegistrationSubmitted extends Notification implements ShouldQu
      */
     public function via(object $notifiable): array
     {
-        $channels = ['database'];
-        
-        if ($notifiable->notificationChannelEnabled('email')) {
-            $channels[] = 'mail';
-        }
-        
-        if ($notifiable->notificationChannelEnabled('whatsapp')) {
-            $channels[] = WhatsAppChannel::class;
-        }
-        
-        return $channels;
+        return ['mail', 'database'];
     }
 
     /**
@@ -49,16 +38,16 @@ class ProfessionalRegistrationSubmitted extends Notification implements ShouldQu
     public function toMail(object $notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject('Novo Cadastro de Prestador para Validação')
+            ->subject('Novo Profissional Cadastrado - Análise Necessária')
             ->greeting('Olá!')
-            ->line('Um novo cadastro de prestador foi submetido e está aguardando validação.')
-            ->line('Detalhes do prestador:')
+            ->line('Um novo profissional foi cadastrado e requer análise comercial.')
+            ->line('Detalhes do profissional:')
             ->line("Nome: {$this->professional->name}")
-            ->line("Tipo: {$this->professional->professional_type}")
             ->line("Especialidade: {$this->professional->specialty}")
+            ->line("Tipo: {$this->professional->professional_type}")
             ->line("Conselho: {$this->professional->council_type} {$this->professional->council_number}")
-            ->action('Validar Cadastro', url("/professionals/{$this->professional->id}"))
-            ->line('Por favor, revise os dados e documentos submetidos para validação.');
+            ->action('Ver Profissional', url("/professionals/{$this->professional->id}"))
+            ->line('Por favor, analise os documentos e inicie o processo de negociação.');
     }
 
     /**
@@ -69,28 +58,14 @@ class ProfessionalRegistrationSubmitted extends Notification implements ShouldQu
     public function toArray(object $notifiable): array
     {
         return [
-            'title' => 'Novo Cadastro de Prestador',
-            'body' => "O prestador {$this->professional->name} foi cadastrado e aguarda validação.",
+            'title' => 'Novo Profissional Cadastrado',
+            'message' => "O profissional {$this->professional->name} foi cadastrado e requer análise",
             'action_link' => "/professionals/{$this->professional->id}",
-            'icon' => 'user-plus',
             'professional_id' => $this->professional->id,
             'professional_name' => $this->professional->name,
             'professional_type' => $this->professional->professional_type,
-        ];
-    }
-
-    /**
-     * Get the WhatsApp representation of the notification.
-     */
-    public function toWhatsApp(object $notifiable): array
-    {
-        return [
-            'template' => 'professional_registration_submitted',
-            'params' => [
-                'professional_name' => $this->professional->name,
-                'professional_type' => $this->professional->professional_type,
-                'action_url' => url("/professionals/{$this->professional->id}")
-            ]
+            'specialty' => $this->professional->specialty,
+            'icon' => 'user-plus'
         ];
     }
 } 

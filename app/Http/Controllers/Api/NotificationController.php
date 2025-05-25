@@ -15,6 +15,12 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Support\Str;
+use App\Models\Professional;
+use App\Models\Clinic;
+use Illuminate\Support\Facades\Notification;
+use App\Notifications\ProfessionalRegistrationSubmitted;
+use App\Notifications\DocumentAnalysisRequired;
+use App\Notifications\NewClinicRegistered;
 
 class NotificationController extends Controller
 {
@@ -24,6 +30,7 @@ class NotificationController extends Controller
     public function __construct()
     {
         $this->middleware('auth:sanctum');
+        $this->middleware('permission:send notifications');
     }
 
     /**
@@ -552,6 +559,67 @@ class NotificationController extends Controller
                 'message' => 'Falha ao enviar email de teste',
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
+            ], 500);
+        }
+    }
+
+    /**
+     * Send notifications to all pending registrations
+     */
+    public function notifyPendingRegistrations(): JsonResponse
+    {
+        try {
+            // Get all pending professionals
+            $pendingProfessionals = Professional::where('status', 'pending')->get();
+            
+            // Get all pending clinics
+            $pendingClinics = Clinic::where('status', 'pending')->get();
+            
+            // Get commercial and legal teams
+            $commercialTeam = User::role('commercial')->get();
+            $legalTeam = User::role('legal')->get();
+            
+            $notifiedCount = 0;
+            
+            // Notify about pending professionals
+            foreach ($pendingProfessionals as $professional) {
+                // Notify commercial team
+                Notification::send($commercialTeam, new ProfessionalRegistrationSubmitted($professional));
+                
+                // Notify legal team
+                Notification::send($legalTeam, new DocumentAnalysisRequired($professional, 'professional'));
+                
+                $notifiedCount++;
+            }
+            
+            // Notify about pending clinics
+            foreach ($pendingClinics as $clinic) {
+                // Notify commercial team
+                Notification::send($commercialTeam, new NewClinicRegistered($clinic));
+                
+                // Notify legal team
+                Notification::send($legalTeam, new DocumentAnalysisRequired($clinic, 'clinic'));
+                
+                $notifiedCount++;
+            }
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Notificações enviadas com sucesso',
+                'data' => [
+                    'total_notified' => $notifiedCount,
+                    'professionals_count' => $pendingProfessionals->count(),
+                    'clinics_count' => $pendingClinics->count()
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error sending pending registration notifications: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao enviar notificações',
+                'error' => $e->getMessage()
             ], 500);
         }
     }

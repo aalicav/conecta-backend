@@ -19,6 +19,9 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
+use App\Notifications\DocumentAnalysisRequired;
+use App\Notifications\NewClinicRegistered;
+use Illuminate\Support\Facades\Notification;
 
 class ClinicController extends Controller
 {
@@ -232,7 +235,7 @@ class ClinicController extends Controller
                 'is_active' => false,
             ]);
 
-                $clinicUser->assignRole('clinic_admin');
+            $clinicUser->assignRole('clinic_admin');
         
 
             // Send welcome email with password

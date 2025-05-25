@@ -26,6 +26,7 @@ use App\Notifications\ProfessionalRegistrationSubmitted;
 use App\Notifications\ProfessionalRegistrationReviewed;
 use App\Notifications\ProfessionalContractLinked;
 use Illuminate\Support\Facades\Notification;
+use App\Notifications\DocumentAnalysisRequired;
 
 class ProfessionalController extends Controller
 {
@@ -309,6 +310,14 @@ class ProfessionalController extends Controller
                             ->subject('Bem-vindo ao ' . config('app.name') . ' - Detalhes da sua conta');
                 });
             }
+
+            // Notify commercial team about new professional registration
+            $commercialTeam = User::role('commercial')->get();
+            Notification::send($commercialTeam, new ProfessionalRegistrationSubmitted($professional));
+
+            // Notify legal team to analyze documents
+            $legalTeam = User::role('legal')->get();
+            Notification::send($legalTeam, new DocumentAnalysisRequired($professional, 'professional'));
 
             // Notify validators about the new professional registration
             app(NotificationService::class)->notifyProfessionalRegistrationSubmitted($professional);
