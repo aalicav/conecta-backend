@@ -121,7 +121,7 @@ class ProfessionalController extends Controller
             // Validate request
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'cpf' => 'required|string|unique:professionals,cpf',
+                'cpf' => 'string|unique:professionals,cpf',
                 'birth_date' => 'required|date',
                 'gender' => 'nullable|string',
                 'professional_type' => 'required|string',
