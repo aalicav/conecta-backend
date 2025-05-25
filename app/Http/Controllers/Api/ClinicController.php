@@ -232,11 +232,8 @@ class ClinicController extends Controller
                 'is_active' => false,
             ]);
 
-            // Assign clinic_admin role
-            $role = Role::where('name', 'clinic_admin')->first();
-            if ($role) {
-                $clinicUser->assignRole($role);
-            }
+                $clinicUser->assignRole('clinic_admin');
+        
 
             // Send welcome email with password
             if ($clinicUser) {
