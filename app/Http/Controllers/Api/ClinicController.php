@@ -46,79 +46,95 @@ class ClinicController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Clinic::with(['phones', 'approver', 'contract', 'parentClinic']);
-        
-        // Only show root clinics (not branches)
-        if ($request->has('only_roots') && $request->only_roots === 'true') {
-            $query->whereNull('parent_clinic_id');
+        try {
+            $query = Clinic::with([
+                'phones', 
+                'approver', 
+                'contract', 
+                'parentClinic',
+                'addresses',
+                'documents',
+                'pricingContracts',
+                'professionals' => function($query) {
+                    $query->where('is_active', true)->take(10);
+                }
+            ]);
+            
+            // Only show root clinics (not branches)
+            if ($request->has('only_roots') && $request->only_roots === 'true') {
+                $query->whereNull('parent_clinic_id');
+            }
+            
+            // Only show branch clinics
+            if ($request->has('only_branches') && $request->only_branches === 'true') {
+                $query->whereNotNull('parent_clinic_id');
+            }
+            
+            // Filter by status if provided
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+            
+            // Filter by name if provided
+            if ($request->has('name')) {
+                $query->where('name', 'like', "%{$request->name}%");
+            }
+            
+            // Filter by CNPJ if provided
+            if ($request->has('cnpj')) {
+                $query->where('cnpj', 'like', "%{$request->cnpj}%");
+            }
+            
+            // Filter by CNES if provided
+            if ($request->has('cnes')) {
+                $query->where('cnes', 'like', "%{$request->cnes}%");
+            }
+            
+            // Filter by city if provided
+            if ($request->has('city')) {
+                $query->where('city', 'like', "%{$request->city}%");
+            }
+            
+            // Filter by state if provided
+            if ($request->has('state')) {
+                $query->where('state', $request->state);
+            }
+            
+            // Filter by active status
+            if ($request->has('is_active')) {
+                $isActive = $request->is_active === 'true' ? true : false;
+                $query->where('is_active', $isActive);
+            }
+            
+            // Filter by contract status
+            if ($request->has('has_signed_contract')) {
+                $hasSignedContract = $request->has_signed_contract === 'true' ? true : false;
+                $query->where('has_signed_contract', $hasSignedContract);
+            }
+            
+            // Filter by nearby location if provided
+            if ($request->has('latitude') && $request->has('longitude')) {
+                $distance = $request->get('distance', 10); // Default to 10km
+                $query->nearby($request->latitude, $request->longitude, $distance);
+            }
+            
+            // Apply sorting
+            $sortField = $request->sort_by ?? 'created_at';
+            $sortDirection = $request->sort_direction ?? 'desc';
+            $query->orderBy($sortField, $sortDirection);
+            
+            // Add counts if requested
+            if ($request->has('with_counts') && $request->with_counts === 'true') {
+                $query->withCount(['professionals', 'appointments', 'branches']);
+            }
+            
+            $clinics = $query->paginate($request->per_page ?? 15);
+            
+            return ClinicResource::collection($clinics);
+        } catch (\Exception $e) {
+            Log::error('Error retrieving clinics: ' . $e->getMessage());
+            throw $e;
         }
-        
-        // Only show branch clinics
-        if ($request->has('only_branches') && $request->only_branches === 'true') {
-            $query->whereNotNull('parent_clinic_id');
-        }
-        
-        // Filter by status if provided
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-        
-        // Filter by name if provided
-        if ($request->has('name')) {
-            $query->where('name', 'like', "%{$request->name}%");
-        }
-        
-        // Filter by CNPJ if provided
-        if ($request->has('cnpj')) {
-            $query->where('cnpj', 'like', "%{$request->cnpj}%");
-        }
-        
-        // Filter by CNES if provided
-        if ($request->has('cnes')) {
-            $query->where('cnes', 'like', "%{$request->cnes}%");
-        }
-        
-        // Filter by city if provided
-        if ($request->has('city')) {
-            $query->where('city', 'like', "%{$request->city}%");
-        }
-        
-        // Filter by state if provided
-        if ($request->has('state')) {
-            $query->where('state', $request->state);
-        }
-        
-        // Filter by active status
-        if ($request->has('is_active')) {
-            $isActive = $request->is_active === 'true' ? true : false;
-            $query->where('is_active', $isActive);
-        }
-        
-        // Filter by contract status
-        if ($request->has('has_signed_contract')) {
-            $hasSignedContract = $request->has_signed_contract === 'true' ? true : false;
-            $query->where('has_signed_contract', $hasSignedContract);
-        }
-        
-        // Filter by nearby location if provided
-        if ($request->has('latitude') && $request->has('longitude')) {
-            $distance = $request->get('distance', 10); // Default to 10km
-            $query->nearby($request->latitude, $request->longitude, $distance);
-        }
-        
-        // Apply sorting
-        $sortField = $request->sort_by ?? 'created_at';
-        $sortDirection = $request->sort_direction ?? 'desc';
-        $query->orderBy($sortField, $sortDirection);
-        
-        // Add counts if requested
-        if ($request->has('with_counts') && $request->with_counts === 'true') {
-            $query->withCount(['professionals', 'appointments', 'branches']);
-        }
-        
-        $clinics = $query->paginate($request->per_page ?? 15);
-        
-        return ClinicResource::collection($clinics);
     }
 
     /**
@@ -322,11 +338,7 @@ class ClinicController extends Controller
             return new ClinicResource($clinic);
         } catch (\Exception $e) {
             Log::error('Error retrieving clinic: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve clinic',
-                'error' => $e->getMessage()
-            ], 500);
+            throw $e;
         }
     }
 
