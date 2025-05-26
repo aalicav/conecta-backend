@@ -192,6 +192,14 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
 
     // Notifications
     Route::post('/notifications/pending-registrations', [NotificationController::class, 'notifyPendingRegistrations']);
+
+    // Profile routes
+    Route::prefix('profile')->group(function () {
+        Route::get('/', [ProfileController::class, 'show']);
+        Route::post('/update', [ProfileController::class, 'update']);
+        Route::post('/update-photo', [ProfileController::class, 'updatePhoto']);
+        Route::post('/change-password', [ProfileController::class, 'changePassword']);
+    });
 });
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {

@@ -18,20 +18,14 @@ class UserResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
-            'avatar' => $this->avatar ? url($this->avatar) : null,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
-            'roles' => $this->when($this->roles, function () {
-                return $this->roles->pluck('name');
-            }),
-            'permissions' => $this->when($this->permissions, function () {
-                return $this->getAllPermissions()->pluck('name');
-            }),
+            'phone' => $this->phone,
             'entity_type' => $this->entity_type,
             'entity_id' => $this->entity_id,
-            'health_plan_id' => $this->health_plan_id,
-            'clinic_id' => $this->clinic_id,
-            'professional_id' => $this->professional_id,
+            'is_active' => $this->is_active,
+            'profile_photo_url' => $this->profile_photo ? url('storage/' . $this->profile_photo) : null,
+            'roles' => $this->getRoleNames(),
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
         ];
     }
 } 

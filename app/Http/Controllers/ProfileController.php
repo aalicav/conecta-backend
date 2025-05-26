@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use App\Models\User;
+use App\Http\Resources\UserResource;
 
 class ProfileController extends Controller
 {
@@ -16,82 +17,86 @@ class ProfileController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getProfile()
+    public function show()
     {
         $user = Auth::user();
-        
-        // Adicionar URL da foto de perfil se existir
-        if ($user->profile_photo) {
-            $user->profile_photo_url = url('storage/' . $user->profile_photo);
-        }
-        
-        // Adicionar roles do usuário
-        $roles = $user->getRoleNames();
-        $user->roles = $roles;
-        
         return response()->json([
             'success' => true,
-            'data' => $user
+            'data' => new UserResource($user)
         ]);
     }
-    
+
     /**
      * Atualizar o perfil do usuário logado
      *
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function updateProfile(Request $request)
+    public function update(Request $request)
     {
-        $user = Auth::user();
-        
-        // Validação dos dados
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email,'.$user->id,
+            'email' => 'required|email|unique:users,email,' . Auth::id(),
             'phone' => 'nullable|string|max:20',
-            'profile_photo' => 'nullable|image|max:2048',
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Dados inválidos',
+                'message' => 'Validation error',
                 'errors' => $validator->errors()
             ], 422);
         }
-        
-        // Atualizar dados básicos
-        $user->name = $request->name;
-        $user->email = $request->email;
-        $user->phone = $request->phone;
-        
-        // Upload da foto de perfil
-        if ($request->hasFile('profile_photo')) {
-            // Remover foto anterior se existir
-            if ($user->profile_photo) {
-                Storage::disk('public')->delete($user->profile_photo);
-            }
-            
-            // Salvar nova foto
-            $path = $request->file('profile_photo')->store('profile-photos', 'public');
-            $user->profile_photo = $path;
-        }
-        
-        $user->save();
-        
-        // Adicionar URL da foto após salvar
-        if ($user->profile_photo) {
-            $user->profile_photo_url = url('storage/' . $user->profile_photo);
-        }
-        
+
+        $user = Auth::user();
+        $user->update($request->only(['name', 'email', 'phone']));
+
         return response()->json([
             'success' => true,
-            'message' => 'Perfil atualizado com sucesso',
-            'data' => $user
+            'message' => 'Profile updated successfully',
+            'data' => new UserResource($user)
         ]);
     }
-    
+
+    /**
+     * Alterar a foto de perfil do usuário logado
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function updatePhoto(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'photo' => 'required|image|max:2048', // 2MB max
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $user = Auth::user();
+
+        // Delete old photo if exists
+        if ($user->profile_photo) {
+            Storage::disk('public')->delete($user->profile_photo);
+        }
+
+        // Store new photo
+        $photoPath = $request->file('photo')->store('profile-photos', 'public');
+        $user->profile_photo = $photoPath;
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Photo updated successfully',
+            'data' => new UserResource($user)
+        ]);
+    }
+
     /**
      * Alterar a senha do usuário logado
      *
@@ -100,37 +105,34 @@ class ProfileController extends Controller
      */
     public function changePassword(Request $request)
     {
-        $user = Auth::user();
-        
-        // Validação dos dados
         $validator = Validator::make($request->all(), [
             'current_password' => 'required|string',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => 'required|string|min:6|confirmed',
         ]);
-        
+
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Dados inválidos',
+                'message' => 'Validation error',
                 'errors' => $validator->errors()
             ], 422);
         }
-        
-        // Verificar senha atual
+
+        $user = Auth::user();
+
         if (!Hash::check($request->current_password, $user->password)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Senha atual incorreta'
-            ], 400);
+                'message' => 'Current password is incorrect'
+            ], 422);
         }
-        
-        // Atualizar senha
+
         $user->password = Hash::make($request->password);
         $user->save();
-        
+
         return response()->json([
             'success' => true,
-            'message' => 'Senha alterada com sucesso'
+            'message' => 'Password changed successfully'
         ]);
     }
 } 
