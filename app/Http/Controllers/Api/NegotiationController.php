@@ -81,7 +81,7 @@ class NegotiationController extends Controller
         // Filter negotiations based on user role
         $user = Auth::user();
         
-        if (!$user->hasRole('admin')) {
+        if ($user->hasRole(['plan_admin', 'professional', 'clinic_admin'])) {
             $query->where(function($q) use ($user) {
                 // Creator can see their own negotiations
                 $q->where('creator_id', $user->id);
