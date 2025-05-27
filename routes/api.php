@@ -378,7 +378,7 @@ Route::middleware(['auth:sanctum'])->prefix('whatsapp')->group(function () {
 Route::post('/api/whatsapp/test/simple', [App\Http\Controllers\Api\WhatsappController::class, 'sendSimpleTest']);
 
 // Auth routes
-Route::group(['prefix' => 'auth'], function () {
+Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
     Route::get('/user', [AuthController::class, 'user'])->middleware('auth:sanctum');
