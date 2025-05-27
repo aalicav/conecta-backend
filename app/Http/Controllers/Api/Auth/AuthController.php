@@ -121,66 +121,47 @@ class AuthController extends Controller
             ]);
         }
 
-        // Generate token and store in password_reset_tokens table
-        $token = Str::random(60);
-        $resetCode = strtoupper(Str::random(8));
-        
-        // Delete any existing password reset tokens for this user
-        DB::table('password_reset_tokens')->where('email', $user->email)->delete();
-        
-        // Insert new password reset token
-        DB::table('password_reset_tokens')->insert([
-            'email' => $user->email,
-            'token' => Hash::make($token),
-            'created_at' => Carbon::now()
-        ]);
-        
-        // Create password reset URL
-        $resetUrl = URL::temporarySignedRoute(
-            'password.reset',
-            Carbon::now()->addMinutes(60),
-            ['token' => $token, 'email' => $user->email]
-        );
-        
-        // Build frontend URL using the signed URL's query parameters
-        $frontendResetUrl = Config::get('app.frontend_url') . '/reset-password?' . http_build_query([
-            'token' => $token,
-            'email' => $user->email,
-            'signature' => request()->hasValidSignature()
-        ]);
+        try {
+            // Generate token
+            $token = Str::random(60);
+            
+            // Delete any existing password reset tokens for this user
+            DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+            
+            // Insert new password reset token
+            DB::table('password_reset_tokens')->insert([
+                'email' => $user->email,
+                'token' => Hash::make($token),
+                'created_at' => now()
+            ]);
+            
+            // Build frontend URL
+            $resetUrl = config('app.frontend_url', 'http://localhost:3000') . '/reset-password?' . http_build_query([
+                'token' => $token,
+                'email' => $user->email
+            ]);
 
-        // Send password reset email
-        $companyName = Config::get('app.name');
-        $companyAddress = Config::get('app.address', 'Address not available');
-        $companyCity = Config::get('app.city', 'City not available');
-        $companyState = Config::get('app.state', 'State not available');
-        $supportEmail = Config::get('app.support_email', 'support@example.com');
-        $supportPhone = Config::get('app.support_phone', '(00) 0000-0000');
-        $socialMedia = [
-            'Facebook' => 'https://facebook.com/' . Config::get('app.social.facebook', ''),
-            'Instagram' => 'https://instagram.com/' . Config::get('app.social.instagram', ''),
-        ];
-        
-        Mail::send('emails.password_reset', [
-            'user' => $user,
-            'resetUrl' => $frontendResetUrl,
-            'resetCode' => $resetCode,
-            'expirationTime' => '60 minutos',
-            'companyName' => $companyName,
-            'companyAddress' => $companyAddress,
-            'companyCity' => $companyCity,
-            'companyState' => $companyState,
-            'supportEmail' => $supportEmail,
-            'supportPhone' => $supportPhone,
-            'socialMedia' => $socialMedia,
-        ], function ($message) use ($user) {
-            $message->to($user->email, $user->name)
-                    ->subject('Redefinição de Senha');
-        });
+            // Send password reset email
+            Mail::send('emails.password_reset', [
+                'resetUrl' => $resetUrl,
+                'expirationTime' => '60 minutos',
+                'companyName' => config('app.name', 'Conecta Saúde')
+            ], function($message) use ($user) {
+                $message->to($user->email)
+                        ->subject('Redefinição de Senha');
+            });
 
-        return response()->json([
-            'message' => 'Se o endereço de e-mail estiver correto, você receberá um e-mail com instruções para redefinir sua senha.'
-        ]);
+            return response()->json([
+                'message' => 'Se o endereço de e-mail estiver correto, você receberá um e-mail com instruções para redefinir sua senha.'
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Erro ao enviar email de redefinição de senha: ' . $e->getMessage());
+            
+            return response()->json([
+                'message' => 'Se o endereço de e-mail estiver correto, você receberá um e-mail com instruções para redefinir sua senha.'
+            ]);
+        }
     }
 
     /**
