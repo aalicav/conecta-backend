@@ -312,7 +312,7 @@ class ProfessionalController extends Controller
             }
 
             // Notify commercial team about new professional registration
-            $commercialTeam = User::role('commercial')->get();
+            $commercialTeam = User::role('commercial_manager')->get();
             Notification::send($commercialTeam, new ProfessionalRegistrationSubmitted($professional));
 
             // Notify legal team to analyze documents
