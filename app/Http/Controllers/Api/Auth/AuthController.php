@@ -121,18 +121,17 @@ class AuthController extends Controller
             ]);
         }
 
-        // Generate token and store in password_resets table
+        // Generate token and store in password_reset_tokens table
         $token = Str::random(60);
         $resetCode = strtoupper(Str::random(8));
         
         // Delete any existing password reset tokens for this user
-        DB::table('password_resets')->where('email', $user->email)->delete();
+        DB::table('password_reset_tokens')->where('email', $user->email)->delete();
         
         // Insert new password reset token
-        DB::table('password_resets')->insert([
+        DB::table('password_reset_tokens')->insert([
             'email' => $user->email,
             'token' => Hash::make($token),
-            'reset_code' => $resetCode,
             'created_at' => Carbon::now()
         ]);
         
@@ -194,11 +193,10 @@ class AuthController extends Controller
     {
         $request->validate([
             'token' => 'required|string',
-            'email' => 'required|email',
-            'reset_code' => 'nullable|string',
+            'email' => 'required|email'
         ]);
 
-        $passwordReset = DB::table('password_resets')
+        $passwordReset = DB::table('password_reset_tokens')
             ->where('email', $request->email)
             ->first();
 
@@ -209,11 +207,10 @@ class AuthController extends Controller
             ], 400);
         }
 
-        // Check if token is valid (using either the token or reset code)
+        // Check if token is valid
         $isValidToken = Hash::check($request->token, $passwordReset->token);
-        $isValidCode = $request->reset_code && $request->reset_code === $passwordReset->reset_code;
 
-        if (!$isValidToken && !$isValidCode) {
+        if (!$isValidToken) {
             return response()->json([
                 'message' => 'Token inválido ou expirado.',
                 'valid' => false
@@ -246,11 +243,10 @@ class AuthController extends Controller
         $request->validate([
             'token' => 'required|string',
             'email' => 'required|email',
-            'reset_code' => 'nullable|string',
             'password' => 'required|min:8|confirmed',
         ]);
 
-        $passwordReset = DB::table('password_resets')
+        $passwordReset = DB::table('password_reset_tokens')
             ->where('email', $request->email)
             ->first();
 
@@ -260,11 +256,10 @@ class AuthController extends Controller
             ], 400);
         }
 
-        // Check if token is valid (using either the token or reset code)
+        // Check if token is valid
         $isValidToken = Hash::check($request->token, $passwordReset->token);
-        $isValidCode = $request->reset_code && $request->reset_code === $passwordReset->reset_code;
 
-        if (!$isValidToken && !$isValidCode) {
+        if (!$isValidToken) {
             return response()->json([
                 'message' => 'Token inválido ou expirado.'
             ], 400);
@@ -284,7 +279,7 @@ class AuthController extends Controller
         $user->save();
 
         // Delete the token
-        DB::table('password_resets')->where('email', $request->email)->delete();
+        DB::table('password_reset_tokens')->where('email', $request->email)->delete();
 
         return response()->json([
             'message' => 'Senha redefinida com sucesso.'
