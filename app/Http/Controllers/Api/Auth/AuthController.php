@@ -109,19 +109,19 @@ class AuthController extends Controller
      */
     public function requestPasswordReset(Request $request)
     {
-        $request->validate([
-            'email' => 'required|email',
-        ]);
-
-        $user = User::where('email', $request->email)->first();
-
-        if (!$user) {
-            return response()->json([
-                'message' => 'Se o endereço de e-mail estiver correto, você receberá um e-mail com instruções para redefinir sua senha.'
-            ]);
-        }
-
         try {
+            $request->validate([
+                'email' => 'required|email',
+            ]);
+
+            $user = User::where('email', $request->email)->first();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Se o endereço de e-mail estiver correto, você receberá um e-mail com instruções para redefinir sua senha.'
+                ]);
+            }
+
             // Generate token
             $token = Str::random(60);
             
@@ -141,6 +141,11 @@ class AuthController extends Controller
                 'email' => $user->email
             ]);
 
+            \Log::info('Tentando enviar email de redefinição de senha', [
+                'email' => $user->email,
+                'resetUrl' => $resetUrl
+            ]);
+
             // Send password reset email
             Mail::send('emails.password_reset', [
                 'resetUrl' => $resetUrl,
@@ -151,16 +156,23 @@ class AuthController extends Controller
                         ->subject('Redefinição de Senha');
             });
 
+            \Log::info('Email de redefinição de senha enviado com sucesso');
+
             return response()->json([
                 'message' => 'Se o endereço de e-mail estiver correto, você receberá um e-mail com instruções para redefinir sua senha.'
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('Erro ao enviar email de redefinição de senha: ' . $e->getMessage());
+            \Log::error('Erro ao processar redefinição de senha: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             
             return response()->json([
-                'message' => 'Se o endereço de e-mail estiver correto, você receberá um e-mail com instruções para redefinir sua senha.'
-            ]);
+                'message' => 'Ocorreu um erro ao processar sua solicitação. Por favor, tente novamente mais tarde.',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
