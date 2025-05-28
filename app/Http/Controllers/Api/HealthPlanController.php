@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use App\Http\Resources\DocumentResource;
 use App\Models\EntityDocumentType;
+use App\Notifications\WelcomeNotification;
 
 class HealthPlanController extends Controller
 {
@@ -240,6 +241,22 @@ class HealthPlanController extends Controller
 
             DB::beginTransaction();
 
+            // Generate a temporary password for the health plan user
+            $temporaryPassword = Str::random(12);
+
+            // Create user for health plan
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($temporaryPassword),
+                'entity_type' => 'health_plan',
+                'is_active' => true,
+                'entity_id' => null,
+            ]);
+
+            // Assign health plan role
+            $user->assignRole('plan_admin');
+
             // Handle logo upload if provided
             $logoPath = null;
             if ($request->hasFile('logo')) {
@@ -269,7 +286,7 @@ class HealthPlanController extends Controller
                     'operational_representative_name' => $parentPlan->operational_representative_name,
                     'operational_representative_cpf' => $parentPlan->operational_representative_cpf,
                     'operational_representative_position' => $parentPlan->operational_representative_position,
-                    'user_id' => Auth::id(),
+                    'user_id' => $user->id,
                     'status' => $parentPlan->status === 'approved' ? 'approved' : 'pending',
                     'approved_at' => $parentPlan->status === 'approved' ? now() : null,
                     'approved_by' => $parentPlan->status === 'approved' ? Auth::id() : null
@@ -278,10 +295,14 @@ class HealthPlanController extends Controller
                 // Create regular health plan
                 $healthPlan = new HealthPlan($request->except('logo', 'phones', 'documents', 'procedures', 'auto_approve', 'send_welcome_email'));
                 $healthPlan->logo = $logoPath;
-                $healthPlan->user_id = Auth::id();
+                $healthPlan->user_id = $user->id;
             }
             
             $healthPlan->save();
+
+            // Update user's entity_id after health plan is created
+            $user->entity_id = $healthPlan->id;
+            $user->save();
 
             // Create phone records
             if ($request->has('phones')) {
@@ -330,6 +351,10 @@ class HealthPlanController extends Controller
                 // Update representatives if provided
                 $this->updateUserRepresentatives($request, $healthPlan);
             }
+
+            // Send welcome email with temporary password
+            $user->temporary_password = $temporaryPassword;
+            $user->notify(new WelcomeNotification($user, $healthPlan));
 
             // Commit transaction
             DB::commit();
