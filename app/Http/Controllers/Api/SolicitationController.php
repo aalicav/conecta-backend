@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 use App\Models\Appointment;
+use App\Jobs\ProcessAutomaticScheduling;
 
 class SolicitationController extends Controller
 {
@@ -75,7 +76,7 @@ class SolicitationController extends Controller
         }
         
         // Restrict health plan users to only see their own solicitations
-        if (Auth::user()->hasRole('health_plan_admin')) {
+        if (Auth::user()->hasRole('plan_admin')) {
             $query->whereHas('healthPlan', function ($q) {
                 $q->where('id', Auth::user()->health_plan_id);
             });
@@ -112,7 +113,7 @@ class SolicitationController extends Controller
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Validation error',
+                    'message' => 'Erro de validação',
                     'errors' => $validator->errors()
                 ], 422);
             }
@@ -124,7 +125,7 @@ class SolicitationController extends Controller
             if (!$healthPlan->approved_at) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Health plan is not approved'
+                    'message' => 'O plano de saúde não está aprovado'
                 ], 422);
             }
 
@@ -132,7 +133,7 @@ class SolicitationController extends Controller
             if (!$healthPlan->has_signed_contract) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Health plan has not signed the contract'
+                    'message' => 'O plano de saúde não possui contrato assinado'
                 ], 422);
             }
 
@@ -140,7 +141,7 @@ class SolicitationController extends Controller
             if ($healthPlan->status !== 'approved') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Health plan has been edited and requires re-approval'
+                    'message' => 'O plano de saúde foi editado e requer reaprovação'
                 ], 422);
             }
 
@@ -149,7 +150,7 @@ class SolicitationController extends Controller
             if ($patient->health_plan_id != $request->health_plan_id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Patient does not belong to the specified health plan'
+                    'message' => 'O paciente não pertence ao plano de saúde especificado'
                 ], 422);
             }
 
@@ -175,51 +176,24 @@ class SolicitationController extends Controller
             // This will notify health plan admins and super admins
             $this->notificationService->notifySolicitationCreated($solicitation);
 
-            // Attempt to find best provider based on TUSS specialty
-            $scheduler = new AppointmentScheduler();
-            $result = $scheduler->findBestProvider($solicitation);
+            // Dispatch the automatic scheduling job
+            ProcessAutomaticScheduling::dispatch($solicitation);
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Solicitação criada e enviada para processamento',
+                'data' => new SolicitationResource($solicitation)
+            ]);
 
-            if ($result['success']) {
-                // Create appointment with the found provider
-                $appointment = new Appointment([
-                    'solicitation_id' => $solicitation->id,
-                    'provider_type' => $result['provider']['provider_type'],
-                    'provider_id' => $result['provider']['provider_id'],
-                    'status' => Appointment::STATUS_SCHEDULED,
-                    'created_by' => Auth::id()
-                ]);
-
-                $appointment->save();
-                
-                // Mark solicitation as scheduled
-                $solicitation->markAsScheduled(true);
-                
-                DB::commit();
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Solicitation created and provider found',
-                    'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments']))
-                ]);
-            } else {
-                // If no provider found, keep as pending
-                $solicitation->markAsPending();
-                
-                DB::commit();
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Solicitation created but no provider found immediately',
-                    'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy']))
-                ]);
-            }
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error creating solicitation: ' . $e->getMessage());
+            Log::error('Erro ao criar solicitação: ' . $e->getMessage());
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create solicitation',
+                'message' => 'Falha ao criar solicitação',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -235,11 +209,11 @@ class SolicitationController extends Controller
     {
         try {
             // Check if user has permission to view this solicitation
-            if (Auth::user()->hasRole('health_plan_admin') && 
+            if (Auth::user()->hasRole('plan_admin') && 
                 Auth::user()->health_plan_id != $solicitation->health_plan_id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized to view this solicitation'
+                    'message' => 'Não autorizado a visualizar esta solicitação'
                 ], 403);
             }
 
@@ -268,7 +242,7 @@ class SolicitationController extends Controller
     {
         try {
             // Check if user has permission to update this solicitation
-            if (Auth::user()->hasRole('health_plan_admin') && 
+            if (Auth::user()->hasRole('plan_admin') && 
                 Auth::user()->health_plan_id != $solicitation->health_plan_id) {
                 return response()->json([
                     'success' => false,
@@ -280,7 +254,7 @@ class SolicitationController extends Controller
             if (!$solicitation->isPending() && !$solicitation->isProcessing()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Solicitation cannot be updated in its current state'
+                    'message' => 'A solicitação não pode ser atualizada no estado atual'
                 ], 422);
             }
 
@@ -353,7 +327,7 @@ class SolicitationController extends Controller
     {
         try {
             // Check if user has permission to delete this solicitation
-            if (Auth::user()->hasRole('health_plan_admin') && 
+            if (Auth::user()->hasRole('plan_admin') && 
                 Auth::user()->health_plan_id != $solicitation->health_plan_id) {
                 return response()->json([
                     'success' => false,
@@ -365,7 +339,7 @@ class SolicitationController extends Controller
             if (!$solicitation->isPending()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only pending solicitations can be deleted'
+                    'message' => 'Apenas solicitações pendentes podem ser excluídas'
                 ], 422);
             }
 
@@ -373,7 +347,7 @@ class SolicitationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Solicitation deleted successfully'
+                'message' => 'Solicitação excluída com sucesso'
             ]);
         } catch (\Exception $e) {
             Log::error('Error deleting solicitation: ' . $e->getMessage());
@@ -396,7 +370,7 @@ class SolicitationController extends Controller
     {
         try {
             // Check if user has permission to cancel this solicitation
-            if (Auth::user()->hasRole('health_plan_admin') && 
+            if (Auth::user()->hasRole('plan_admin') && 
                 Auth::user()->health_plan_id != $solicitation->health_plan_id) {
                 return response()->json([
                     'success' => false,
@@ -421,7 +395,7 @@ class SolicitationController extends Controller
             if (!$solicitation->cancel($request->cancel_reason)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Solicitation cannot be cancelled in its current state'
+                    'message' => 'A solicitação não pode ser cancelada no estado atual'
                 ], 422);
             }
 
@@ -441,7 +415,7 @@ class SolicitationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Solicitation cancelled successfully',
+                'message' => 'Solicitação cancelada com sucesso',
                 'data' => new SolicitationResource($solicitation)
             ]);
         } catch (\Exception $e) {
@@ -464,7 +438,7 @@ class SolicitationController extends Controller
     {
         try {
             // Check if user has permission to schedule this solicitation
-            if (Auth::user()->hasRole('health_plan_admin') && 
+            if (Auth::user()->hasRole('plan_admin') && 
                 Auth::user()->health_plan_id != $solicitation->health_plan_id) {
                 return response()->json([
                     'success' => false,
@@ -476,7 +450,7 @@ class SolicitationController extends Controller
             if (!$solicitation->isPending() && !$solicitation->isProcessing()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Solicitation cannot be scheduled in its current state'
+                    'message' => 'A solicitação não pode ser agendada no estado atual'
                 ], 422);
             }
 
@@ -504,7 +478,7 @@ class SolicitationController extends Controller
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Solicitation scheduled successfully',
+                    'message' => 'Solicitação agendada com sucesso',
                     'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments.provider']))
                 ]);
             } else {
@@ -513,7 +487,7 @@ class SolicitationController extends Controller
                 
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to schedule solicitation',
+                    'message' => 'Falha ao agendar solicitação',
                     'error' => $result['message']
                 ], 422);
             }
@@ -541,7 +515,7 @@ class SolicitationController extends Controller
     {
         try {
             // Check if user has permission to complete this solicitation
-            if (Auth::user()->hasRole('health_plan_admin') && 
+            if (Auth::user()->hasRole('plan_admin') && 
                 Auth::user()->health_plan_id != $solicitation->health_plan_id) {
                 return response()->json([
                     'success' => false,
@@ -561,7 +535,7 @@ class SolicitationController extends Controller
             if (!$allCompleted) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot complete solicitation until all appointments are completed'
+                    'message' => 'Não é possível completar a solicitação até que todas as consultas sejam concluídas'
                 ], 422);
             }
 
@@ -569,7 +543,7 @@ class SolicitationController extends Controller
             if (!$solicitation->markAsCompleted()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Solicitation cannot be completed in its current state'
+                    'message' => 'A solicitação não pode ser concluída no estado atual'
                 ], 422);
             }
 
@@ -578,7 +552,7 @@ class SolicitationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Solicitation completed successfully',
+                'message' => 'Solicitação concluída com sucesso',
                 'data' => new SolicitationResource($solicitation)
             ]);
         } catch (\Exception $e) {
@@ -592,64 +566,6 @@ class SolicitationController extends Controller
     }
 
     /**
-     * Attempt to schedule a solicitation automatically.
-     *
-     * @param Solicitation $solicitation
-     * @return bool
-     */
-    protected function attemptAutoScheduling(Solicitation $solicitation): bool
-    {
-        // Check if automatic scheduling is enabled
-        if (!SchedulingConfigService::isAutomaticSchedulingEnabled()) {
-            Log::info("Automatic scheduling disabled for solicitation #{$solicitation->id}");
-            return false;
-        }
-
-        try {
-            Log::info("Starting automatic scheduling for solicitation #{$solicitation->id}");
-            
-            // Find best provider based on TUSS specialty only
-            $scheduler = new AppointmentScheduler();
-            $result = $scheduler->findBestProvider($solicitation);
-            
-            if ($result['success']) {
-                // Create appointment with the found provider
-                $appointment = new Appointment([
-                    'solicitation_id' => $solicitation->id,
-                    'provider_type' => $result['provider']['provider_type'],
-                    'provider_id' => $result['provider']['provider_id'],
-                    'status' => Appointment::STATUS_SCHEDULED,
-                    'created_by' => Auth::id()
-                ]);
-
-                $appointment->save();
-                
-                // Mark solicitation as scheduled
-                $solicitation->markAsScheduled(true);
-                
-                Log::info("Successfully scheduled appointment for solicitation #{$solicitation->id}");
-                return true;
-            } else {
-                // If no provider found and solicitation is still in processing, mark it as pending
-                if ($solicitation->isProcessing()) {
-                    $solicitation->markAsPending();
-                    Log::info("No provider found for solicitation #{$solicitation->id}, marked as pending");
-                }
-                return false;
-            }
-        } catch (\Exception $e) {
-            Log::error("Error in automatic scheduling for solicitation #{$solicitation->id}: " . $e->getMessage());
-            
-            // Make sure to mark as pending if an exception occurred
-            if ($solicitation->isProcessing()) {
-                $solicitation->markAsPending();
-            }
-            
-            return false;
-        }
-    }
-
-    /**
      * Force automatic scheduling of an existing solicitation.
      *
      * @param Solicitation $solicitation
@@ -659,11 +575,11 @@ class SolicitationController extends Controller
     {
         try {
             // Check if user has permission to schedule this solicitation
-            if (Auth::user()->hasRole('health_plan_admin') && 
+            if (Auth::user()->hasRole('plan_admin') && 
                 Auth::user()->health_plan_id != $solicitation->health_plan_id) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized to schedule this solicitation'
+                    'message' => 'Não autorizado a agendar esta solicitação'
                 ], 403);
             }
 
@@ -671,32 +587,24 @@ class SolicitationController extends Controller
             if (!$solicitation->isPending() && !$solicitation->isProcessing()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Solicitation cannot be scheduled in its current state'
+                    'message' => 'A solicitação não pode ser agendada no estado atual'
                 ], 422);
             }
 
-            // Mark as processing and attempt auto-scheduling
+            // Mark as processing and dispatch the job
             $solicitation->markAsProcessing();
-            $success = $this->attemptAutoScheduling($solicitation);
-
-            if (!$success) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to schedule solicitation automatically',
-                    'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments']))
-                ], 422);
-            }
+            ProcessAutomaticScheduling::dispatch($solicitation);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Solicitation scheduled automatically',
-                'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments.provider']))
+                'message' => 'Solicitação enviada para agendamento automático',
+                'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments']))
             ]);
         } catch (\Exception $e) {
-            Log::error('Error forcing automatic scheduling: ' . $e->getMessage());
+            Log::error('Erro ao forçar agendamento automático: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to schedule solicitation',
+                'message' => 'Falha ao agendar solicitação',
                 'error' => $e->getMessage()
             ], 500);
         }

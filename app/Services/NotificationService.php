@@ -502,14 +502,18 @@ class NotificationService
      */
     protected function getUsersToNotifyForSolicitation(Solicitation $solicitation)
     {
-        // Notify health plan admins and super admins
+        // Get health plan admins
         $healthPlanAdmins = User::role('plan_admin')
-            ->where('health_plan_id', $solicitation->health_plan_id)
-            
+            ->where('entity_type', 'App\\Models\\HealthPlan')
+            ->where('entity_id', $solicitation->health_plan_id)
+            ->where('is_active', true)
+            ->whereNull('deleted_at')
             ->get();
             
+        // Get super admins
         $superAdmins = User::role('super_admin')
-            
+            ->where('is_active', true)
+            ->whereNull('deleted_at')
             ->get();
             
         return $healthPlanAdmins->merge($superAdmins);
@@ -529,9 +533,11 @@ class NotificationService
         $solicitation = $appointment->solicitation;
         
         // Add health plan admin
-        $healthPlanAdmins = User::role('health_plan_admin')
-            ->where('health_plan_id', $solicitation->health_plan_id)
-            
+        $healthPlanAdmins = User::role('plan_admin')
+            ->where('entity_type', 'App\\Models\\HealthPlan')
+            ->where('entity_id', $solicitation->health_plan_id)
+            ->where('is_active', true)
+            ->whereNull('deleted_at')
             ->get();
         $users = $users->merge($healthPlanAdmins);
         
@@ -540,14 +546,18 @@ class NotificationService
         
         if ($providerType === 'App\\Models\\Clinic') {
             $clinicAdmins = User::role('clinic_admin')
-                ->where('clinic_id', $appointment->provider_id)
-                
+                ->where('entity_type', 'App\\Models\\Clinic')
+                ->where('entity_id', $appointment->provider_id)
+                ->where('is_active', true)
+                ->whereNull('deleted_at')
                 ->get();
             $users = $users->merge($clinicAdmins);
         } elseif ($providerType === 'App\\Models\\Professional') {
             $professional = User::role('professional')
-                ->where('professional_id', $appointment->provider_id)
-                
+                ->where('entity_type', 'App\\Models\\Professional')
+                ->where('entity_id', $appointment->provider_id)
+                ->where('is_active', true)
+                ->whereNull('deleted_at')
                 ->first();
                 
             if ($professional) {

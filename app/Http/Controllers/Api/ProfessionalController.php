@@ -830,7 +830,7 @@ class ProfessionalController extends Controller
         }
 
         // Health plan admins can access all professionals
-        if ($user->hasRole('health_plan_admin')) {
+        if ($user->hasRole('plan_admin')) {
             return true;
         }
 

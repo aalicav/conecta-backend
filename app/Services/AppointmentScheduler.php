@@ -285,15 +285,12 @@ class AppointmentScheduler
      */
     private function getPriceForTuss($provider, int $tussId): ?float
     {
-        $contract = $provider->pricingContracts()->active()->first();
+        $contract = $provider->pricingContracts()
+            ->where('tuss_procedure_id', $tussId)
+            ->where('is_active', true)
+            ->first();
         
-        if (!$contract) {
-            return null;
-        }
-        
-        $pricingItem = $contract->pricingItems()->where('tuss_id', $tussId)->first();
-        
-        return $pricingItem ? $pricingItem->price : null;
+        return $contract ? $contract->price : null;
     }
 
     /**
@@ -519,20 +516,23 @@ class AppointmentScheduler
             // Get clinics
             $clinics = Clinic::active()
                 ->whereHas('pricingContracts', function($query) use ($tussId) {
-                    $query->whereHas('pricingItems', function($query) use ($tussId) {
-                        $query->where('tuss_id', $tussId);
-                    });
+                    $query->where('tuss_procedure_id', $tussId)
+                          ->where('is_active', true);
                 })
                 ->get();
 
             foreach ($clinics as $clinic) {
-                $price = $this->getPriceForTuss($clinic, $tussId);
-                if ($price !== null) {
+                $contract = $clinic->pricingContracts()
+                    ->where('tuss_procedure_id', $tussId)
+                    ->where('is_active', true)
+                    ->first();
+                
+                if ($contract) {
                     $providers[] = [
                         'provider_type' => Clinic::class,
                         'provider_id' => $clinic->id,
                         'name' => $clinic->name,
-                        'price' => $price
+                        'price' => $contract->price
                     ];
                 }
             }
@@ -540,28 +540,34 @@ class AppointmentScheduler
             // Get professionals
             $professionals = Professional::active()
                 ->whereHas('pricingContracts', function($query) use ($tussId) {
-                    $query->whereHas('pricingItems', function($query) use ($tussId) {
-                        $query->where('tuss_id', $tussId);
-                    });
+                    $query->where('tuss_procedure_id', $tussId)
+                          ->where('is_active', true);
                 })
                 ->get();
 
             foreach ($professionals as $professional) {
-                $price = $this->getPriceForTuss($professional, $tussId);
-                if ($price !== null) {
+                $contract = $professional->pricingContracts()
+                    ->where('tuss_procedure_id', $tussId)
+                    ->where('is_active', true)
+                    ->first();
+                
+                if ($contract) {
                     $providers[] = [
                         'provider_type' => Professional::class,
                         'provider_id' => $professional->id,
                         'name' => $professional->name,
-                        'price' => $price
+                        'price' => $contract->price
                     ];
                 }
             }
 
             if (empty($providers)) {
+                // Notify network managers, admins, and directors
+                $this->notifyNoProvidersFound($solicitation);
+                
                 return [
                     'success' => false,
-                    'message' => 'No providers found for this specialty'
+                    'message' => 'Nenhum profissional encontrado para esta especialidade'
                 ];
             }
 
@@ -577,11 +583,55 @@ class AppointmentScheduler
             ];
 
         } catch (\Exception $e) {
-            Log::error("Error finding best provider for solicitation #{$solicitation->id}: " . $e->getMessage());
+            Log::error("Erro ao buscar melhor profissional para solicitação #{$solicitation->id}: " . $e->getMessage());
             return [
                 'success' => false,
-                'message' => 'Error finding provider: ' . $e->getMessage()
+                'message' => 'Erro ao buscar profissional: ' . $e->getMessage()
             ];
+        }
+    }
+
+    /**
+     * Notify relevant users when no providers are found for a solicitation.
+     *
+     * @param Solicitation $solicitation
+     * @return void
+     */
+    protected function notifyNoProvidersFound(Solicitation $solicitation): void
+    {
+        try {
+            // Get users to notify
+            $users = User::whereHas('roles', function($query) {
+                $query->whereIn('name', ['network_manager', 'admin', 'director']);
+            })->get();
+
+            if ($users->isEmpty()) {
+                return;
+            }
+
+            $tuss = $solicitation->tuss;
+            $patient = $solicitation->patient;
+            $healthPlan = $solicitation->healthPlan;
+
+            // Create notification data
+            $notificationData = [
+                'title' => 'Profissional não encontrado',
+                'type' => 'provider_not_found',
+                'solicitation_id' => $solicitation->id,
+                'tuss_code' => $tuss->code,
+                'tuss_description' => $tuss->description,
+                'patient_name' => $patient->name,
+                'health_plan_name' => $healthPlan->name,
+                'created_at' => now(),
+                'url' => "/solicitations/{$solicitation->id}"
+            ];
+
+            // Send notification to each user
+            Notification::send($users, new \App\Notifications\NoProvidersFound($solicitation, $notificationData));
+
+            Log::info("Notificação enviada para " . $users->count() . " usuários sobre falta de profissionais para solicitação #{$solicitation->id}");
+        } catch (\Exception $e) {
+            Log::error("Erro ao enviar notificação de falta de profissionais: " . $e->getMessage());
         }
     }
 

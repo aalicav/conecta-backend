@@ -115,7 +115,7 @@ class AppointmentController extends Controller
         // Apply user-specific filters based on roles
         $user = Auth::user();
         
-        if ($user->hasRole('health_plan_admin')) {
+        if ($user->hasRole('plan_admin')) {
             // Health plan admins can only see appointments for their health plan
             $query->whereHas('solicitation.healthPlan', function ($q) use ($user) {
                 $q->where('id', $user->health_plan_id);
@@ -554,7 +554,7 @@ class AppointmentController extends Controller
         }
 
         // Health plan admins can access appointments for their health plan
-        if ($user->hasRole('health_plan_admin')) {
+        if ($user->hasRole('plan_admin')) {
             return $appointment->solicitation->health_plan_id === $user->health_plan_id;
         }
 
@@ -589,7 +589,7 @@ class AppointmentController extends Controller
         }
 
         // Health plan admins can manage appointments for their health plan
-        if ($user->hasRole('health_plan_admin')) {
+        if ($user->hasRole('plan_admin')) {
             return $appointment->solicitation->health_plan_id === $user->health_plan_id;
         }
 
@@ -750,7 +750,7 @@ class AppointmentController extends Controller
         }
 
         // Health plan admins can access solicitations for their health plan
-        if ($user->hasRole('health_plan_admin')) {
+        if ($user->hasRole('plan_admin')) {
             return $solicitation->health_plan_id === $user->health_plan_id;
         }
 
