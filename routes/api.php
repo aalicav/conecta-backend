@@ -127,12 +127,18 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/scheduling-exceptions/{scheduling_exception}/reject', [SchedulingExceptionController::class, 'reject'])->middleware('role:admin');
     
     // Appointments
-    Route::apiResource('appointments', AppointmentController::class);
-    Route::post('/appointments/{appointment}/schedule', [AppointmentController::class, 'schedule']);
-    Route::patch('/appointments/{appointment}/confirm', [AppointmentController::class, 'confirmPresence']);
-    Route::patch('/appointments/{appointment}/complete', [AppointmentController::class, 'completeAppointment']);
-    Route::patch('/appointments/{appointment}/cancel', [AppointmentController::class, 'cancelAppointment']);
-    Route::patch('/appointments/{appointment}/missed', [AppointmentController::class, 'markAsMissed']);
+    Route::prefix('appointments')->group(function () {
+        Route::get('/', [AppointmentController::class, 'index']);
+        Route::post('/', [AppointmentController::class, 'store']);
+        Route::get('/{appointment}', [AppointmentController::class, 'show']);
+        Route::put('/{appointment}', [AppointmentController::class, 'update']);
+        Route::delete('/{appointment}', [AppointmentController::class, 'destroy']);
+        Route::post('/{appointment}/cancel', [AppointmentController::class, 'cancel']);
+        Route::post('/{appointment}/confirm', [AppointmentController::class, 'confirm']);
+        Route::post('/{appointment}/complete', [AppointmentController::class, 'complete']);
+        Route::post('/schedule-automatically', [AppointmentController::class, 'scheduleAutomatically']);
+        Route::post('/process-pending', [AppointmentController::class, 'processPendingSolicitations']);
+    });
     
     // Contracts
     Route::apiResource('contracts', ContractController::class);

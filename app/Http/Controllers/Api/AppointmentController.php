@@ -1639,4 +1639,85 @@ class AppointmentController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Process pending solicitations automatically.
+     * Only network_manager and admin roles can access this endpoint.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function processPendingSolicitations(Request $request): JsonResponse
+    {
+        // Check if user has required role
+        if (!Auth::user()->hasRole(['network_manager', 'super_admin'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized to process pending solicitations'
+            ], 403);
+        }
+
+        try {
+            // Get pending solicitations
+            $solicitations = Solicitation::where('status', Solicitation::STATUS_PENDING)
+                ->orWhere('status', Solicitation::STATUS_FAILED)
+                ->get();
+
+            if ($solicitations->isEmpty()) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'No pending solicitations found',
+                    'data' => [
+                        'processed' => 0,
+                        'successful' => 0,
+                        'failed' => 0
+                    ]
+                ]);
+            }
+
+            $processed = 0;
+            $successful = 0;
+            $failed = 0;
+
+            foreach ($solicitations as $solicitation) {
+                try {
+                    // Mark as processing
+                    $solicitation->markAsProcessing();
+
+                    // Attempt to schedule
+                    $appointment = $this->automaticSchedulingService->scheduleAppointment($solicitation);
+
+                    if ($appointment) {
+                        $successful++;
+                    } else {
+                        $failed++;
+                    }
+
+                    $processed++;
+                } catch (\Exception $e) {
+                    Log::error("Error processing solicitation #{$solicitation->id}: " . $e->getMessage());
+                    $failed++;
+                    $processed++;
+                }
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Finished processing pending solicitations',
+                'data' => [
+                    'processed' => $processed,
+                    'successful' => $successful,
+                    'failed' => $failed
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error processing pending solicitations: ' . $e->getMessage());
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to process pending solicitations',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 

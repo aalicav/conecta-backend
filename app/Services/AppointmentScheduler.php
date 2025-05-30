@@ -16,6 +16,9 @@ use App\Models\Patient;
 use App\Models\TussProcedure;
 use Illuminate\Support\Facades\DB;
 use App\Services\MapboxService;
+use App\Models\User;
+use App\Notifications\SchedulingFailed;
+use Illuminate\Support\Facades\Notification;
 
 class AppointmentScheduler
 {
@@ -57,6 +60,7 @@ class AppointmentScheduler
             // Check if scheduling is enabled
             if (!SchedulingConfigService::isAutomaticSchedulingEnabled()) {
                 Log::info('Automatic scheduling is disabled. Solicitation ID: ' . $solicitation->id);
+                $this->notifySchedulingFailed($solicitation, 'O agendamento automático está desabilitado no sistema.');
                 return null;
             }
 
@@ -136,6 +140,7 @@ class AppointmentScheduler
 
             if (!$provider) {
                 Log::error("No suitable provider found for solicitation #{$solicitation->id}");
+                $this->notifySchedulingFailed($solicitation, 'Não foi encontrado nenhum prestador disponível para esta especialidade/procedimento.');
                 return null;
             }
 
@@ -144,6 +149,7 @@ class AppointmentScheduler
 
             if (!$scheduledDate) {
                 Log::error("No available slots found for provider " . $provider['provider_type'] . " #{$provider['provider_id']} for solicitation #{$solicitation->id}");
+                $this->notifySchedulingFailed($solicitation, 'Não foi encontrado nenhum horário disponível com o prestador selecionado.');
                 return null;
             }
 
@@ -168,6 +174,7 @@ class AppointmentScheduler
             return $appointment;
         } catch (\Exception $e) {
             Log::error("Error in scheduling appointment for solicitation #{$solicitation->id}: " . $e->getMessage());
+            $this->notifySchedulingFailed($solicitation, 'Ocorreu um erro durante o processo de agendamento: ' . $e->getMessage());
             return null;
         }
     }
@@ -898,5 +905,27 @@ class AppointmentScheduler
         }
         
         return $address;
+    }
+
+    /**
+     * Send notification about scheduling failure
+     *
+     * @param Solicitation $solicitation
+     * @param string $reason
+     * @return void
+     */
+    protected function notifySchedulingFailed(Solicitation $solicitation, string $reason): void
+    {
+        try {
+            // Get users to notify (network managers and admins)
+            $users = User::role(['network_manager', 'super_admin'])
+                ->get();
+
+            if ($users->isNotEmpty()) {
+                Notification::send($users, new SchedulingFailed($solicitation, $reason));
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to send scheduling failed notification: " . $e->getMessage());
+        }
     }
 } 
