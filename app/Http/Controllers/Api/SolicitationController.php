@@ -618,23 +618,60 @@ class SolicitationController extends Controller
     public function processPending(): JsonResponse
     {
         try {
-            // Get pending solicitations
-            $pendingSolicitations = Solicitation::where('status', Solicitation::STATUS_PENDING)
-                ->orWhere('status', Solicitation::STATUS_PROCESSING)
-                ->get();
+            // Get only pending solicitations (not processing ones)
+            $pendingSolicitations = Solicitation::where('status', Solicitation::STATUS_PENDING)->get();
 
-            $count = 0;
+            $processed = 0;
+            $scheduled = 0;
+            $failed = 0;
+
             foreach ($pendingSolicitations as $solicitation) {
-                // Mark as processing and dispatch the job
-                $solicitation->markAsProcessing();
-                ProcessAutomaticScheduling::dispatch($solicitation);
-                $count++;
+                try {
+                    // Mark as processing
+                    $solicitation->markAsProcessing();
+
+                    // Try to find best provider directly
+                    $scheduler = new AppointmentScheduler();
+                    $result = $scheduler->findBestProvider($solicitation);
+
+                    if ($result['success']) {
+                        // Create appointment with the found provider
+                        $appointment = new Appointment([
+                            'solicitation_id' => $solicitation->id,
+                            'provider_type' => $result['provider']['provider_type'],
+                            'provider_id' => $result['provider']['provider_id'],
+                            'status' => Appointment::STATUS_SCHEDULED,
+                            'created_by' => $solicitation->requested_by
+                        ]);
+
+                        $appointment->save();
+                        
+                        // Mark solicitation as scheduled
+                        $solicitation->markAsScheduled(true);
+                        $scheduled++;
+                    } else {
+                        // If no provider found, mark as pending
+                        $solicitation->markAsPending();
+                        $failed++;
+                    }
+
+                    $processed++;
+                } catch (\Exception $e) {
+                    Log::error("Erro ao processar solicitação #{$solicitation->id}: " . $e->getMessage());
+                    $solicitation->markAsPending();
+                    $failed++;
+                    $processed++;
+                }
             }
 
             return response()->json([
                 'success' => true,
-                'message' => "Foram enviadas {$count} solicitações para processamento automático",
-                'count' => $count
+                'message' => "Processamento concluído: {$scheduled} agendadas, {$failed} não encontraram profissionais",
+                'data' => [
+                    'total_processed' => $processed,
+                    'scheduled' => $scheduled,
+                    'failed' => $failed
+                ]
             ]);
         } catch (\Exception $e) {
             Log::error('Erro ao processar solicitações pendentes: ' . $e->getMessage());
