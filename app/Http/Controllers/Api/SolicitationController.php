@@ -609,4 +609,40 @@ class SolicitationController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Process pending solicitations.
+     *
+     * @return JsonResponse
+     */
+    public function processPending(): JsonResponse
+    {
+        try {
+            // Get pending solicitations
+            $pendingSolicitations = Solicitation::where('status', Solicitation::STATUS_PENDING)
+                ->orWhere('status', Solicitation::STATUS_PROCESSING)
+                ->get();
+
+            $count = 0;
+            foreach ($pendingSolicitations as $solicitation) {
+                // Mark as processing and dispatch the job
+                $solicitation->markAsProcessing();
+                ProcessAutomaticScheduling::dispatch($solicitation);
+                $count++;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Foram enviadas {$count} solicitações para processamento automático",
+                'count' => $count
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erro ao processar solicitações pendentes: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao processar solicitações pendentes',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 
