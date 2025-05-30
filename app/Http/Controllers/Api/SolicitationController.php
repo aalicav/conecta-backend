@@ -107,7 +107,6 @@ class SolicitationController extends Controller
                 'patient_id' => 'required|exists:patients,id',
                 'tuss_id' => 'required|exists:tuss_procedures,id',
                 'description' => 'required|string',
-                'priority' => 'required|in:low,normal,high',
             ]);
 
             if ($validator->fails()) {
