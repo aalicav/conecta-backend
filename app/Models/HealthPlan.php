@@ -47,6 +47,7 @@ class HealthPlan extends Model implements Auditable
         'user_id',
         'parent_id',
         'parent_relation_type',
+        'is_parent',
     ];
 
     /**
@@ -323,5 +324,25 @@ class HealthPlan extends Model implements Auditable
     public function scopeChildren($query)
     {
         return $query->whereNotNull('parent_id');
+    }
+
+    /**
+     * Check if this is a parent health plan.
+     *
+     * @return bool
+     */
+    public function isParentPlan(): bool
+    {
+        return $this->is_parent === true;
+    }
+
+    /**
+     * Check if this is a child health plan.
+     *
+     * @return bool
+     */
+    public function isChildPlan(): bool
+    {
+        return !$this->is_parent && $this->parent_id !== null;
     }
 } 

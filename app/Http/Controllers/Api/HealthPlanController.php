@@ -209,11 +209,28 @@ class HealthPlanController extends Controller
     public function store(Request $request)
     {
         try {
-            // Check if this is a child plan
-            $isChildPlan = $request->has('parent_id');
+            // Check if this is a parent plan
+            $isParentPlan = $request->has('is_parent') && $request->is_parent === true;
             
-            // If it's a child plan, validate only required fields
-            if ($isChildPlan) {
+            // If it's a parent plan, validate only basic fields
+            if ($isParentPlan) {
+                $validator = Validator::make($request->all(), [
+                    'name' => 'required|string|max:255',
+                    'cnpj' => 'required|string|max:18',
+                    'ans_code' => 'required|string|max:50',
+                    'email' => 'required|email|max:255|unique:users,email',
+                ]);
+            } else {
+                // Check if parent_id is provided for child plan
+                if (!$request->has('parent_id')) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Um plano filho deve estar vinculado a um plano pai',
+                        'errors' => ['parent_id' => ['O ID do plano pai é obrigatório']]
+                    ], 422);
+                }
+                
+                // Use full validation for child plans
                 $validator = Validator::make($request->all(), [
                     'name' => 'required|string|max:255',
                     'email' => 'required|email|max:255|unique:users,email',
@@ -221,20 +238,23 @@ class HealthPlanController extends Controller
                     'city' => 'required|string|max:100',
                     'state' => 'required|string|max:2',
                     'postal_code' => 'required|string|max:9',
-                    'phones' => 'sometimes|array',
+                    'phones' => 'required|array',
                     'phones.*.number' => 'required|string|max:20',
                     'phones.*.type' => 'required|string|in:commercial,mobile,fax,whatsapp',
                     'parent_id' => 'required|exists:health_plans,id',
+                    'legal_representative_name' => 'required|string|max:255',
+                    'legal_representative_cpf' => 'required|string|max:14',
+                    'legal_representative_position' => 'required|string|max:100',
+                    'operational_representative_name' => 'required|string|max:255',
+                    'operational_representative_cpf' => 'required|string|max:14',
+                    'operational_representative_position' => 'required|string|max:100',
                 ]);
-            } else {
-                // Use full validation for regular plans
-                $validator = $this->getValidator($request, true);
             }
 
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Validation error',
+                    'message' => 'Erro de validação',
                     'errors' => $validator->errors()
                 ], 422);
             }
@@ -257,17 +277,29 @@ class HealthPlanController extends Controller
             // Assign health plan role
             $user->assignRole('plan_admin');
 
-            // Handle logo upload if provided
+            // Handle logo upload if provided (only for child plans)
             $logoPath = null;
-            if ($request->hasFile('logo')) {
+            if (!$isParentPlan && $request->hasFile('logo')) {
                 $logoPath = $request->file('logo')->store('health_plans/logos', 'public');
             }
 
-            // If it's a child plan, get parent data
-            if ($isChildPlan) {
+            // Create health plan with appropriate fields
+            if ($isParentPlan) {
+                // Create parent plan with basic information only
+                $healthPlan = new HealthPlan([
+                    'name' => $request->name,
+                    'cnpj' => $request->cnpj,
+                    'ans_code' => $request->ans_code,
+                    'email' => $request->email,
+                    'user_id' => $user->id,
+                    'is_parent' => true,
+                    'status' => 'pending',
+                ]);
+            } else {
+                // Get parent plan data
                 $parentPlan = HealthPlan::findOrFail($request->parent_id);
                 
-                // Create child plan with inherited data
+                // Create child plan with full information
                 $healthPlan = new HealthPlan([
                     'name' => $request->name,
                     'email' => $request->email,
@@ -279,23 +311,18 @@ class HealthPlanController extends Controller
                     'parent_id' => $parentPlan->id,
                     'cnpj' => $parentPlan->cnpj,
                     'ans_code' => $parentPlan->ans_code,
-                    'description' => $parentPlan->description,
-                    'legal_representative_name' => $parentPlan->legal_representative_name,
-                    'legal_representative_cpf' => $parentPlan->legal_representative_cpf,
-                    'legal_representative_position' => $parentPlan->legal_representative_position,
-                    'operational_representative_name' => $parentPlan->operational_representative_name,
-                    'operational_representative_cpf' => $parentPlan->operational_representative_cpf,
-                    'operational_representative_position' => $parentPlan->operational_representative_position,
+                    'description' => $request->description,
+                    'legal_representative_name' => $request->legal_representative_name,
+                    'legal_representative_cpf' => $request->legal_representative_cpf,
+                    'legal_representative_position' => $request->legal_representative_position,
+                    'operational_representative_name' => $request->operational_representative_name,
+                    'operational_representative_cpf' => $request->operational_representative_cpf,
+                    'operational_representative_position' => $request->operational_representative_position,
                     'user_id' => $user->id,
                     'status' => $parentPlan->status === 'approved' ? 'approved' : 'pending',
                     'approved_at' => $parentPlan->status === 'approved' ? now() : null,
                     'approved_by' => $parentPlan->status === 'approved' ? Auth::id() : null
                 ]);
-            } else {
-                // Create regular health plan
-                $healthPlan = new HealthPlan($request->except('logo', 'phones', 'documents', 'procedures', 'auto_approve', 'send_welcome_email'));
-                $healthPlan->logo = $logoPath;
-                $healthPlan->user_id = $user->id;
             }
             
             $healthPlan->save();
@@ -304,20 +331,19 @@ class HealthPlanController extends Controller
             $user->entity_id = $healthPlan->id;
             $user->save();
 
-            // Create phone records
-            if ($request->has('phones')) {
-                foreach ($request->phones as $phoneData) {
-                    $healthPlan->phones()->create([
-                        'number' => $phoneData['number'],
-                        'type' => $phoneData['type'],
-                    ]);
+            // Only process phones and documents for child plans
+            if (!$isParentPlan) {
+                // Create phone records
+                if ($request->has('phones')) {
+                    foreach ($request->phones as $phoneData) {
+                        $healthPlan->phones()->create([
+                            'number' => $phoneData['number'],
+                            'type' => $phoneData['type'],
+                        ]);
+                    }
                 }
-            }
 
-            // Only process documents for non-child plans
-            if (!$isChildPlan) {
                 // Process documents if provided
-                $uploadedDocuments = [];
                 if ($request->has('documents')) {
                     foreach ($request->input('documents') as $index => $documentData) {
                         if ($request->hasFile("documents.{$index}.file")) {
@@ -341,15 +367,10 @@ class HealthPlanController extends Controller
                                     'uploaded_by' => Auth::id(),
                                     'user_id' => Auth::id(),
                                 ]);
-                                
-                                $uploadedDocuments[] = $document;
                             }
                         }
                     }
                 }
-
-                // Update representatives if provided
-                $this->updateUserRepresentatives($request, $healthPlan);
             }
 
             // Send welcome email with temporary password
@@ -361,9 +382,8 @@ class HealthPlanController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Health plan created successfully',
-                'data' => new HealthPlanResource($healthPlan),
-                'documents_count' => isset($uploadedDocuments) ? count($uploadedDocuments) : 0
+                'message' => $isParentPlan ? 'Plano pai criado com sucesso' : 'Plano filho criado com sucesso',
+                'data' => new HealthPlanResource($healthPlan)
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -377,7 +397,7 @@ class HealthPlanController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create health plan',
+                'message' => 'Falha ao criar plano de saúde',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -1586,78 +1606,62 @@ class HealthPlanController extends Controller
      */
     private function getValidator(Request $request, bool $isNew = true)
     {
-        // Base validation rules
-        $rules = [
-            'name' => 'required|string|max:255',
-            'cnpj' => 'required|string|max:18',
-            'municipal_registration' => 'nullable|string|max:30',
-            'email' => 'required|email|max:255',
-            'logo' => 'nullable|file|image|max:2048', // 2MB max
-            'ans_code' => 'nullable|string|max:50',
-            'description' => 'nullable|string',
-            'address' => 'required|string|max:255',
-            'city' => 'required|string|max:100',
-            'state' => 'required|string|max:2',
-            'postal_code' => 'required|string|max:9',
-            
-            'legal_representative_name' => 'nullable|string|max:255',
-            'legal_representative_cpf' => 'nullable|string|max:14',
-            'legal_representative_position' => 'nullable|string|max:100',
-            
-            'operational_representative_name' => 'nullable|string|max:255',
-            'operational_representative_cpf' => 'nullable|string|max:14',
-            'operational_representative_position' => 'nullable|string|max:100',
-            
-            'phones' => 'sometimes|array',
-            'phones.*.number' => 'required|string|max:20',
-            'phones.*.type' => 'required|string|in:commercial,mobile,fax,whatsapp',
-            
-            'parent_id' => 'nullable|exists:health_plans,id',
-            
-            'password' => 'sometimes|nullable|string|min:8',
-            
-            // For document deletion during update
-            'documents_to_delete' => 'sometimes|array',
-            'documents_to_delete.*' => 'sometimes|numeric|exists:documents,id',
-        ];
-        
-        if ($isNew) {
-            // Standard document rules for new health plans
-            $rules['documents'] = 'sometimes|array';
-            $rules['documents.*.file'] = 'required|file|max:10240';
-            $rules['documents.*.type'] = 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other';
-            $rules['documents.*.description'] = 'required|string|max:255';
-            $rules['documents.*.reference_date'] = 'nullable|date';
-            $rules['documents.*.expiration_date'] = 'nullable|date';
-            
-            // Email uniqueness check for new health plans
-            $rules['email'] = 'required|email|max:255|unique:users,email';
-        } else {
-            // Document rules for updates - we look for new_documents instead
-            $rules['new_document_count'] = 'sometimes|integer|min:0';
-            
-            // Only validate files that are actually present
-            if ($request->has('new_document_count') && $request->input('new_document_count') > 0) {
-                $newDocumentCount = intval($request->input('new_document_count'));
-                
-                for ($i = 0; $i < $newDocumentCount; $i++) {
-                    $fileKey = "new_documents.{$i}.file";
-                    
-                    // Only add validation rules if this is actually a file
-                    if ($request->hasFile($fileKey)) {
-                        $rules[$fileKey] = 'required|file|max:10240';
-                        $rules["new_documents.{$i}.type"] = 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other';
-                        $rules["new_documents.{$i}.description"] = 'required|string|max:255';
-                        $rules["new_documents.{$i}.name"] = 'sometimes|string|max:255';
-                        $rules["new_documents.{$i}.reference_date"] = 'nullable|date';
-                        $rules["new_documents.{$i}.expiration_date"] = 'nullable|date';
-                    }
-                }
+        // Check if this is a parent plan
+        $isParentPlan = $request->has('is_parent') && $request->is_parent === true;
+
+        if ($isParentPlan) {
+            // Basic validation rules for parent plans
+            $rules = [
+                'name' => 'required|string|max:255',
+                'cnpj' => 'required|string|max:18',
+                'ans_code' => 'required|string|max:50',
+                'email' => 'required|email|max:255',
+            ];
+
+            // Email uniqueness check for new parent plans
+            if ($isNew) {
+                $rules['email'] = 'required|email|max:255|unique:users,email';
             }
+        } else {
+            // Full validation rules for child plans
+            $rules = [
+                'name' => 'required|string|max:255',
+                'email' => 'required|email|max:255',
+                'address' => 'required|string|max:255',
+                'city' => 'required|string|max:100',
+                'state' => 'required|string|max:2',
+                'postal_code' => 'required|string|max:9',
+                'parent_id' => 'required|exists:health_plans,id',
+                
+                'legal_representative_name' => 'required|string|max:255',
+                'legal_representative_cpf' => 'required|string|max:14',
+                'legal_representative_position' => 'required|string|max:100',
+                
+                'operational_representative_name' => 'required|string|max:255',
+                'operational_representative_cpf' => 'required|string|max:14',
+                'operational_representative_position' => 'required|string|max:100',
+                
+                'phones' => 'required|array',
+                'phones.*.number' => 'required|string|max:20',
+                'phones.*.type' => 'required|string|in:commercial,mobile,fax,whatsapp',
+                
+                'logo' => 'nullable|file|image|max:2048', // 2MB max
+            ];
             
-            // Allow existing documents to be passed in the request without validation
-            // This ensures we don't try to validate existing documents as files
-            $rules['existing_documents'] = 'sometimes|array';
+            // Email uniqueness check for new child plans
+            if ($isNew) {
+                $rules['email'] = 'required|email|max:255|unique:users,email';
+            }
+
+            // Document rules for new child plans
+            if ($isNew) {
+                $rules['documents'] = 'required|array';
+                $rules['documents.*.file'] = 'required|file|max:10240';
+                $rules['documents.*.type'] = 'required|string|in:contract,ans_certificate,authorization,financial,legal,identification,agreement,technical,other';
+                $rules['documents.*.description'] = 'required|string|max:255';
+                $rules['documents.*.reference_date'] = 'nullable|date';
+                $rules['documents.*.expiration_date'] = 'nullable|date';
+            }
         }
 
         return Validator::make($request->all(), $rules);
