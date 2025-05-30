@@ -121,6 +121,9 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/solicitations/{solicitation}/reschedule', [SolicitationController::class, 'reschedule']);
     Route::post('/solicitations/{solicitation}/auto-schedule', [SolicitationController::class, 'forceSchedule']);
     
+    // Add route for processing pending solicitations
+    Route::post('/solicitations/process-pending', [SolicitationController::class, 'processPending'])->middleware('role:network_manager,super_admin');
+    
     // Scheduling Exceptions
     Route::apiResource('scheduling-exceptions', SchedulingExceptionController::class)->only(['index', 'store', 'show']);
     Route::post('/scheduling-exceptions/{scheduling_exception}/approve', [SchedulingExceptionController::class, 'approve'])->middleware('role:admin');
