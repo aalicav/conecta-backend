@@ -26,14 +26,8 @@ class Solicitation extends Model
         'tuss_id',
         'status',
         'priority',
-        'notes',
         'description',
         'requested_by',
-        'preferred_date_start',
-        'preferred_date_end',
-        'preferred_location_lat',
-        'preferred_location_lng',
-        'max_distance_km',
         'scheduled_automatically',
         'completed_at',
         'cancelled_at',
@@ -46,13 +40,8 @@ class Solicitation extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'preferred_date_start' => 'datetime',
-        'preferred_date_end' => 'datetime',
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
-        'preferred_location_lat' => 'float',
-        'preferred_location_lng' => 'float',
-        'max_distance_km' => 'float',
         'scheduled_automatically' => 'boolean',
     ];
 
@@ -64,7 +53,6 @@ class Solicitation extends Model
     const STATUS_SCHEDULED = 'scheduled';
     const STATUS_COMPLETED = 'completed';
     const STATUS_CANCELLED = 'cancelled';
-    const STATUS_FAILED = 'failed';
 
     /**
      * Priority constants
@@ -72,16 +60,6 @@ class Solicitation extends Model
     const PRIORITY_LOW = 'low';
     const PRIORITY_NORMAL = 'normal';
     const PRIORITY_HIGH = 'high';
-    const PRIORITY_URGENT = 'urgent';
-
-    /**
-     * The "booted" method of the model.
-     */
-    protected static function booted()
-    {
-        // Removendo o trigger de agendamento automático aqui, pois agora é feito diretamente pelo controller
-        // para garantir que o agendamento ocorra imediatamente após a criação da solicitação
-    }
 
     /**
      * Get the health plan that owns the solicitation.
@@ -172,14 +150,6 @@ class Solicitation extends Model
     }
 
     /**
-     * Scope a query to only include failed solicitations.
-     */
-    public function scopeFailed($query)
-    {
-        return $query->where('status', self::STATUS_FAILED);
-    }
-
-    /**
      * Scope a query to only include active solicitations (not completed or cancelled).
      */
     public function scopeActive($query)
@@ -204,7 +174,7 @@ class Solicitation extends Model
     }
 
     /**
-     * Check if the solicitation is in processing.
+     * Check if the solicitation is processing.
      */
     public function isProcessing(): bool
     {
@@ -236,14 +206,6 @@ class Solicitation extends Model
     }
 
     /**
-     * Check if the solicitation has failed.
-     */
-    public function isFailed(): bool
-    {
-        return $this->status === self::STATUS_FAILED;
-    }
-
-    /**
      * Check if the solicitation is active.
      */
     public function isActive(): bool
@@ -256,13 +218,12 @@ class Solicitation extends Model
      */
     public function markAsProcessing(): bool
     {
-        if (!$this->isPending()) {
+        if ($this->isCompleted() || $this->isCancelled()) {
             return false;
         }
 
-        return $this->update([
-            'status' => self::STATUS_PROCESSING
-        ]);
+        $this->status = self::STATUS_PROCESSING;
+        return $this->save();
     }
 
     /**
@@ -270,14 +231,13 @@ class Solicitation extends Model
      */
     public function markAsScheduled(bool $automatically = false): bool
     {
-        if (!$this->isPending() && !$this->isProcessing()) {
+        if ($this->isCompleted() || $this->isCancelled()) {
             return false;
         }
 
-        return $this->update([
-            'status' => self::STATUS_SCHEDULED,
-            'scheduled_automatically' => $automatically
-        ]);
+        $this->status = self::STATUS_SCHEDULED;
+        $this->scheduled_automatically = $automatically;
+        return $this->save();
     }
 
     /**
@@ -285,28 +245,26 @@ class Solicitation extends Model
      */
     public function markAsCompleted(): bool
     {
-        if (!$this->isScheduled()) {
+        if ($this->isCompleted() || $this->isCancelled()) {
             return false;
         }
 
-        return $this->update([
-            'status' => self::STATUS_COMPLETED,
-            'completed_at' => now()
-        ]);
+        $this->status = self::STATUS_COMPLETED;
+        $this->completed_at = now();
+        return $this->save();
     }
 
     /**
-     * Mark the solicitation as failed.
+     * Mark the solicitation as pending.
      */
-    public function markAsFailed(): bool
+    public function markAsPending(): bool
     {
-        if (!$this->isPending() && !$this->isProcessing()) {
+        if ($this->isCompleted() || $this->isCancelled()) {
             return false;
         }
 
-        return $this->update([
-            'status' => self::STATUS_FAILED
-        ]);
+        $this->status = self::STATUS_PENDING;
+        return $this->save();
     }
 
     /**
@@ -318,35 +276,9 @@ class Solicitation extends Model
             return false;
         }
 
-        return $this->update([
-            'status' => self::STATUS_CANCELLED,
-            'cancelled_at' => now(),
-            'cancel_reason' => $reason
-        ]);
-    }
-
-    /**
-     * Determine if this solicitation is still within its date range.
-     */
-    public function isWithinDateRange(): bool
-    {
-        $today = Carbon::today();
-        return $today->between($this->preferred_date_start, $this->preferred_date_end);
-    }
-
-    /**
-     * Determine if this solicitation's date range is in the future.
-     */
-    public function isInFuture(): bool
-    {
-        return $this->preferred_date_start->isFuture();
-    }
-
-    /**
-     * Determine if this solicitation's date range is in the past.
-     */
-    public function isInPast(): bool
-    {
-        return $this->preferred_date_end->isPast();
+        $this->status = self::STATUS_CANCELLED;
+        $this->cancelled_at = now();
+        $this->cancel_reason = $reason;
+        return $this->save();
     }
 } 

@@ -28,7 +28,7 @@ class AppointmentResource extends JsonResource
             'confirmed_by' => $this->confirmed_by,
             'completed_by' => $this->completed_by,
             'cancelled_by' => $this->cancelled_by,
-            'notes' => $this->notes,
+            'created_by' => $this->created_by,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             
@@ -45,6 +45,7 @@ class AppointmentResource extends JsonResource
             'confirmed_by_user' => new UserResource($this->whenLoaded('confirmedBy')),
             'completed_by_user' => new UserResource($this->whenLoaded('completedBy')),
             'cancelled_by_user' => new UserResource($this->whenLoaded('cancelledBy')),
+            'created_by_user' => new UserResource($this->whenLoaded('createdBy')),
             'payment' => new PaymentResource($this->whenLoaded('payment')),
             
             // Computed values

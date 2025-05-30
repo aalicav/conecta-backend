@@ -402,7 +402,7 @@ class AppointmentController extends Controller
     }
 
     /**
-     * Cancel the appointment.
+     * Cancel an appointment.
      *
      * @param Request $request
      * @param Appointment $appointment
@@ -420,52 +420,44 @@ class AppointmentController extends Controller
             }
 
             // Check if appointment can be cancelled
-            if ($appointment->isCompleted() || $appointment->isCancelled()) {
+            if ($appointment->isCompleted() || $appointment->isCancelled() || $appointment->isMissed()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot cancel completed or already cancelled appointments'
+                    'message' => 'Appointment cannot be cancelled in its current state'
                 ], 422);
             }
 
-            // Validate request
-            $validator = Validator::make($request->all(), [
-                'notes' => 'nullable|string|max:255',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation error',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
+            DB::beginTransaction();
 
             // Cancel the appointment
-            if (!$appointment->cancel(Auth::id(), $request->notes)) {
+            if (!$appointment->cancel(Auth::id())) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'message' => 'Failed to cancel appointment'
-                ], 500);
+                ], 422);
             }
 
-            // Send cancellation notification - will also send via WhatsApp
-            $this->notificationService->notifyAppointmentCancelled($appointment, $request->notes);
-
-            // Check if this was the only active appointment for the solicitation
-            $otherActiveAppointments = Appointment::where('solicitation_id', $appointment->solicitation_id)
-                ->whereNotIn('status', [Appointment::STATUS_CANCELLED, Appointment::STATUS_COMPLETED])
+            // If this was the only appointment for the solicitation, revert to pending
+            $otherAppointments = Appointment::where('solicitation_id', $appointment->solicitation_id)
+                ->where('id', '!=', $appointment->id)
+                ->where('status', '!=', Appointment::STATUS_CANCELLED)
                 ->exists();
 
-            // If no other active appointments, revert the solicitation to pending
-            if (!$otherActiveAppointments) {
-                $appointment->solicitation->markAsProcessing();
+            if (!$otherAppointments) {
+                $appointment->solicitation->markAsPending();
             }
 
-            // Reload relationships
+            // Send notifications
+            $this->notificationService->notifyAppointmentCancelled($appointment);
+
+            DB::commit();
+
+            // Load relationships for response
             $appointment->load([
-                'solicitation.healthPlan',
-                'solicitation.patient',
-                'solicitation.tuss',
+                'solicitation.healthPlan', 
+                'solicitation.patient', 
+                'solicitation.tuss', 
                 'provider',
                 'cancelledBy'
             ]);
@@ -476,6 +468,7 @@ class AppointmentController extends Controller
                 'data' => new AppointmentResource($appointment)
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             Log::error('Error cancelling appointment: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
@@ -1250,79 +1243,6 @@ class AppointmentController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to confirm attendance',
-                'error' => $e->getMessage()
-            ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
-        }
-    }
-
-    /**
-     * Cancel an appointment.
-     *
-     * @param Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function cancel(Request $request, $id)
-    {
-        $validator = Validator::make($request->all(), [
-            'reason' => 'required|string|min:5',
-        ]);
-        
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-        
-        try {
-            $appointment = Appointment::findOrFail($id);
-            
-            // Check if appointment can be cancelled
-            if (!in_array($appointment->status, [Appointment::STATUS_SCHEDULED, Appointment::STATUS_CONFIRMED])) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Only scheduled or confirmed appointments can be cancelled'
-                ], 422);
-            }
-            
-            DB::beginTransaction();
-            
-            $result = $this->confirmationService->cancelAppointment(
-                $appointment,
-                Auth::id(),
-                $request->reason
-            );
-            
-            if (!$result) {
-                DB::rollBack();
-                
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Failed to cancel appointment'
-                ], 400);
-            }
-            
-            DB::commit();
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Appointment cancelled successfully',
-                'data' => $appointment->fresh(['solicitation.patient', 'solicitation.healthPlan', 'solicitation.tuss', 'provider', 'payment'])
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            Log::error('Error cancelling appointment: ' . $e->getMessage(), [
-                'exception' => $e,
-                'appointment_id' => $id,
-                'request' => $request->all()
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to cancel appointment',
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
         }

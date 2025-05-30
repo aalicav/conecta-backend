@@ -128,7 +128,7 @@ class AppointmentScheduler
 
             if ($patientLat && $patientLng) {
                 // If we have location data, find the nearest and most affordable provider
-                $provider = $this->findBestProvider($solicitation, $procedure, $patientLat, $patientLng, $maxDistanceKm);
+                $provider = $this->findBestProvider($solicitation);
             } else {
                 // Fallback: just find the most affordable provider
                 $provider = $this->findMostAffordableProvider($solicitation, $procedure);
@@ -496,200 +496,86 @@ class AppointmentScheduler
     }
 
     /**
-     * Find the best provider based on distance and price
+     * Find the best provider for a solicitation based on TUSS specialty and cost.
      *
      * @param Solicitation $solicitation
-     * @param TussProcedure $procedure
-     * @param float $patientLat
-     * @param float $patientLng
-     * @param float $maxDistanceKm
-     * @return array|null Provider info or null if none found
+     * @return array
      */
-    public function findBestProvider(Solicitation $solicitation, TussProcedure $procedure, float $patientLat, float $patientLng, float $maxDistanceKm): ?array
+    public function findBestProvider(Solicitation $solicitation): array
     {
-        Log::info("Buscando o melhor prestador para o procedimento #{$procedure->id} (solicitação #{$solicitation->id})");
-        
-        // Obter clínicas e profissionais que oferecem este procedimento
-        $clinics = $this->getClinicsForProcedure($solicitation, $procedure);
-        $professionals = $this->getProfessionalsForProcedure($solicitation, $procedure);
-        
-        // Armazenar todos os prestadores candidatos, com informações de distância e preço
-        $candidates = [];
-        
-        // Processar clínicas
-        foreach ($clinics as $clinic) {
-            // Verificar se a clínica tem localização definida
-            if (!$clinic['latitude'] || !$clinic['longitude']) {
-                continue;
-            }
-            
-            // Calcular a distância entre o paciente e a clínica
-            $distance = $this->calculateDistance(
-                $patientLat, 
-                $patientLng, 
-                $clinic['latitude'], 
-                $clinic['longitude']
-            );
-            
-            // Verificar se está dentro do raio de distância máxima
-            if ($distance > $maxDistanceKm) {
-                continue;
-            }
-            
-            // Verificar disponibilidade de agenda
-            $hasAvailability = $this->checkProviderAvailability(
-                $clinic['provider_type'],
-                $clinic['provider_id'],
-                $solicitation->preferred_date_start,
-                $solicitation->preferred_date_end
-            );
-            
-            if (!$hasAvailability) {
-                Log::info("Clínica #{$clinic['provider_id']} não tem disponibilidade no período solicitado");
-                continue;
-            }
-            
-            // Adicionar à lista de candidatos
-            $candidates[] = [
-                'provider_type' => $clinic['provider_type'],
-                'provider_id' => $clinic['provider_id'],
-                'name' => $clinic['name'],
-                'distance' => $distance,
-                'price' => $clinic['price'],
-                'score' => 0 // Será calculado posteriormente
-            ];
-        }
-        
-        // Processar profissionais
-        foreach ($professionals as $professional) {
-            // Verificar se o profissional tem localização definida
-            if (!$professional['latitude'] || !$professional['longitude']) {
-                continue;
-            }
-            
-            // Calcular a distância entre o paciente e o profissional
-            $distance = $this->calculateDistance(
-                $patientLat, 
-                $patientLng, 
-                $professional['latitude'], 
-                $professional['longitude']
-            );
-            
-            // Verificar se está dentro do raio de distância máxima
-            if ($distance > $maxDistanceKm) {
-                continue;
-            }
-            
-            // Verificar disponibilidade de agenda
-            $hasAvailability = $this->checkProviderAvailability(
-                $professional['provider_type'],
-                $professional['provider_id'],
-                $solicitation->preferred_date_start,
-                $solicitation->preferred_date_end
-            );
-            
-            if (!$hasAvailability) {
-                Log::info("Profissional #{$professional['provider_id']} não tem disponibilidade no período solicitado");
-                continue;
-            }
-            
-            // Adicionar à lista de candidatos
-            $candidates[] = [
-                'provider_type' => $professional['provider_type'],
-                'provider_id' => $professional['provider_id'],
-                'name' => $professional['name'],
-                'distance' => $distance,
-                'price' => $professional['price'],
-                'score' => 0 // Será calculado posteriormente
-            ];
-        }
-        
-        // Se não houver candidatos, retornar null
-        if (empty($candidates)) {
-            Log::warning("Nenhum prestador adequado encontrado para solicitação #{$solicitation->id}");
-            return null;
-        }
-        
-        // Calcular pontuação para cada candidato
-        // Conforme solicitado pelo Dr. Ítalo: 60% preço, 40% proximidade
-        foreach ($candidates as &$candidate) {
-            // Normalizar distância (entre 0 e 1, onde 0 é longe e 1 é perto)
-            $normalizedDistance = 1 - min(1, $candidate['distance'] / $maxDistanceKm);
-            
-            // Determinar o preço máximo e mínimo entre os candidatos para normalização
-            $maxPrice = max(array_column($candidates, 'price'));
-            $minPrice = min(array_column($candidates, 'price'));
-            
-            // Evitar divisão por zero
-            $priceRange = $maxPrice > $minPrice ? $maxPrice - $minPrice : 1;
-            
-            // Normalizar preço (entre 0 e 1, onde 0 é caro e 1 é barato)
-            $normalizedPrice = 1 - (($candidate['price'] - $minPrice) / $priceRange);
-            
-            // Calcular pontuação ponderada (60% preço, 40% distância)
-            // Maior peso para PREÇO conforme solicitado pelo Dr. Ítalo
-            $candidate['score'] = (0.6 * $normalizedPrice) + (0.4 * $normalizedDistance);
-            
-            Log::debug("Candidato: {$candidate['name']}, Distância: {$candidate['distance']}km, Preço: R$" . $candidate['price'] . ", Pontuação: {$candidate['score']}");
-        }
-        
-        // Ordenar candidatos por pontuação (maior para menor)
-        usort($candidates, function($a, $b) {
-            return $b['score'] <=> $a['score'];
-        });
-        
-        // Retornar o melhor candidato
-        $bestProvider = $candidates[0];
-        Log::info("Melhor prestador encontrado: {$bestProvider['name']} (Distância: {$bestProvider['distance']}km, Preço: R$" . $bestProvider['price'] . ")");
-        
-        return $bestProvider;
-    }
-    
-    /**
-     * Verifica se um prestador tem disponibilidade no período especificado
-     * 
-     * @param string $providerType Tipo do prestador (classe)
-     * @param int $providerId ID do prestador
-     * @param Carbon $startDate Data inicial
-     * @param Carbon $endDate Data final
-     * @return bool
-     */
-    protected function checkProviderAvailability(string $providerType, int $providerId, Carbon $startDate, Carbon $endDate): bool
-    {
-        // Obter a agenda do prestador
-        $schedule = $this->getProviderSchedule($providerType, $providerId);
-        
-        // Verificar se o prestador tem dias de atendimento configurados
-        if (empty($schedule)) {
-            // Se não tiver agenda configurada, assumir que está disponível (agenda padrão)
-            return true;
-        }
-        
-        // Verificar se há pelo menos um dia disponível no período
-        $currentDate = $startDate->copy();
-        while ($currentDate->lte($endDate)) {
-            $dayOfWeek = strtolower($currentDate->format('l'));
-            
-            // Se o prestador atende neste dia da semana
-            if (isset($schedule[$dayOfWeek]) && $schedule[$dayOfWeek]['available']) {
-                // Verificar se não há muitos agendamentos neste dia
-                $bookedAppointments = Appointment::where('provider_type', $providerType)
-                    ->where('provider_id', $providerId)
-                    ->whereDate('scheduled_date', $currentDate->format('Y-m-d'))
-                    ->where('status', '!=', Appointment::STATUS_CANCELLED)
-                    ->count();
-                
-                // Se tiver menos de 8 agendamentos (assumindo jornada de 8h)
-                if ($bookedAppointments < 8) {
-                    return true;
+        try {
+            $tussId = $solicitation->tuss_id;
+
+            // Get active providers who can perform this procedure
+            $providers = [];
+
+            // Get clinics
+            $clinics = Clinic::active()
+                ->whereHas('pricingContracts', function($query) use ($tussId) {
+                    $query->whereHas('pricingItems', function($query) use ($tussId) {
+                        $query->where('tuss_id', $tussId);
+                    });
+                })
+                ->get();
+
+            foreach ($clinics as $clinic) {
+                $price = $this->getPriceForTuss($clinic, $tussId);
+                if ($price !== null) {
+                    $providers[] = [
+                        'provider_type' => Clinic::class,
+                        'provider_id' => $clinic->id,
+                        'name' => $clinic->name,
+                        'price' => $price
+                    ];
                 }
             }
-            
-            $currentDate->addDay();
+
+            // Get professionals
+            $professionals = Professional::active()
+                ->whereHas('pricingContracts', function($query) use ($tussId) {
+                    $query->whereHas('pricingItems', function($query) use ($tussId) {
+                        $query->where('tuss_id', $tussId);
+                    });
+                })
+                ->get();
+
+            foreach ($professionals as $professional) {
+                $price = $this->getPriceForTuss($professional, $tussId);
+                if ($price !== null) {
+                    $providers[] = [
+                        'provider_type' => Professional::class,
+                        'provider_id' => $professional->id,
+                        'name' => $professional->name,
+                        'price' => $price
+                    ];
+                }
+            }
+
+            if (empty($providers)) {
+                return [
+                    'success' => false,
+                    'message' => 'No providers found for this specialty'
+                ];
+            }
+
+            // Sort providers by price
+            usort($providers, function($a, $b) {
+                return $a['price'] <=> $b['price'];
+            });
+
+            // Return the provider with lowest price
+            return [
+                'success' => true,
+                'provider' => $providers[0]
+            ];
+
+        } catch (\Exception $e) {
+            Log::error("Error finding best provider for solicitation #{$solicitation->id}: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Error finding provider: ' . $e->getMessage()
+            ];
         }
-        
-        // Se chegou aqui, não há disponibilidade
-        return false;
     }
 
     /**

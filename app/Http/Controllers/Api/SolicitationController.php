@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
+use App\Models\Appointment;
 
 class SolicitationController extends Controller
 {
@@ -68,24 +69,6 @@ class SolicitationController extends Controller
             $query->where('priority', $request->priority);
         }
         
-        // Filter by date range if provided
-        if ($request->has('date_from')) {
-            $query->where('preferred_date_start', '>=', $request->date_from);
-        }
-        
-        if ($request->has('date_to')) {
-            $query->where('preferred_date_end', '<=', $request->date_to);
-        }
-        
-        // Filter by date of creation
-        if ($request->has('created_from')) {
-            $query->whereDate('created_at', '>=', $request->created_from);
-        }
-        
-        if ($request->has('created_to')) {
-            $query->whereDate('created_at', '<=', $request->created_to);
-        }
-        
         // Filter by TUSS code if provided
         if ($request->has('tuss_id')) {
             $query->where('tuss_id', $request->tuss_id);
@@ -123,15 +106,8 @@ class SolicitationController extends Controller
                 'health_plan_id' => 'required|exists:health_plans,id',
                 'patient_id' => 'required|exists:patients,id',
                 'tuss_id' => 'required|exists:tuss_procedures,id',
-                'procedure_id' => 'sometimes|exists:tuss_procedures,id', // ID do procedimento, se for diferente do TUSS
-                'priority' => 'required|in:low,normal,high,urgent',
-                'notes' => 'nullable|string',
-                'description' => 'required|string|min:10', // Descrição detalhada do procedimento - agora obrigatória
-                'preferred_date_start' => 'required|date|after_or_equal:today',
-                'preferred_date_end' => 'required|date|after_or_equal:preferred_date_start',
-                'preferred_location_lat' => 'nullable|numeric',
-                'preferred_location_lng' => 'nullable|numeric',
-                'max_distance_km' => 'nullable|numeric|min:1|max:100',
+                'description' => 'required|string',
+                'priority' => 'required|in:low,normal,high',
             ]);
 
             if ($validator->fails()) {
@@ -161,7 +137,7 @@ class SolicitationController extends Controller
                 ], 422);
             }
 
-            // Check if health plan has pending status (which means it has been edited and needs re-approval)
+            // Check if health plan has pending status
             if ($healthPlan->status !== 'approved') {
                 return response()->json([
                     'success' => false,
@@ -186,15 +162,9 @@ class SolicitationController extends Controller
                 'patient_id' => $request->patient_id,
                 'tuss_id' => $request->tuss_id,
                 'status' => Solicitation::STATUS_PENDING,
-                'priority' => $request->priority,
-                'notes' => $request->notes,
-                'description' => $request->description, // Armazena a descrição adicional
+                'priority' => $request->priority ?? 'normal',
+                'description' => $request->description,
                 'requested_by' => Auth::id(),
-                'preferred_date_start' => $request->preferred_date_start,
-                'preferred_date_end' => $request->preferred_date_end,
-                'preferred_location_lat' => $request->preferred_location_lat,
-                'preferred_location_lng' => $request->preferred_location_lng,
-                'max_distance_km' => $request->max_distance_km,
             ]);
 
             // Load relationships for the resource
@@ -205,47 +175,49 @@ class SolicitationController extends Controller
 
             // This will notify health plan admins and super admins
             $this->notificationService->notifySolicitationCreated($solicitation);
-            
-            // Attempt automatic scheduling and get the result
-            $schedulingResult = $this->attemptAutoScheduling($solicitation);
-            $appointmentInfo = null;
 
-            // If scheduling was successful, load the appointment details
-            if ($schedulingResult && $solicitation->isScheduled()) {
-                $latestAppointment = $solicitation->appointments()->latest()->first();
-                if ($latestAppointment) {
-                    $latestAppointment->load('provider');
-                    $appointmentInfo = [
-                        'id' => $latestAppointment->id,
-                        'scheduled_date' => $latestAppointment->scheduled_date,
-                        'provider' => [
-                            'type' => class_basename($latestAppointment->provider_type),
-                            'id' => $latestAppointment->provider_id,
-                            'name' => $latestAppointment->provider->name ?? 'Unknown Provider'
-                        ],
-                        'status' => $latestAppointment->status
-                    ];
-                    
-                    // Send appointment scheduled notification
-                    $this->notificationService->notifyAppointmentScheduled($latestAppointment);
-                }
+            // Attempt to find best provider based on TUSS specialty
+            $scheduler = new AppointmentScheduler();
+            $result = $scheduler->findBestProvider($solicitation);
+
+            if ($result['success']) {
+                // Create appointment with the found provider
+                $appointment = new Appointment([
+                    'solicitation_id' => $solicitation->id,
+                    'provider_type' => $result['provider']['provider_type'],
+                    'provider_id' => $result['provider']['provider_id'],
+                    'status' => Appointment::STATUS_SCHEDULED,
+                    'created_by' => Auth::id()
+                ]);
+
+                $appointment->save();
+                
+                // Mark solicitation as scheduled
+                $solicitation->markAsScheduled(true);
+                
+                DB::commit();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Solicitation created and provider found',
+                    'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments']))
+                ]);
+            } else {
+                // If no provider found, keep as pending
+                $solicitation->markAsPending();
+                
+                DB::commit();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Solicitation created but no provider found immediately',
+                    'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy']))
+                ]);
             }
-
-      
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Solicitation created successfully' . 
-                            ($solicitation->isScheduled() ? ' and automatically scheduled' : 
-                             ($solicitation->isFailed() ? '. Automatic scheduling failed' : '')),
-                'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments.provider'])),
-                'auto_scheduled' => $solicitation->isScheduled(),
-                'appointment' => $appointmentInfo
-            ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error creating solicitation: ' . $e->getMessage());
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create solicitation',
@@ -315,13 +287,8 @@ class SolicitationController extends Controller
 
             // Validate request
             $validator = Validator::make($request->all(), [
-                'priority' => 'sometimes|in:low,normal,high,urgent',
-                'notes' => 'sometimes|nullable|string',
-                'preferred_date_start' => 'sometimes|date|after_or_equal:today',
-                'preferred_date_end' => 'sometimes|date|after_or_equal:preferred_date_start',
-                'preferred_location_lat' => 'sometimes|nullable|numeric',
-                'preferred_location_lng' => 'sometimes|nullable|numeric',
-                'max_distance_km' => 'sometimes|nullable|numeric|min:1|max:100',
+                'priority' => 'sometimes|in:low,normal,high',
+                'description' => 'sometimes|required|string',
             ]);
 
             if ($validator->fails()) {
@@ -336,15 +303,7 @@ class SolicitationController extends Controller
 
             // Track changes for notification
             $changes = [];
-            $updateFields = [
-                'priority',
-                'notes',
-                'preferred_date_start',
-                'preferred_date_end',
-                'preferred_location_lat',
-                'preferred_location_lng',
-                'max_distance_km',
-            ];
+            $updateFields = ['priority', 'description'];
             
             // Save original values for tracking changes
             foreach ($updateFields as $field) {
@@ -361,41 +320,6 @@ class SolicitationController extends Controller
 
             // Reload relationships
             $solicitation->load(['healthPlan', 'patient', 'tuss', 'requestedBy']);
-
-            // Handle date changes
-            if ($request->has('preferred_date_start')) {
-                $solicitation->preferred_date_start = Carbon::parse($request->preferred_date_start);
-            }
-            
-            if ($request->has('preferred_date_end')) {
-                $solicitation->preferred_date_end = Carbon::parse($request->preferred_date_end);
-            }
-
-            // If scheduled and dates changed, check if appointments need to be rescheduled
-            $needsRescheduling = $solicitation->isDirty('preferred_date_start') || $solicitation->isDirty('preferred_date_end');
-            
-            $solicitation->save();
-
-            // Handle rescheduling if necessary
-            if ($needsRescheduling && $solicitation->isScheduled()) {
-                // This would typically be dispatched as a job
-                // Set status back to processing for rescheduling
-                $solicitation->markAsProcessing();
-                
-                // Check if auto-scheduling is enabled
-                $schedulingEnabled = SystemSetting::getValue('scheduling_enabled', 'false') === 'true';
-                
-                if ($schedulingEnabled) {
-                    $scheduler = new AppointmentScheduler();
-                    $result = $scheduler->scheduleAppointment($solicitation);
-                    
-                    if ($result) {
-                        $solicitation->markAsScheduled(true);
-                    } else {
-                        $solicitation->markAsFailed();
-                    }
-                }
-            }
             
             // Send notification to super admins about the update
             if (!empty($changes)) {
@@ -407,8 +331,7 @@ class SolicitationController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Solicitation updated successfully',
-                'data' => new SolicitationResource($solicitation),
-                'rescheduled' => $needsRescheduling && $solicitation->isScheduled()
+                'data' => new SolicitationResource($solicitation)
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -562,17 +485,32 @@ class SolicitationController extends Controller
             $solicitation->markAsProcessing();
 
             // Attempt scheduling
-            $result = $this->schedulingService->scheduleSolicitation($solicitation);
+            $scheduler = new AppointmentScheduler();
+            $result = $scheduler->findBestProvider($solicitation);
 
             if ($result['success']) {
+                // Create appointment with the found provider
+                $appointment = new Appointment([
+                    'solicitation_id' => $solicitation->id,
+                    'provider_type' => $result['provider']['provider_type'],
+                    'provider_id' => $result['provider']['provider_id'],
+                    'status' => Appointment::STATUS_SCHEDULED,
+                    'created_by' => Auth::id()
+                ]);
+
+                $appointment->save();
+                
+                // Mark solicitation as scheduled
+                $solicitation->markAsScheduled(true);
+
                 return response()->json([
                     'success' => true,
                     'message' => 'Solicitation scheduled successfully',
                     'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments.provider']))
                 ]);
             } else {
-                // If scheduling failed, mark the solicitation as failed
-                $solicitation->markAsFailed();
+                // If scheduling failed, mark the solicitation as pending
+                $solicitation->markAsPending();
                 
                 return response()->json([
                     'success' => false,
@@ -583,8 +521,8 @@ class SolicitationController extends Controller
         } catch (\Exception $e) {
             Log::error('Error scheduling solicitation: ' . $e->getMessage());
             
-            // Mark the solicitation as failed
-            $solicitation->markAsFailed();
+            // Mark the solicitation as pending
+            $solicitation->markAsPending();
             
             return response()->json([
                 'success' => false,
@@ -671,27 +609,41 @@ class SolicitationController extends Controller
         try {
             Log::info("Starting automatic scheduling for solicitation #{$solicitation->id}");
             
-            // Attempt scheduling
+            // Find best provider based on TUSS specialty only
             $scheduler = new AppointmentScheduler();
-            $appointment = $scheduler->scheduleAppointment($solicitation);
+            $result = $scheduler->findBestProvider($solicitation);
             
-            if ($appointment) {
-                Log::info("Successfully scheduled appointment #{$appointment->id} for solicitation #{$solicitation->id}");
+            if ($result['success']) {
+                // Create appointment with the found provider
+                $appointment = new Appointment([
+                    'solicitation_id' => $solicitation->id,
+                    'provider_type' => $result['provider']['provider_type'],
+                    'provider_id' => $result['provider']['provider_id'],
+                    'status' => Appointment::STATUS_SCHEDULED,
+                    'created_by' => Auth::id()
+                ]);
+
+                $appointment->save();
+                
+                // Mark solicitation as scheduled
+                $solicitation->markAsScheduled(true);
+                
+                Log::info("Successfully scheduled appointment for solicitation #{$solicitation->id}");
                 return true;
             } else {
-                // If scheduling failed and solicitation is still in processing, mark it as failed
+                // If no provider found and solicitation is still in processing, mark it as pending
                 if ($solicitation->isProcessing()) {
-                    $solicitation->markAsFailed();
-                    Log::warning("Automatic scheduling failed for solicitation #{$solicitation->id}");
+                    $solicitation->markAsPending();
+                    Log::info("No provider found for solicitation #{$solicitation->id}, marked as pending");
                 }
                 return false;
             }
         } catch (\Exception $e) {
             Log::error("Error in automatic scheduling for solicitation #{$solicitation->id}: " . $e->getMessage());
             
-            // Make sure to mark as failed if an exception occurred
+            // Make sure to mark as pending if an exception occurred
             if ($solicitation->isProcessing()) {
-                $solicitation->markAsFailed();
+                $solicitation->markAsPending();
             }
             
             return false;
@@ -717,7 +669,7 @@ class SolicitationController extends Controller
             }
 
             // Check if solicitation is in a state that can be scheduled
-            if (!$solicitation->isPending() && !$solicitation->isProcessing() && !$solicitation->isFailed()) {
+            if (!$solicitation->isPending() && !$solicitation->isProcessing()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Solicitation cannot be scheduled in its current state'
@@ -734,12 +686,6 @@ class SolicitationController extends Controller
                     'message' => 'Failed to schedule solicitation automatically',
                     'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments']))
                 ], 422);
-            }
-
-            // Get appointment details
-            $appointment = $solicitation->appointments()->latest()->first();
-            if ($appointment) {
-                $appointment->load('provider');
             }
 
             return response()->json([

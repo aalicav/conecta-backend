@@ -31,7 +31,7 @@ class Appointment extends Model
         'confirmed_by',
         'completed_by',
         'cancelled_by',
-        'notes',
+        'created_by',
     ];
 
     /**
@@ -157,6 +157,14 @@ class Appointment extends Model
     }
 
     /**
+     * Get the user who created the appointment.
+     */
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
      * Get the payment associated with this appointment.
      */
     public function payment(): HasOne
@@ -221,7 +229,7 @@ class Appointment extends Model
     }
 
     /**
-     * Scope a query to only include active appointments (not completed or cancelled).
+     * Scope a query to only include active appointments.
      */
     public function scopeActive($query)
     {
@@ -250,7 +258,7 @@ class Appointment extends Model
      */
     public function scopePast($query)
     {
-        return $query->where('scheduled_date', '<=', now());
+        return $query->where('scheduled_date', '<', now());
     }
 
     /**
@@ -302,7 +310,7 @@ class Appointment extends Model
     }
 
     /**
-     * Mark the appointment as confirmed.
+     * Confirm the appointment.
      */
     public function confirm(int $userId): bool
     {
@@ -318,11 +326,11 @@ class Appointment extends Model
     }
 
     /**
-     * Mark the appointment as completed.
+     * Complete the appointment.
      */
     public function complete(int $userId): bool
     {
-        if (!$this->isScheduled() && !$this->isConfirmed()) {
+        if (!$this->isConfirmed()) {
             return false;
         }
 
@@ -334,25 +342,19 @@ class Appointment extends Model
     }
 
     /**
-     * Mark the appointment as cancelled.
+     * Cancel the appointment.
      */
-    public function cancel(int $userId, string $notes = null): bool
+    public function cancel(int $userId): bool
     {
         if ($this->isCompleted() || $this->isCancelled() || $this->isMissed()) {
             return false;
         }
 
-        $data = [
+        return $this->update([
             'status' => self::STATUS_CANCELLED,
             'cancelled_date' => now(),
             'cancelled_by' => $userId
-        ];
-
-        if ($notes) {
-            $data['notes'] = $notes;
-        }
-
-        return $this->update($data);
+        ]);
     }
 
     /**
@@ -360,7 +362,7 @@ class Appointment extends Model
      */
     public function markAsMissed(): bool
     {
-        if (!$this->isScheduled() && !$this->isConfirmed()) {
+        if (!$this->isConfirmed()) {
             return false;
         }
 
