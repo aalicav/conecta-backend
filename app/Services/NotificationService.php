@@ -66,7 +66,7 @@ class NotificationService
             $users = $this->getUsersToNotifyForSolicitation($solicitation);
             
             // Make sure we include super admins
-            $superAdmins = User::role('super_admin')->where('is_active', true)->get();
+            $superAdmins = User::role('super_admin')->get();
             $users = $users->merge($superAdmins);
             
             if ($users->isEmpty()) {
@@ -505,11 +505,11 @@ class NotificationService
         // Notify health plan admins and super admins
         $healthPlanAdmins = User::role('plan_admin')
             ->where('health_plan_id', $solicitation->health_plan_id)
-            ->where('is_active', true)
+            
             ->get();
             
         $superAdmins = User::role('super_admin')
-            ->where('is_active', true)
+            
             ->get();
             
         return $healthPlanAdmins->merge($superAdmins);
@@ -531,7 +531,7 @@ class NotificationService
         // Add health plan admin
         $healthPlanAdmins = User::role('health_plan_admin')
             ->where('health_plan_id', $solicitation->health_plan_id)
-            ->where('is_active', true)
+            
             ->get();
         $users = $users->merge($healthPlanAdmins);
         
@@ -541,13 +541,13 @@ class NotificationService
         if ($providerType === 'App\\Models\\Clinic') {
             $clinicAdmins = User::role('clinic_admin')
                 ->where('clinic_id', $appointment->provider_id)
-                ->where('is_active', true)
+                
                 ->get();
             $users = $users->merge($clinicAdmins);
         } elseif ($providerType === 'App\\Models\\Professional') {
             $professional = User::role('professional')
                 ->where('professional_id', $appointment->provider_id)
-                ->where('is_active', true)
+                
                 ->first();
                 
             if ($professional) {
@@ -619,7 +619,7 @@ class NotificationService
     {
         try {
             // Notificar admins sobre a nova exceção de agendamento
-            $superAdmins = User::role('super_admin')->where('is_active', true)->get();
+            $superAdmins = User::role('super_admin')->get();
             
             if ($superAdmins->isEmpty()) {
                 return;
@@ -731,7 +731,7 @@ class NotificationService
     {
         try {
             // Find all users with the specified role
-            $query = User::role($roleName)->where('is_active', true);
+            $query = User::role($roleName);
             
             // Exclude specific user if provided
             if ($exceptUserId) {
@@ -779,7 +779,7 @@ class NotificationService
     {
         try {
             // Find users with permission to approve professionals
-            $validators = User::permission('approve professionals')->where('is_active', true)->get();
+            $validators = User::permission('approve professionals')->get();
             
             if ($validators->isEmpty()) {
                 return;
@@ -831,7 +831,7 @@ class NotificationService
 
             // If approved, also notify commercial team
             if ($approved) {
-                $commercialTeam = User::permission('create contracts')->where('is_active', true)->get();
+                $commercialTeam = User::permission('create contracts')->get();
                 $users = $users->merge($commercialTeam);
             }
 
@@ -912,12 +912,12 @@ class NotificationService
                     $query->where('entity_type', $entityType)
                           ->where('entity_id', $entityId);
                 })
-                ->where('is_active', true)
+                
                 ->get();
             
             // Buscar administradores do sistema
             $admins = User::role(['super_admin', 'director', 'commercial', 'financial', 'legal'])
-                ->where('is_active', true)
+                
                 ->get();
             
             // Mesclar as listas de destinatários
@@ -1025,12 +1025,12 @@ class NotificationService
                     $query->where('entity_type', $entityType)
                           ->where('entity_id', $entityId);
                 })
-                ->where('is_active', true)
+                
                 ->get();
             
             // Buscar aprovadores do sistema
             $approvers = User::role(['super_admin', 'director', 'commercial', 'financial', 'legal'])
-                ->where('is_active', true)
+                
                 ->get();
                 
             // Mesclar as listas de destinatários
@@ -1142,7 +1142,7 @@ class NotificationService
                     $query->where('entity_type', $entityType)
                           ->where('entity_id', $entityId);
                 })
-                ->where('is_active', true)
+                
                 ->where('id', '!=', $currentUserId) // Não notificar o usuário atual
                 ->get();
             
@@ -1481,7 +1481,7 @@ class NotificationService
                     $query->where('entity_type', $entityType)
                           ->where('entity_id', $entityId);
                 })
-                ->where('is_active', true)
+                
                 ->get();
                 
             foreach ($entityUsers as $user) {
@@ -1501,7 +1501,7 @@ class NotificationService
             
             // Incluir administradores relevantes
             $admins = User::role(['super_admin', 'commercial', 'financial'])
-                ->where('is_active', true)
+                
                 ->get();
                 
             foreach ($admins as $admin) {
@@ -1596,7 +1596,7 @@ class NotificationService
                     $query->where('entity_type', $entityType)
                           ->where('entity_id', $entityId);
                 })
-                ->where('is_active', true)
+                
                 ->get();
                 
             foreach ($entityUsers as $user) {
@@ -1616,7 +1616,7 @@ class NotificationService
             
             // Incluir administradores relevantes
             $admins = User::role(['super_admin', 'commercial', 'financial'])
-                ->where('is_active', true)
+                
                 ->get();
                 
             foreach ($admins as $admin) {
@@ -1711,7 +1711,7 @@ class NotificationService
                     $query->where('entity_type', $entityType)
                           ->where('entity_id', $entityId);
                 })
-                ->where('is_active', true)
+                
                 ->get();
                 
             foreach ($entityUsers as $user) {
@@ -1826,7 +1826,7 @@ class NotificationService
             
             // Adicionar administradores e usuários com permissão para bifurcar
             $admins = User::role(['super_admin', 'commercial', 'legal'])
-                ->where('is_active', true)
+                
                 ->where('id', '!=', Auth::id()) // Não notificar quem fez a bifurcação
                 ->get();
                 
@@ -1844,7 +1844,7 @@ class NotificationService
                     $query->where('entity_type', $entityType)
                           ->where('entity_id', $entityId);
                 })
-                ->where('is_active', true)
+                
                 ->get();
                 
             foreach ($entityUsers as $user) {
@@ -1940,7 +1940,7 @@ class NotificationService
         try {
             // Get finance department users
             $financeUsers = User::role(['financial', 'finance_admin'])
-                ->where('is_active', true)
+                
                 ->get();
             
             if ($financeUsers->isEmpty()) {
@@ -2004,7 +2004,7 @@ class NotificationService
             $healthPlanId = $appointment->solicitation->health_plan_id;
             $healthPlanAdmins = User::role('plan_admin')
                 ->where('health_plan_id', $healthPlanId)
-                ->where('is_active', true)
+                
                 ->get();
             
             if ($healthPlanAdmins->isEmpty()) {
@@ -2066,7 +2066,7 @@ class NotificationService
         try {
             // Get finance department users
             $financeUsers = User::role(['financial', 'finance_admin'])
-                ->where('is_active', true)
+                
                 ->get();
             
             if ($financeUsers->isEmpty()) {
@@ -2312,7 +2312,7 @@ class NotificationService
     {
         try {
             // Notify legal team
-            $legalTeam = User::role('legal')->where('is_active', true)->get();
+            $legalTeam = User::role('legal')->get();
             
             if ($legalTeam->isNotEmpty()) {
                 $data = [
@@ -2467,7 +2467,7 @@ class NotificationService
             if ($contractable instanceof \App\Models\Professional) {
                 // Professional contract
                 $user = User::where('professional_id', $contractable->id)
-                    ->where('is_active', true)
+                    
                     ->first();
                     
                 if ($user) {
@@ -2476,14 +2476,14 @@ class NotificationService
             } elseif ($contractable instanceof \App\Models\Clinic) {
                 // Clinic contract
                 $users = User::where('clinic_id', $contractable->id)
-                    ->where('is_active', true)
+                    
                     ->get();
                     
                 $entityUsers = $entityUsers->merge($users);
             } elseif ($contractable instanceof \App\Models\HealthPlan) {
                 // Health plan contract
                 $users = User::where('health_plan_id', $contractable->id)
-                    ->where('is_active', true)
+                    
                     ->get();
                     
                 $entityUsers = $entityUsers->merge($users);
@@ -2522,7 +2522,7 @@ class NotificationService
         try {
             // Find the user
             $user = User::where('id', $userId)
-                ->where('is_active', true)
+                
                 ->first();
             
             if (!$user) {
@@ -2601,21 +2601,21 @@ class NotificationService
                 case 'team':
                     // Notify all team members who can approve
                     $usersToNotify = User::role(['commercial', 'financial', 'legal'])
-                        ->where('is_active', true)
+                        
                         ->get();
                     break;
                     
                 case 'director':
                     // Notify directors
                     $usersToNotify = User::role(['director', 'super_admin'])
-                        ->where('is_active', true)
+                        
                         ->get();
                     break;
                     
                 default:
                     // Default approval level - notify commercial and financial teams
                     $usersToNotify = User::role(['commercial', 'financial', 'super_admin'])
-                        ->where('is_active', true)
+                        
                         ->get();
             }
             
@@ -2760,7 +2760,7 @@ class NotificationService
                     $query->where('entity_type', $entityType)
                           ->where('entity_id', $entityId);
                 })
-                ->where('is_active', true)
+                
                 ->get();
                 
             foreach ($entityUsers as $user) {
@@ -2867,7 +2867,7 @@ class NotificationService
             
             // Add relevant administrators
             $admins = User::role(['super_admin', 'commercial', 'financial', 'legal'])
-                ->where('is_active', true)
+                
                 ->where('id', '!=', $currentUserId)
                 ->get();
                 
