@@ -1660,7 +1660,7 @@ class AppointmentController extends Controller
         try {
             // Get pending solicitations
             $solicitations = Solicitation::where('status', Solicitation::STATUS_PENDING)
-                ->orWhere('status', Solicitation::STATUS_FAILED)
+                ->orWhere('status', Solicitation::STATUS_PENDING)
                 ->get();
 
             if ($solicitations->isEmpty()) {
