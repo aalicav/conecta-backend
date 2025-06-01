@@ -72,6 +72,39 @@ class NegotiationResource extends JsonResource
                     ];
                 });
             }),
+            
+            // Approval information
+            'approved_by' => $this->when($this->approved_by, function() {
+                return [
+                    'id' => $this->approver->id,
+                    'name' => $this->approver->name,
+                    'email' => $this->approver->email,
+                ];
+            }),
+            'approved_at' => $this->approved_at,
+            'approval_notes' => $this->approval_notes,
+            
+            // Rejection information
+            'rejected_by' => $this->when($this->rejected_by, function() {
+                return [
+                    'id' => $this->rejecter->id,
+                    'name' => $this->rejecter->name,
+                    'email' => $this->rejecter->email,
+                ];
+            }),
+            'rejected_at' => $this->rejected_at,
+            'rejection_notes' => $this->rejection_notes,
+            
+            // Permissions
+            'can_approve' => $request->user() && 
+                           $request->user()->hasPermissionTo('approve_negotiations') && 
+                           $request->user()->id !== $this->creator_id,
+            'can_submit_for_approval' => $request->user() && 
+                                       $request->user()->hasRole('commercial'),
+            'can_edit' => $request->user() && (
+                $request->user()->id === $this->creator_id || 
+                $request->user()->hasRole(['super_admin', 'commercial'])
+            ),
         ];
     }
 } 

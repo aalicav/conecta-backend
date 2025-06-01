@@ -7,6 +7,8 @@ use App\Notifications\Channels\WhatsAppChannel;
 use Illuminate\Support\Facades\Notification;
 use Twilio\Rest\Client;
 use App\Providers\WhatsAppServiceProvider;
+use App\Models\Negotiation;
+use App\Observers\NegotiationObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -33,5 +35,7 @@ class AppServiceProvider extends ServiceProvider
                 )
             );
         });
+
+        Negotiation::observe(NegotiationObserver::class);
     }
 }

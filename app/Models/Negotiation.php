@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use App\Traits\Auditable;
 
 class Negotiation extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Auditable;
 
     /**
      * Status constants
@@ -34,17 +35,19 @@ class Negotiation extends Model
     protected $fillable = [
         'title',
         'description',
+        'status',
+        'approval_level',
+        'formalization_status',
         'start_date',
         'end_date',
-        'negotiable_type',
-        'negotiable_id',
-        'contract_template_id',
-        'contract_id',
-        'creator_id',
-        'status',
         'notes',
-        'current_approval_level',
+        'creator_id',
+        'approved_by',
         'approved_at',
+        'approval_notes',
+        'rejected_by',
+        'rejected_at',
+        'rejection_notes',
     ];
 
     /**
@@ -54,8 +57,8 @@ class Negotiation extends Model
      */
     protected $casts = [
         'previous_cycles_data' => 'array',
-        'start_date' => 'date',
-        'end_date' => 'date',
+        'start_date' => 'datetime',
+        'end_date' => 'datetime',
         'rejected_at' => 'datetime',
         'completed_at' => 'datetime',
         'approved_at' => 'datetime',
@@ -153,7 +156,7 @@ class Negotiation extends Model
     /**
      * Get the approval history for the negotiation.
      */
-    public function approvalHistory()
+    public function approvalHistory(): HasMany
     {
         return $this->hasMany(NegotiationApprovalHistory::class);
     }
@@ -180,5 +183,70 @@ class Negotiation extends Model
     public function forkedNegotiations()
     {
         return $this->hasMany(Negotiation::class, 'parent_negotiation_id');
+    }
+
+    /**
+     * Get the user who approved the negotiation.
+     */
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /**
+     * Get the user who rejected the negotiation.
+     */
+    public function rejecter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
+    }
+
+    /**
+     * Check if the negotiation can be submitted for approval.
+     *
+     * @return bool
+     */
+    public function canBeSubmittedForApproval(): bool
+    {
+        return $this->status === 'draft' || 
+               $this->status === 'submitted';
+    }
+
+    /**
+     * Check if the negotiation can be approved.
+     *
+     * @return bool
+     */
+    public function canBeApproved(): bool
+    {
+        return $this->approval_level === 'pending_approval';
+    }
+
+    /**
+     * Check if the negotiation can be formalized.
+     *
+     * @return bool
+     */
+    public function canBeFormalized(): bool
+    {
+        return $this->status === 'approved' && 
+               $this->formalization_status === 'pending_aditivo';
+    }
+
+    /**
+     * Record an approval history entry.
+     *
+     * @param string $action
+     * @param int $userId
+     * @param string|null $notes
+     * @return NegotiationApprovalHistory
+     */
+    public function recordApprovalHistory(string $action, int $userId, ?string $notes = null): NegotiationApprovalHistory
+    {
+        return $this->approvalHistory()->create([
+            'action' => $action,
+            'user_id' => $userId,
+            'notes' => $notes,
+        ]);
     }
 } 

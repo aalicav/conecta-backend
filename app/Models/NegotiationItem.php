@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Traits\Auditable;
 
 class NegotiationItem extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Auditable;
 
     /**
      * Status constants
@@ -81,5 +82,47 @@ class NegotiationItem extends Model
     public function getStatusLabelAttribute(): string
     {
         return self::$statusLabels[$this->status] ?? $this->status;
+    }
+
+    /**
+     * Check if the item can be responded to.
+     *
+     * @return bool
+     */
+    public function canBeRespondedTo(): bool
+    {
+        return $this->status === 'pending' && 
+               $this->negotiation->status === 'submitted';
+    }
+
+    /**
+     * Check if the item has been approved.
+     *
+     * @return bool
+     */
+    public function isApproved(): bool
+    {
+        return $this->status === 'approved';
+    }
+
+    /**
+     * Check if the item has been rejected.
+     *
+     * @return bool
+     */
+    public function isRejected(): bool
+    {
+        return $this->status === 'rejected';
+    }
+
+    /**
+     * Check if the item has a counter offer.
+     *
+     * @return bool
+     */
+    public function hasCounterOffer(): bool
+    {
+        return $this->status === 'counter_offered' && 
+               $this->approved_value !== null;
     }
 } 

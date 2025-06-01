@@ -286,37 +286,58 @@ Route::middleware(['auth:sanctum'])->prefix('contract-templates')->group(functio
 });
 
 // Negotiations
-Route::prefix('negotiations')->group(function () {
-    Route::get('/', [NegotiationController::class, 'index']);
-    Route::post('/', [NegotiationController::class, 'store']);
-    Route::get('/{negotiation}', [NegotiationController::class, 'show']);
-    Route::put('/{negotiation}', [NegotiationController::class, 'update']);
-    Route::post('/{negotiation}/submit', [NegotiationController::class, 'submit']);
-    Route::post('/{negotiation}/submit-approval', [NegotiationController::class, 'submitForApproval']);
-    Route::post('/{negotiation}/process-approval', [NegotiationController::class, 'processApproval']);
-    Route::post('/{negotiation}/mark-complete', [NegotiationController::class, 'markAsComplete']);
-    Route::post('/{negotiation}/mark-partially-complete', [NegotiationController::class, 'markAsPartiallyComplete']);
-    Route::post('/{negotiation}/cancel', [NegotiationController::class, 'cancel']);
-    Route::post('/{negotiation}/generate-contract', [NegotiationController::class, 'generateContract']);
-    Route::post('/{negotiation}/resend-notifications', [NegotiationController::class, 'resendNotifications']);
-    Route::post('/{negotiation}/batch-counter', [NegotiationController::class, 'batchCounterOffer']);
-    Route::get('/announcements', [NegotiationController::class, 'getAnnouncements']);
-    
-    // Items routes
-    Route::post('/items/{item}/respond', [NegotiationController::class, 'respondToItem']);
-    Route::post('/items/{item}/counter', [NegotiationController::class, 'counterItem']);
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::prefix('negotiations')->group(function () {
+        Route::get('/', [NegotiationController::class, 'index'])
+            ->middleware('permission:view_negotiations');
+        Route::post('/', [NegotiationController::class, 'store'])
+            ->middleware('permission:create_negotiations');
+        Route::get('/{negotiation}', [NegotiationController::class, 'show'])
+            ->middleware('permission:view_negotiations');
+        Route::put('/{negotiation}', [NegotiationController::class, 'update'])
+            ->middleware('permission:edit_negotiations');
+        Route::post('/{negotiation}/submit', [NegotiationController::class, 'submit'])
+            ->middleware('permission:submit_negotiations');
+        Route::post('/{negotiation}/submit-approval', [NegotiationController::class, 'submitForApproval'])
+            ->middleware('permission:submit_negotiations');
+        Route::post('/{negotiation}/process-approval', [NegotiationController::class, 'processApproval'])
+            ->middleware(['can.approve.negotiation']);
+        Route::post('/{negotiation}/formalize', [NegotiationController::class, 'markAsFormalized'])
+            ->middleware('permission:formalize_negotiations');
+        Route::post('/{negotiation}/mark-complete', [NegotiationController::class, 'markAsComplete'])
+            ->middleware('permission:edit_negotiations');
+        Route::post('/{negotiation}/mark-partially-complete', [NegotiationController::class, 'markAsPartiallyComplete'])
+            ->middleware('permission:edit_negotiations');
+        Route::post('/{negotiation}/cancel', [NegotiationController::class, 'cancel'])
+            ->middleware('permission:edit_negotiations');
+        Route::post('/{negotiation}/generate-contract', [NegotiationController::class, 'generateContract'])
+            ->middleware('permission:edit_negotiations');
+        Route::post('/{negotiation}/resend-notifications', [NegotiationController::class, 'resendNotifications'])
+            ->middleware('permission:edit_negotiations');
+        Route::post('/{negotiation}/batch-counter', [NegotiationController::class, 'batchCounterOffer'])
+            ->middleware('permission:edit_negotiations');
+        Route::get('/announcements', [NegotiationController::class, 'getAnnouncements']);
+        Route::get('/{negotiation}/approval-history', [NegotiationController::class, 'getApprovalHistory'])
+            ->middleware('permission:view_negotiation_history');
+        
+        // Items routes
+        Route::post('/items/{item}/respond', [NegotiationController::class, 'respondToItem'])
+            ->middleware('permission:edit_negotiations');
+        Route::post('/items/{item}/counter', [NegotiationController::class, 'counterItem'])
+            ->middleware('permission:edit_negotiations');
 
-    // Ciclos de renegociação
-    Route::post('/{negotiation}/cycles', [NegotiationController::class, 'startNewCycle'])
-        ->middleware(['auth:sanctum']);
+        // Ciclos de renegociação
+        Route::post('/{negotiation}/cycles', [NegotiationController::class, 'startNewCycle'])
+            ->middleware(['permission:edit_negotiations']);
 
-    // Rollback no fluxo
-    Route::post('/{negotiation}/rollback', [NegotiationController::class, 'rollbackStatus'])
-        ->middleware(['auth:sanctum']);
+        // Rollback no fluxo
+        Route::post('/{negotiation}/rollback', [NegotiationController::class, 'rollbackStatus'])
+            ->middleware(['permission:edit_negotiations']);
 
-    // Bifurcação de fluxo
-    Route::post('/{negotiation}/fork', [NegotiationController::class, 'forkNegotiation'])
-        ->middleware(['auth:sanctum']);
+        // Bifurcação de fluxo
+        Route::post('/{negotiation}/fork', [NegotiationController::class, 'forkNegotiation'])
+            ->middleware(['permission:edit_negotiations']);
+    });
 });
 
 // WhatsApp notifications routes

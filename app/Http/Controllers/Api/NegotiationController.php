@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
+use App\Http\Resources\NegotiationApprovalHistoryResource;
+use App\Events\NegotiationApproved;
 
 class NegotiationController extends Controller
 {
@@ -389,7 +391,7 @@ class NegotiationController extends Controller
     }
 
     /**
-     * Submit the negotiation for internal approval.
+     * Submit negotiation for approval.
      *
      * @param Request $request
      * @param Negotiation $negotiation
@@ -397,49 +399,126 @@ class NegotiationController extends Controller
      */
     public function submitForApproval(Request $request, Negotiation $negotiation)
     {
-        // Can only submit for approval if it's in submitted or partially_approved state
-        if (!in_array($negotiation->status, [self::STATUS_SUBMITTED, self::STATUS_PARTIALLY_APPROVED])) {
-            return response()->json(['message' => 'Apenas negociações submetidas ou parcialmente aprovadas podem ser enviadas para aprovação interna'], 403);
-        }
-        
-        $validated = $request->validate([
-            'notes' => 'nullable|string',
-        ]);
-        
         try {
-            DB::beginTransaction();
-            
-            $previousStatus = $negotiation->status;
-            
-            // Update negotiation status
-            $negotiation->status = self::STATUS_PENDING_APPROVAL;
-            $negotiation->submission_notes = $validated['notes'] ?? null;
-            $negotiation->submitted_for_approval_at = Carbon::now();
-            $negotiation->submitted_for_approval_by = Auth::id();
-            $negotiation->save();
-            
-            // Create approval history record for submission
-            if (method_exists($negotiation, 'approvalHistory')) {
-                $negotiation->approvalHistory()->create([
-                    'level' => 'submission',
-                    'status' => 'submitted',
-                    'user_id' => Auth::id(),
-                    'notes' => $validated['notes'] ?? 'Submetido para aprovação interna'
-                ]);
+            // Validate user has commercial team role
+            if (!Auth::user()->hasRole('commercial')) {
+                return response()->json([
+                    'message' => 'Unauthorized. Only commercial team can submit for approval.'
+                ], 403);
             }
-            
-            // Notify appropriate team members
-            $this->notificationService->notifyApprovalRequired($negotiation, 'team');
-            
-            DB::commit();
-            
-            return response()->json([
-                'message' => 'Negociação enviada para aprovação interna',
-                'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
+
+            // Validate current status
+            if ($negotiation->status !== self::STATUS_APPROVED) {
+                return response()->json([
+                    'message' => 'Negotiation must be in proper status for approval.'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            // Update negotiation status
+            $negotiation->approval_level = 'pending_approval';
+            $negotiation->save();
+
+            // Send notification to users with approval permission
+            $this->notificationService->sendToRole('approver', [
+                'title' => 'Nova negociação aguardando aprovação',
+                'body' => "Negociação #{$negotiation->id} aguarda sua aprovação.",
+                'action_link' => "/negotiations/{$negotiation->id}",
+                'priority' => 'high'
             ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Negotiation submitted for approval successfully.',
+                'data' => new NegotiationResource($negotiation)
+            ]);
+
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Erro ao enviar para aprovação: ' . $e->getMessage()], 500);
+            Log::error('Failed to submit negotiation for approval: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to submit for approval.'], 500);
+        }
+    }
+
+    /**
+     * Process approval for negotiation.
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function processApproval(Request $request, Negotiation $negotiation)
+    {
+        try {
+            $validated = $request->validate([
+                'approval_notes' => 'nullable|string',
+                'approved' => 'required|boolean'
+            ]);
+
+            // Validate user has approval permission
+            if (!Auth::user()->hasPermissionTo('approve_negotiations')) {
+                return response()->json([
+                    'message' => 'Unauthorized. You do not have permission to approve negotiations.'
+                ], 403);
+            }
+
+            // Check if the approver is different from the creator
+            if ($negotiation->creator_id === Auth::id()) {
+                return response()->json([
+                    'message' => 'You cannot approve your own negotiation request.'
+                ], 403);
+            }
+
+            // Validate current status
+            if ($negotiation->approval_level !== 'pending_approval') {
+                return response()->json([
+                    'message' => 'Negotiation is not pending approval.'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            if ($validated['approved']) {
+                $negotiation->status = self::STATUS_APPROVED;
+                $negotiation->approval_level = null;
+                $negotiation->approved_by = Auth::id();
+                $negotiation->approved_at = now();
+                $negotiation->approval_notes = $validated['approval_notes'];
+                $negotiation->formalization_status = 'pending_aditivo';
+                $negotiation->save();
+
+                // Dispatch the approval event
+                event(new NegotiationApproved($negotiation));
+            } else {
+                $negotiation->status = self::STATUS_REJECTED;
+                $negotiation->approval_level = null;
+                $negotiation->rejection_notes = $validated['approval_notes'];
+                $negotiation->rejected_by = Auth::id();
+                $negotiation->rejected_at = now();
+                $negotiation->save();
+
+                // Send notification to the creator about rejection
+                $this->notificationService->sendToUser($negotiation->creator_id, [
+                    'title' => 'Negociação Rejeitada',
+                    'body' => "Sua negociação #{$negotiation->id} foi rejeitada.",
+                    'action_link' => "/negotiations/{$negotiation->id}",
+                    'priority' => 'high'
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Approval processed successfully.',
+                'data' => new NegotiationResource($negotiation)
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to process approval: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to process approval.'], 500);
         }
     }
 
@@ -802,99 +881,6 @@ class NegotiationController extends Controller
             DB::rollBack();
             return response()->json(['message' => 'Failed to submit batch counter offers', 'error' => $e->getMessage()], 500);
         }
-    }
-
-    /**
-     * Process approval for a negotiation.
-     *
-     * @param Request $request
-     * @param Negotiation $negotiation
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function processApproval(Request $request, Negotiation $negotiation)
-    {
-        // Verificar se a negociação está em análise
-        if (!in_array($negotiation->status, [self::STATUS_PENDING_APPROVAL, self::STATUS_PENDING_DIRECTOR_APPROVAL])) {
-            return response()->json(['message' => 'Esta negociação não está pendente de aprovação'], 403);
-        }
-        
-        // Verificar se o usuário tem permissão para aprovar
-        if (!$this->userHasApprovalPermission()) {
-            return response()->json(['message' => 'Você não tem permissão para aprovar negociações'], 403);
-        }
-        
-        $validated = $request->validate([
-            'action' => 'required|in:approve,reject',
-            'notes' => 'required|string',
-            'rejection_reason' => 'required_if:action,reject|nullable|string',
-        ]);
-        
-        try {
-            DB::beginTransaction();
-            
-            $previousStatus = $negotiation->status;
-            
-            if ($validated['action'] === 'approve') {
-                if ($negotiation->status === self::STATUS_PENDING_APPROVAL) {
-                    // Aprovação pela equipe de avaliação inicial (legal/comercial)
-                    $negotiation->status = self::STATUS_PENDING_DIRECTOR_APPROVAL;
-                    $negotiation->approval_notes = $validated['notes'];
-                    $negotiation->approved_at = Carbon::now();
-                    $negotiation->approved_by = Auth::id();
-                    $negotiation->save();
-                    
-                    // Notificar sobre a aprovação parcial
-                    $this->notificationService->notifyPartialApproval($negotiation);
-                    
-                    // Notificar que agora precisa da aprovação do diretor
-                    $this->notificationService->notifyApprovalRequired($negotiation, 'director');
-                } else if ($negotiation->status === self::STATUS_PENDING_DIRECTOR_APPROVAL) {
-                    // Aprovação final pela diretoria
-                    $negotiation->status = self::STATUS_APPROVED;
-                    $negotiation->director_approval_notes = $validated['notes'];
-                    $negotiation->director_approved_at = Carbon::now();
-                    $negotiation->director_approved_by = Auth::id();
-                    $negotiation->save();
-                    
-                    // Notificar sobre a aprovação final 
-                    $this->notificationService->notifyNegotiationApproved($negotiation);
-                }
-            } else {
-                // Rejeitado
-                $negotiation->status = self::STATUS_REJECTED;
-                $negotiation->rejection_reason = $validated['rejection_reason'];
-                $negotiation->rejected_at = Carbon::now();
-                $negotiation->rejected_by = Auth::id();
-                $negotiation->save();
-                
-                // Notificar sobre a rejeição
-                $this->notificationService->notifyApprovalRejected($negotiation);
-            }
-            
-            DB::commit();
-            
-            return response()->json([
-                'message' => $validated['action'] === 'approve' ? 'Negociação aprovada com sucesso' : 'Negociação rejeitada',
-                'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['message' => 'Erro ao processar aprovação: ' . $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Check if the current user has permission to approve negotiations.
-     *
-     * @return bool
-     */
-    private function userHasApprovalPermission(): bool
-    {
-        $user = Auth::user();
-        
-        // Check if user has the approval permission or appropriate role
-        return $user->hasPermissionTo('approve_negotiations') || 
-               $user->hasRole(['super_admin', 'director', 'financial']);
     }
 
     /**
@@ -1298,6 +1284,192 @@ class NegotiationController extends Controller
             return response()->json([
                 'message' => 'Falha ao bifurcar negociação', 
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Submit negotiation for director approval.
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function submitForDirectorApproval(Request $request, Negotiation $negotiation)
+    {
+        try {
+            // Validate user has commercial team role
+            if (!Auth::user()->hasRole('commercial')) {
+                return response()->json([
+                    'message' => 'Unauthorized. Only commercial team can submit for director approval.'
+                ], 403);
+            }
+
+            // Validate current status
+            if ($negotiation->status !== self::STATUS_APPROVED) {
+                return response()->json([
+                    'message' => 'Negotiation must be approved by commercial team first.'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            // Update negotiation status
+            $negotiation->approval_level = 'pending_director_approval';
+            $negotiation->save();
+
+            // Send notification to director (Dr. Ítalo)
+            $this->notificationService->sendNegotiationApprovalRequest($negotiation, 'director');
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Negotiation submitted for director approval successfully.',
+                'data' => new NegotiationResource($negotiation)
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to submit negotiation for director approval: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to submit for director approval.'], 500);
+        }
+    }
+
+    /**
+     * Director approval for negotiation.
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function directorApprove(Request $request, Negotiation $negotiation)
+    {
+        try {
+            $validated = $request->validate([
+                'approval_notes' => 'nullable|string',
+                'approved' => 'required|boolean'
+            ]);
+
+            // Validate user is director
+            if (!Auth::user()->hasRole('director')) {
+                return response()->json([
+                    'message' => 'Unauthorized. Only director can approve at this level.'
+                ], 403);
+            }
+
+            // Validate current status
+            if ($negotiation->approval_level !== 'pending_director_approval') {
+                return response()->json([
+                    'message' => 'Negotiation is not pending director approval.'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            if ($validated['approved']) {
+                $negotiation->status = self::STATUS_APPROVED;
+                $negotiation->approval_level = null;
+                $negotiation->approved_by_director_id = Auth::id();
+                $negotiation->director_approval_date = now();
+                $negotiation->director_approval_notes = $validated['approval_notes'];
+                $negotiation->formalization_status = 'pending_aditivo';
+            } else {
+                $negotiation->status = self::STATUS_REJECTED;
+                $negotiation->approval_level = null;
+                $negotiation->director_approval_notes = $validated['approval_notes'];
+            }
+
+            $negotiation->save();
+
+            // Send notification to commercial team
+            $this->notificationService->sendToRole('commercial', [
+                'title' => $validated['approved'] ? 'Negociação aprovada pela Direção' : 'Negociação rejeitada pela Direção',
+                'body' => "Negociação #{$negotiation->id} foi " . ($validated['approved'] ? 'aprovada' : 'rejeitada') . " pela Direção.",
+                'action_link' => "/negotiations/{$negotiation->id}",
+                'priority' => 'high'
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Director approval processed successfully.',
+                'data' => new NegotiationResource($negotiation)
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to process director approval: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to process director approval.'], 500);
+        }
+    }
+
+    /**
+     * Mark negotiation as formalized with addendum.
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function markAsFormalized(Request $request, Negotiation $negotiation)
+    {
+        try {
+            // Validate user has commercial role
+            if (!Auth::user()->hasRole('commercial')) {
+                return response()->json([
+                    'message' => 'Unauthorized. Only commercial team can mark as formalized.'
+                ], 403);
+            }
+
+            // Validate current status
+            if ($negotiation->formalization_status !== 'pending_aditivo') {
+                return response()->json([
+                    'message' => 'Negotiation is not pending formalization.'
+                ], 422);
+            }
+
+            $negotiation->formalization_status = 'formalized';
+            $negotiation->save();
+
+            // Send notification to relevant parties
+            $this->notificationService->sendToRole('commercial', [
+                'title' => 'Negociação formalizada',
+                'body' => "Negociação #{$negotiation->id} foi formalizada com sucesso.",
+                'action_link' => "/negotiations/{$negotiation->id}",
+                'priority' => 'medium'
+            ]);
+
+            return response()->json([
+                'message' => 'Negotiation marked as formalized successfully.',
+                'data' => new NegotiationResource($negotiation)
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to mark negotiation as formalized: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to mark as formalized.'], 500);
+        }
+    }
+
+    /**
+     * Get the approval history for a negotiation.
+     *
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getApprovalHistory(Negotiation $negotiation)
+    {
+        try {
+            $history = $negotiation->approvalHistory()
+                ->with('user')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            return response()->json([
+                'data' => NegotiationApprovalHistoryResource::collection($history)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get approval history: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Failed to get approval history'
             ], 500);
         }
     }

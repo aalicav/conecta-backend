@@ -7,16 +7,30 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class NegotiationApprovalHistory extends Model
 {
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array
+     */
     protected $fillable = [
         'negotiation_id',
-        'level',
-        'status',
+        'action',
         'user_id',
-        'notes'
+        'notes',
     ];
 
     /**
-     * Get the negotiation that owns the approval history.
+     * The attributes that should be cast.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+    ];
+
+    /**
+     * Get the negotiation this history belongs to.
      */
     public function negotiation(): BelongsTo
     {
@@ -24,7 +38,7 @@ class NegotiationApprovalHistory extends Model
     }
 
     /**
-     * Get the user who made the approval decision.
+     * Get the user who performed the action.
      */
     public function user(): BelongsTo
     {

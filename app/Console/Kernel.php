@@ -7,6 +7,8 @@ use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use App\Console\Commands\CleanAuditLogs;
 use App\Console\Commands\CheckMailConfig;
 use App\Console\Commands\SendTestMail;
+use App\Console\Commands\UpdateNegotiationPermissions;
+use App\Console\Commands\CleanupOldNegotiations;
 
 class Kernel extends ConsoleKernel
 {
@@ -19,6 +21,8 @@ class Kernel extends ConsoleKernel
         CleanAuditLogs::class,
         CheckMailConfig::class,
         SendTestMail::class,
+        UpdateNegotiationPermissions::class,
+        CleanupOldNegotiations::class,
     ];
 
     /**
@@ -28,6 +32,12 @@ class Kernel extends ConsoleKernel
     {
         // Run the audit log cleanup command weekly
         $schedule->command('audit:clean')->weekly()->sundays()->at('01:00');
+
+        // Run cleanup of old negotiations every day at midnight
+        $schedule->command('negotiations:cleanup')
+            ->daily()
+            ->at('00:00')
+            ->appendOutputTo(storage_path('logs/negotiations-cleanup.log'));
     }
 
     /**

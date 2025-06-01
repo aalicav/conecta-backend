@@ -14,24 +14,41 @@ class NegotiationItemResource extends JsonResource
      */
     public function toArray($request)
     {
-        $data = [
+        return [
             'id' => $this->id,
             'negotiation_id' => $this->negotiation_id,
-            'tuss_id' => $this->tuss_id,
+            'tuss' => [
+                'id' => $this->tuss->id,
+                'code' => $this->tuss->code,
+                'description' => $this->tuss->description,
+            ],
             'proposed_value' => $this->proposed_value,
             'approved_value' => $this->approved_value,
             'status' => $this->status,
-            'status_label' => $this->status_label,
             'notes' => $this->notes,
-            'created_at' => $this->created_at->format('Y-m-d H:i:s'),
-            'updated_at' => $this->updated_at->format('Y-m-d H:i:s'),
+            'responded_at' => $this->responded_at,
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
+            
+            // Audit information
+            'created_by' => $this->when($this->creator, function() {
+                return [
+                    'id' => $this->creator->id,
+                    'name' => $this->creator->name,
+                ];
+            }),
+            'updated_by' => $this->when($this->updater, function() {
+                return [
+                    'id' => $this->updater->id,
+                    'name' => $this->updater->name,
+                ];
+            }),
+            
+            // Helper flags
+            'can_respond' => $this->canBeRespondedTo(),
+            'is_approved' => $this->isApproved(),
+            'is_rejected' => $this->isRejected(),
+            'has_counter_offer' => $this->hasCounterOffer(),
         ];
-        
-        // Add tuss relation only if loaded
-        if ($this->relationLoaded('tuss')) {
-            $data['tuss'] = new TussResource($this->tuss);
-        }
-        
-        return $data;
     }
 } 
