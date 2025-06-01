@@ -14,6 +14,8 @@ class Negotiation extends Model
 {
     use HasFactory, SoftDeletes, Auditable;
 
+    protected $table = 'negotiations';
+
     /**
      * Status constants
      */
