@@ -61,7 +61,7 @@ class NegotiationController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Negotiation::with(['negotiable', 'creator', 'items.tuss']);
+        $query = Negotiation::query();
         
         // Filtering options
         if ($request->has('status')) {
@@ -150,15 +150,7 @@ class NegotiationController extends Controller
         
         $negotiations = $query->paginate($perPage);
         
-        return response()->json([
-            'data' => NegotiationResource::collection($negotiations),
-            'meta' => [
-                'current_page' => $negotiations->currentPage(),
-                'last_page' => $negotiations->lastPage(),
-                'per_page' => $negotiations->perPage(),
-                'total' => $negotiations->total()
-            ]
-        ]);
+        return NegotiationResource::collection($negotiations);
     }
 
     /**
