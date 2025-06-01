@@ -12,7 +12,6 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('negotiations', function (Blueprint $table) {
-            $table->enum('formalization_status', ['pending_aditivo', 'formalized'])->nullable();
             $table->enum('approval_level', ['pending_approval'])->nullable();
             $table->unsignedBigInteger('approved_by')->nullable();
             $table->timestamp('approved_at')->nullable();
