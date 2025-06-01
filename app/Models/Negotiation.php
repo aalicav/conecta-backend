@@ -12,6 +12,8 @@ use App\Traits\Auditable;
 
 class Negotiation extends Model
 {
+    use HasFactory, SoftDeletes, Auditable;
+
     /**
      * Status constants
      */
