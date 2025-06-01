@@ -61,7 +61,7 @@ class NegotiationController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Negotiation::query();
+        $query = Negotiation::with(['negotiable', 'creator', 'items.tuss']);
         
         // Filtering options
         if ($request->has('status')) {
