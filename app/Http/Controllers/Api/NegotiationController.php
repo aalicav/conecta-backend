@@ -150,7 +150,15 @@ class NegotiationController extends Controller
         
         $negotiations = $query->paginate($perPage);
         
-        return NegotiationResource::collection($negotiations);
+        return response()->json([
+            'data' => NegotiationResource::collection($negotiations),
+            'meta' => [
+                'current_page' => $negotiations->currentPage(),
+                'last_page' => $negotiations->lastPage(),
+                'per_page' => $negotiations->perPage(),
+                'total' => $negotiations->total()
+            ]
+        ]);
     }
 
     /**
