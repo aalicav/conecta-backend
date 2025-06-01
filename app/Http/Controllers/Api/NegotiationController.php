@@ -70,13 +70,23 @@ class NegotiationController extends Controller
         
         // Filter by entity type and id
         if ($request->has('entity_type') && $request->has('entity_id')) {
-            $query->where('negotiable_type', $request->entity_type)
-                  ->where('negotiable_id', $request->entity_id);
+            // Validate entity type
+            $validEntityTypes = [
+                HealthPlan::class,
+                Professional::class,
+                Clinic::class
+            ];
+            
+            $entityType = $request->entity_type;
+            if (in_array($entityType, $validEntityTypes)) {
+                $query->where('negotiable_type', $entityType)
+                      ->where('negotiable_id', (int)$request->entity_id);
+            }
         } else {
             // For backward compatibility
             if ($request->has('health_plan_id')) {
                 $query->where('negotiable_type', HealthPlan::class)
-                      ->where('negotiable_id', $request->health_plan_id);
+                      ->where('negotiable_id', (int)$request->health_plan_id);
             }
         }
 
@@ -114,20 +124,31 @@ class NegotiationController extends Controller
             });
         }
         
+        // Secure search implementation
         if ($request->has('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%");
+                $q->where('title', 'like', '%' . addslashes($search) . '%')
+                  ->orWhere('description', 'like', '%' . addslashes($search) . '%');
             });
         }
         
-        // Sort options
-        $sortField = $request->input('sort_field', 'created_at');
-        $sortOrder = $request->input('sort_order', 'desc');
+        // Validate and apply sorting
+        $validSortFields = ['created_at', 'title', 'status', 'updated_at'];
+        $sortField = in_array($request->input('sort_field'), $validSortFields) 
+            ? $request->input('sort_field') 
+            : 'created_at';
+        
+        $sortOrder = in_array(strtolower($request->input('sort_order')), ['asc', 'desc']) 
+            ? $request->input('sort_order') 
+            : 'desc';
+        
         $query->orderBy($sortField, $sortOrder);
         
-        $negotiations = $query->paginate($request->input('per_page', 15));
+        // Validate and apply pagination
+        $perPage = min(max((int)$request->input('per_page', 15), 1), 100);
+        
+        $negotiations = $query->paginate($perPage);
         
         return NegotiationResource::collection($negotiations);
     }
@@ -239,8 +260,15 @@ class NegotiationController extends Controller
      */
     public function show(Negotiation $negotiation)
     {
-        $negotiation->load(['negotiable', 'creator', 'items.tuss']);
-        return new NegotiationResource($negotiation);
+        try {
+            $negotiation->load(['negotiable', 'creator', 'items.tuss']);
+            return new NegotiationResource($negotiation);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Negotiation not found',
+                'error' => 'The requested negotiation does not exist or you do not have permission to view it.'
+            ], 404);
+        }
     }
 
     /**
