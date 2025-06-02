@@ -8,11 +8,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use App\Traits\Auditable;
+use OwenIt\Auditing\Contracts\Auditable as AuditableContract;
+use OwenIt\Auditing\Auditable as AuditableTrait;
 
-class Negotiation extends Model
+class Negotiation extends Model implements AuditableContract
 {
-    use HasFactory, SoftDeletes, Auditable;
+    use HasFactory, SoftDeletes, AuditableTrait;
 
     /**
      * Status constants
@@ -148,9 +149,9 @@ class Negotiation extends Model
     /**
      * Get the audit logs for this negotiation.
      */
-    public function audits()
+    public function audits(): \Illuminate\Database\Eloquent\Relations\MorphMany
     {
-        return $this->morphMany(\App\Models\Audit::class, 'auditable');
+        return $this->morphMany(\OwenIt\Auditing\Models\Audit::class, 'auditable');
     }
 
     /**
