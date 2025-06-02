@@ -666,7 +666,6 @@ class NegotiationController extends Controller
                     } else {
                         // Ready for internal approval - mudança de STATUS_SUBMITTED para STATUS_PENDING
                         $negotiation->status = self::STATUS_PENDING;
-                        $negotiation->current_approval_level = self::APPROVAL_LEVEL;
                         
                         // Criar um registro no histórico de aprovação com o nível correto
                         $negotiation->approvalHistory()->create([
@@ -774,8 +773,6 @@ class NegotiationController extends Controller
                 // Se todos os itens tiverem contra-proposta, atualizar para STATUS_PENDING
                 if ($counterOfferedCount === $totalItems) {
                     $negotiation->status = self::STATUS_PENDING;
-                    $negotiation->current_approval_level = self::APPROVAL_LEVEL;
-                    $negotiation->save();
                     
                     // Criar um registro no histórico de aprovação
                     $negotiation->approvalHistory()->create([
@@ -883,8 +880,6 @@ class NegotiationController extends Controller
                 // Se todos os itens tiverem contraproposta, mudar para aprovação interna
                 if ($counterOfferedCount === $totalItems) {
                     $negotiation->status = self::STATUS_PENDING;
-                    $negotiation->current_approval_level = self::APPROVAL_LEVEL;
-                    $negotiation->save();
                     
                     // Criar um registro no histórico de aprovação
                     $negotiation->approvalHistory()->create([
