@@ -200,15 +200,15 @@ class NegotiationController extends Controller
             $status = $validated['status'] ?? 'draft';
             
             $negotiation = Negotiation::create([
-                'negotiable_type' => $validated['entity_type'],
-                'negotiable_id' => $validated['entity_id'],
+                'negotiable_type' => $request->entity_type,
+                'negotiable_id' => $request->entity_id,
                 'creator_id' => Auth::id(),
-                'title' => $validated['title'],
-                'description' => $validated['description'] ?? null,
+                'title' => $request->title,
+                'description' => $request->description ?? null,
                 'status' => $status,
-                'start_date' => $validated['start_date'],
-                'end_date' => $validated['end_date'],
-                'notes' => $validated['notes'] ?? null,
+                'start_date' => $request->start_date,
+                'end_date' => $request->end_date,
+                'notes' => $request->notes ?? null,
             ]);
             
             // Add approved_at timestamp for approved negotiations
