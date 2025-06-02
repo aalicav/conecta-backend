@@ -31,14 +31,14 @@ class UpdateNegotiationPermissions extends Command
 
         // Create permissions if they don't exist
         $permissions = [
-            'view_negotiations' => 'View negotiations',
-            'create_negotiations' => 'Create negotiations',
-            'edit_negotiations' => 'Edit negotiations',
-            'delete_negotiations' => 'Delete negotiations',
-            'submit_negotiations' => 'Submit negotiations for approval',
-            'approve_negotiations' => 'Approve negotiations',
-            'formalize_negotiations' => 'Formalize negotiations',
-            'view_negotiation_history' => 'View negotiation history',
+            'view negotiations' => 'View negotiations',
+            'create negotiations' => 'Create negotiations',
+            'edit negotiations' => 'Edit negotiations',
+            'delete negotiations' => 'Delete negotiations',
+            'submit negotiations' => 'Submit negotiations for approval',
+            'approve negotiations' => 'Approve negotiations',
+            'formalize negotiations' => 'Formalize negotiations',
+            'view negotiation history' => 'View negotiation history',
         ];
 
         foreach ($permissions as $name => $description) {
@@ -55,29 +55,29 @@ class UpdateNegotiationPermissions extends Command
 
         // Sync permissions to roles
         $commercialRole->syncPermissions([
-            'view_negotiations',
-            'create_negotiations',
-            'edit_negotiations',
-            'submit_negotiations',
-            'view_negotiation_history',
-            'formalize_negotiations'
+            'view negotiations',
+            'create negotiations',
+            'edit negotiations',
+            'submit negotiations',
+            'view negotiation history',
+            'formalize negotiations'
         ]);
 
         $approverRole->syncPermissions([
-            'view_negotiations',
-            'approve_negotiations',
-            'view_negotiation_history'
+            'view negotiations',
+            'approve negotiations',
+            'view negotiation history'
         ]);
 
         $adminRole->syncPermissions([
-            'view_negotiations',
-            'create_negotiations',
-            'edit_negotiations',
-            'delete_negotiations',
-            'submit_negotiations',
-            'approve_negotiations',
-            'formalize_negotiations',
-            'view_negotiation_history'
+            'view negotiations',
+            'create negotiations',
+            'edit negotiations',
+            'delete negotiations',
+            'submit negotiations',
+            'approve negotiations',
+            'formalize negotiations',
+            'view negotiation history'
         ]);
 
         $this->info('Negotiation permissions have been updated successfully!');

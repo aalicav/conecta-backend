@@ -15,7 +15,7 @@ class AddApproveNegotiationsPermission extends Migration
         try {
             // Create the permission if it doesn't exist
             $permission = Permission::firstOrCreate(
-                ['name' => 'approve_negotiations', 'guard_name' => 'api']
+                ['name' => 'approve negotiations', 'guard_name' => 'api']
             );
             
             // Add the permission to relevant roles
@@ -25,13 +25,13 @@ class AddApproveNegotiationsPermission extends Migration
                 $role = Role::where('name', $roleName)->where('guard_name', 'api')->first();
                 if ($role) {
                     $role->givePermissionTo($permission);
-                    Log::info("Added approve_negotiations permission to {$roleName} role");
+                    Log::info("Added approve negotiations permission to {$roleName} role");
                 }
             }
             
-            Log::info('Added approve_negotiations permission successfully');
+            Log::info('Added approve negotiations permission successfully');
         } catch (\Exception $e) {
-            Log::error('Error adding approve_negotiations permission: ' . $e->getMessage());
+            Log::error('Error adding approve negotiations permission: ' . $e->getMessage());
         }
     }
 
@@ -42,7 +42,7 @@ class AddApproveNegotiationsPermission extends Migration
     {
         try {
             // Find and delete the permission
-            $permission = Permission::where(['name' => 'approve_negotiations', 'guard_name' => 'api'])->first();
+            $permission = Permission::where(['name' => 'approve negotiations', 'guard_name' => 'api'])->first();
             
             if ($permission) {
                 // Remove from all roles first
@@ -55,10 +55,10 @@ class AddApproveNegotiationsPermission extends Migration
                 
                 // Delete the permission
                 $permission->delete();
-                Log::info('Removed approve_negotiations permission');
+                Log::info('Removed approve negotiations permission');
             }
         } catch (\Exception $e) {
-            Log::error('Error removing approve_negotiations permission: ' . $e->getMessage());
+            Log::error('Error removing approve negotiations permission: ' . $e->getMessage());
         }
     }
 } 

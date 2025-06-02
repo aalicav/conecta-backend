@@ -488,7 +488,7 @@ class NegotiationController extends Controller
             ]);
 
             // Validate user has approval permission
-            if (!Auth::user()->hasPermissionTo('approve_negotiations')) {
+            if (!Auth::user()->hasPermissionTo('approve negotiations')) {
                 return response()->json([
                     'message' => 'Unauthorized. You do not have permission to approve negotiations.'
                 ], 403);

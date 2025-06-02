@@ -24,11 +24,11 @@ class NegotiationResourceTest extends TestCase
         parent::setUp();
 
         // Create permissions
-        Permission::create(['name' => 'approve_negotiations']);
+        Permission::create(['name' => 'approve negotiations']);
 
         // Create roles
         $approverRole = Role::create(['name' => 'approver']);
-        $approverRole->givePermissionTo('approve_negotiations');
+        $approverRole->givePermissionTo('approve negotiations');
 
         // Create users
         $this->creator = User::factory()->create();

@@ -23,18 +23,18 @@ class NegotiationApprovalTest extends TestCase
         parent::setUp();
 
         // Create permissions
-        Permission::create(['name' => 'create_negotiations']);
-        Permission::create(['name' => 'submit_negotiations']);
-        Permission::create(['name' => 'approve_negotiations']);
-        Permission::create(['name' => 'edit_negotiations']);
+        Permission::create(['name' => 'create negotiations']);
+        Permission::create(['name' => 'submit negotiations']);
+        Permission::create(['name' => 'approve negotiations']);
+        Permission::create(['name' => 'edit negotiations']);
 
         // Create roles
         $commercialRole = Role::create(['name' => 'commercial']);
         $approverRole = Role::create(['name' => 'approver']);
 
         // Assign permissions to roles
-        $commercialRole->givePermissionTo(['create_negotiations', 'submit_negotiations', 'edit_negotiations']);
-        $approverRole->givePermissionTo('approve_negotiations');
+        $commercialRole->givePermissionTo(['create negotiations', 'submit negotiations', 'edit negotiations']);
+        $approverRole->givePermissionTo('approve negotiations');
 
         // Create users
         $this->creator = User::factory()->create();

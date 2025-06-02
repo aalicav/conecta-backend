@@ -28,7 +28,7 @@ class CanApproveNegotiation
         $user = $request->user();
 
         // Check if user has permission to approve negotiations
-        if (!$user->hasPermissionTo('approve_negotiations')) {
+        if (!$user->hasPermissionTo('approve negotiations')) {
             return response()->json([
                 'message' => 'You do not have permission to approve negotiations'
             ], 403);

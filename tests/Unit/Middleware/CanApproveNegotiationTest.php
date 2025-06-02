@@ -28,11 +28,11 @@ class CanApproveNegotiationTest extends TestCase
         $this->middleware = new CanApproveNegotiation();
 
         // Create permissions
-        Permission::create(['name' => 'approve_negotiations']);
+        Permission::create(['name' => 'approve negotiations']);
 
         // Create roles
         $approverRole = Role::create(['name' => 'approver']);
-        $approverRole->givePermissionTo('approve_negotiations');
+        $approverRole->givePermissionTo('approve negotiations');
 
         // Create users
         $this->creator = User::factory()->create();
@@ -80,7 +80,7 @@ class CanApproveNegotiationTest extends TestCase
     public function it_denies_creator_from_approving_own_negotiation()
     {
         // Give creator approval permission
-        $this->creator->givePermissionTo('approve_negotiations');
+        $this->creator->givePermissionTo('approve negotiations');
 
         $request = Request::create('/api/negotiations/' . $this->negotiation->id . '/process-approval', 'POST');
         $request->setUserResolver(fn () => $this->creator);
