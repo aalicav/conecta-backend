@@ -8,11 +8,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use App\Traits\Auditable;
+use OwenIt\Auditing\Contracts\Auditable;
+use OwenIt\Auditing\Auditable as AuditableTrait;
 
-class Negotiation extends Model
+class Negotiation extends Model implements Auditable
 {
-    use HasFactory, SoftDeletes, Auditable;
+    use HasFactory, SoftDeletes, AuditableTrait;
 
     /**
      * Status constants
