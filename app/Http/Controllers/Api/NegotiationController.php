@@ -64,12 +64,12 @@ class NegotiationController extends Controller
         $query = Negotiation::with(['negotiable', 'creator', 'items.tuss']);
         
         // Filtering options
-        if ($request->has('status')) {
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
         
         // Filter by entity type and id
-        if ($request->has('entity_type') && $request->has('entity_id')) {
+        if ($request->filled('entity_type') && $request->filled('entity_id')) {
             // Validate entity type
             $validEntityTypes = [
                 HealthPlan::class,
@@ -84,7 +84,7 @@ class NegotiationController extends Controller
             }
         } else {
             // For backward compatibility
-            if ($request->has('health_plan_id')) {
+            if ($request->filled('health_plan_id')) {
                 $query->where('negotiable_type', HealthPlan::class)
                       ->where('negotiable_id', (int)$request->health_plan_id);
             }
@@ -125,12 +125,14 @@ class NegotiationController extends Controller
         }
         
         // Secure search implementation
-        if ($request->has('search')) {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('title', 'like', '%' . addslashes($search) . '%')
-                  ->orWhere('description', 'like', '%' . addslashes($search) . '%');
-            });
+        if ($request->filled('search')) {
+            $search = trim($request->search);
+            if (!empty($search)) {
+                $query->where(function($q) use ($search) {
+                    $q->where('title', 'like', '%' . addslashes($search) . '%')
+                      ->orWhere('description', 'like', '%' . addslashes($search) . '%');
+                });
+            }
         }
         
         // Validate and apply sorting
