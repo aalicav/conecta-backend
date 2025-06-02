@@ -260,4 +260,26 @@ class Negotiation extends Model implements AuditableContract
             'notes' => $notes,
         ]);
     }
+
+    /**
+     * Transform the audit data.
+     *
+     * @param array $data
+     * @return array
+     */
+    public function transformAudit(array $data): array
+    {
+        // Garantir que o campo action seja preenchido com o mesmo valor do event
+        $data['action'] = $data['event'];
+
+        if ($data['event'] === 'created') {
+            $data['custom_message'] = 'Negociação criada: ' . $this->title;
+        } elseif ($data['event'] === 'updated') {
+            $data['custom_message'] = 'Negociação atualizada: ' . $this->title;
+        } elseif ($data['event'] === 'deleted') {
+            $data['custom_message'] = 'Negociação excluída: ' . $this->title;
+        }
+
+        return $data;
+    }
 } 
