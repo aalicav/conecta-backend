@@ -285,14 +285,25 @@ class HealthPlanController extends Controller
 
             // Create health plan with appropriate fields
             if ($isParentPlan) {
-                // Create parent plan with basic information only
+                // Create child plan with full information
                 $healthPlan = new HealthPlan([
                     'name' => $request->name,
+                    'email' => $request->email,
+                    'address' => $request->address,
+                    'city' => $request->city,
+                    'state' => $request->state,
+                    'postal_code' => $request->postal_code,
+                    'logo' => $logoPath,
                     'cnpj' => $request->cnpj,
                     'ans_code' => $request->ans_code,
-                    'email' => $request->email,
+                    'description' => $request->description,
+                    'legal_representative_name' => $request->legal_representative_name,
+                    'legal_representative_cpf' => $request->legal_representative_cpf,
+                    'legal_representative_position' => $request->legal_representative_position,
+                    'operational_representative_name' => $request->operational_representative_name,
+                    'operational_representative_cpf' => $request->operational_representative_cpf,
+                    'operational_representative_position' => $request->operational_representative_position,
                     'user_id' => $user->id,
-                    'is_parent' => true,
                     'status' => 'pending',
                 ]);
             } else {
