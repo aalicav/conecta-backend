@@ -294,6 +294,7 @@ class HealthPlanController extends Controller
                     'state' => $request->state,
                     'postal_code' => $request->postal_code,
                     'logo' => $logoPath,
+                    'municipal_registration' => $request->municipal_registration,
                     'cnpj' => $request->cnpj,
                     'ans_code' => $request->ans_code,
                     'description' => $request->description,
