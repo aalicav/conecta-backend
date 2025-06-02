@@ -48,6 +48,8 @@ class Negotiation extends Model
         'rejected_by',
         'rejected_at',
         'rejection_notes',
+        'negotiable_type',
+        'negotiable_id',
     ];
 
     /**
