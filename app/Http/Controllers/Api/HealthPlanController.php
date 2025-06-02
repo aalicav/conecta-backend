@@ -210,7 +210,7 @@ class HealthPlanController extends Controller
     {
         try {
             // Check if this is a parent plan
-            $isParentPlan = $request->has('is_parent') && $request->is_parent === true;
+            $isParentPlan = !$request->has('parent_id');
             
             // If it's a parent plan, validate only basic fields
             if ($isParentPlan) {
