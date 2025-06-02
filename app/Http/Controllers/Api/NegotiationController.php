@@ -668,12 +668,13 @@ class NegotiationController extends Controller
                         $negotiation->status = self::STATUS_PENDING;
                         $negotiation->current_approval_level = self::APPROVAL_LEVEL;
                         
-                        // Criar um registro no histórico de aprovação
+                        // Criar um registro no histórico de aprovação com o nível correto
                         $negotiation->approvalHistory()->create([
                             'level' => self::APPROVAL_LEVEL,
                             'status' => 'pending',
                             'user_id' => Auth::id(),
-                            'notes' => 'Enviado automaticamente para aprovação após resposta a todos os itens'
+                            'notes' => 'Enviado automaticamente para aprovação após resposta a todos os itens',
+                            'negotiation_id' => $negotiation->id
                         ]);
                         
                         // Notificar sobre a necessidade de aprovação

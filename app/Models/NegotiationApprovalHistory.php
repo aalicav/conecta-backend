@@ -17,6 +17,8 @@ class NegotiationApprovalHistory extends Model
         'action',
         'user_id',
         'notes',
+        'level',
+        'status'
     ];
 
     /**
