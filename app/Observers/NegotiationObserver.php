@@ -21,8 +21,6 @@ class NegotiationObserver
             'creator_id' => Auth::id(),
             'status' => $negotiation->status
         ]);
-
-        $negotiation->recordAudit('created', [], $negotiation->toArray());
     }
 
     /**
@@ -41,8 +39,6 @@ class NegotiationObserver
                 'user_id' => Auth::id(),
                 'changes' => $changes
             ]);
-
-            $negotiation->recordAudit('updated', $negotiation->getOriginal(), $changes);
 
             // Log specific status changes
             if (isset($changes['status'])) {
@@ -88,8 +84,6 @@ class NegotiationObserver
             'negotiation_id' => $negotiation->id,
             'user_id' => Auth::id()
         ]);
-
-        $negotiation->recordAudit('deleted', $negotiation->toArray(), []);
     }
 
     /**
@@ -104,8 +98,6 @@ class NegotiationObserver
             'negotiation_id' => $negotiation->id,
             'user_id' => Auth::id()
         ]);
-
-        $negotiation->recordAudit('restored', [], $negotiation->toArray());
     }
 
     /**
@@ -120,7 +112,5 @@ class NegotiationObserver
             'negotiation_id' => $negotiation->id,
             'user_id' => Auth::id()
         ]);
-
-        $negotiation->recordAudit('force_deleted', $negotiation->toArray(), []);
     }
 } 
