@@ -332,7 +332,7 @@ class ClinicController extends Controller
             ]);
 
             // Load counts
-            $clinic->loadCount(['professionals', 'appointments', 'branches']);
+            $clinic->loadCount(['appointments']);
 
             return new ClinicResource($clinic);
         } catch (\Exception $e) {
