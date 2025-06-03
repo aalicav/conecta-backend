@@ -463,7 +463,7 @@ class UserController extends Controller
             }
 
             // Delete user
-            $user->delete();
+            $user->forceDelete();
 
             DB::commit();
 
