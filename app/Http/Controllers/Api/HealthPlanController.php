@@ -25,6 +25,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use App\Http\Resources\DocumentResource;
 use App\Models\EntityDocumentType;
 use App\Notifications\WelcomeNotification;
+use App\Models\HealthPlanUser;
 
 class HealthPlanController extends Controller
 {
@@ -209,47 +210,41 @@ class HealthPlanController extends Controller
     public function store(Request $request)
     {
         try {
-            // Check if this is a parent plan
-            $isParentPlan = !$request->has('parent_id');
-            
-            // If it's a parent plan, validate only basic fields
-            if ($isParentPlan) {
-                $validator = Validator::make($request->all(), [
-                    'name' => 'required|string|max:255',
-                    'cnpj' => 'required|string|max:18',
-                    'ans_code' => 'required|string|max:50',
-                    'email' => 'required|email|max:255|unique:users,email',
-                ]);
-            } else {
-                // Check if parent_id is provided for child plan
-                if (!$request->has('parent_id')) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Um plano filho deve estar vinculado a um plano pai',
-                        'errors' => ['parent_id' => ['O ID do plano pai é obrigatório']]
-                    ], 422);
-                }
+            // Validate base health plan data
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'cnpj' => 'required|string|max:18',
+                'ans_code' => 'required|string|max:50',
+                'email' => 'required|email|max:255|unique:users,email',
+                'municipal_registration' => 'required|string|max:15',
                 
-                // Use full validation for child plans
-                $validator = Validator::make($request->all(), [
-                    'name' => 'required|string|max:255',
-                    'email' => 'required|email|max:255|unique:users,email',
-                    'address' => 'required|string|max:255',
-                    'city' => 'required|string|max:100',
-                    'state' => 'required|string|max:2',
-                    'postal_code' => 'required|string|max:9',
-                    'phones' => 'required|array',
-                    'phones.*.number' => 'required|string|max:20',
-                    'phones.*.type' => 'required|string|in:commercial,mobile,fax,whatsapp',
-                    'parent_id' => 'required|exists:health_plans,id',
-                    'legal_representative_name' => 'required|string|max:255',
-                    'legal_representative_cpf' => 'required|string|max:14',
-                    'legal_representative_position' => 'required|string|max:100',
-                    'operational_representative_name' => 'required|string|max:255',
-                    'operational_representative_cpf' => 'required|string|max:14',
-                    'operational_representative_position' => 'required|string|max:100',
-                ]);
-            }
+                // Endereços
+                'addresses' => 'required|array|min:1',
+                'addresses.*.address' => 'required|string|max:255',
+                'addresses.*.city' => 'required|string|max:100',
+                'addresses.*.state' => 'required|string|max:2',
+                'addresses.*.postal_code' => 'required|string|max:9',
+                'addresses.*.neighborhood' => 'nullable|string|max:100',
+                'addresses.*.complement' => 'nullable|string|max:100',
+                'addresses.*.number' => 'nullable|string|max:20',
+                'addresses.*.type' => 'required|string|in:main,branch,correspondence,billing',
+                'addresses.*.is_primary' => 'boolean',
+                'addresses.*.description' => 'nullable|string|max:255',
+                
+                // Telefones
+                'phones' => 'required|array|min:1',
+                'phones.*.number' => 'required|string|max:20',
+                'phones.*.type' => 'required|string|in:commercial,mobile,fax,whatsapp',
+                'phones.*.is_primary' => 'boolean',
+                'phones.*.description' => 'nullable|string|max:100',
+                
+                'legal_representative_name' => 'required|string|max:255',
+                'legal_representative_cpf' => 'required|string|max:14',
+                'legal_representative_position' => 'required|string|max:100',
+                'operational_representative_name' => 'required|string|max:255',
+                'operational_representative_cpf' => 'required|string|max:14',
+                'operational_representative_position' => 'required|string|max:100',
+            ]);
 
             if ($validator->fails()) {
                 return response()->json([
@@ -261,155 +256,268 @@ class HealthPlanController extends Controller
 
             DB::beginTransaction();
 
-            // Generate a temporary password for the health plan user
+            // Create main health plan user (admin)
             $temporaryPassword = Str::random(12);
-
-            // Create user for health plan
-            $user = User::create([
+            $mainUser = User::create([
                 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($temporaryPassword),
                 'entity_type' => 'health_plan',
                 'is_active' => true,
-                'entity_id' => null,
             ]);
 
-            // Assign health plan role
-            $user->assignRole('plan_admin');
+            // Assign health plan admin role
+            $mainUser->assignRole('plan_admin');
 
-            // Handle logo upload if provided (only for child plans)
+            // Handle logo upload if provided
             $logoPath = null;
-            if (!$isParentPlan && $request->hasFile('logo')) {
+            if ($request->hasFile('logo')) {
                 $logoPath = $request->file('logo')->store('health_plans/logos', 'public');
             }
 
-            // Create health plan with appropriate fields
-            if ($isParentPlan) {
-                // Create child plan with full information
-                $healthPlan = new HealthPlan([
-                    'name' => $request->name,
-                    'email' => $request->email,
-                    'address' => $request->address,
-                    'city' => $request->city,
-                    'state' => $request->state,
-                    'postal_code' => $request->postal_code,
-                    'logo' => $logoPath,
-                    'municipal_registration' => $request->municipal_registration,
-                    'cnpj' => $request->cnpj,
-                    'ans_code' => $request->ans_code,
-                    'description' => $request->description,
-                    'legal_representative_name' => $request->legal_representative_name,
-                    'legal_representative_cpf' => $request->legal_representative_cpf,
-                    'legal_representative_position' => $request->legal_representative_position,
-                    'operational_representative_name' => $request->operational_representative_name,
-                    'operational_representative_cpf' => $request->operational_representative_cpf,
-                    'operational_representative_position' => $request->operational_representative_position,
-                    'user_id' => $user->id,
-                    'status' => 'pending',
-                ]);
-            } else {
-                // Get parent plan data
-                $parentPlan = HealthPlan::findOrFail($request->parent_id);
-                
-                // Create child plan with full information
-                $healthPlan = new HealthPlan([
-                    'name' => $request->name,
-                    'email' => $request->email,
-                    'address' => $request->address,
-                    'city' => $request->city,
-                    'state' => $request->state,
-                    'postal_code' => $request->postal_code,
-                    'logo' => $logoPath,
-                    'parent_id' => $parentPlan->id,
-                    'cnpj' => $parentPlan->cnpj,
-                    'ans_code' => $parentPlan->ans_code,
-                    'description' => $request->description,
-                    'legal_representative_name' => $request->legal_representative_name,
-                    'legal_representative_cpf' => $request->legal_representative_cpf,
-                    'legal_representative_position' => $request->legal_representative_position,
-                    'operational_representative_name' => $request->operational_representative_name,
-                    'operational_representative_cpf' => $request->operational_representative_cpf,
-                    'operational_representative_position' => $request->operational_representative_position,
-                    'user_id' => $user->id,
-                    'status' => $parentPlan->status === 'approved' ? 'approved' : 'pending',
-                    'approved_at' => $parentPlan->status === 'approved' ? now() : null,
-                    'approved_by' => $parentPlan->status === 'approved' ? Auth::id() : null
+            // Get primary address
+            $primaryAddress = collect($request->addresses)->firstWhere('is_primary', true) ?? $request->addresses[0];
+
+            // Create health plan
+            $healthPlan = HealthPlan::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'address' => $primaryAddress['address'],
+                'city' => $primaryAddress['city'],
+                'state' => $primaryAddress['state'],
+                'postal_code' => $primaryAddress['postal_code'],
+                'logo' => $logoPath,
+                'municipal_registration' => $request->municipal_registration,
+                'cnpj' => $request->cnpj,
+                'ans_code' => $request->ans_code,
+                'description' => $request->description,
+                'legal_representative_name' => $request->legal_representative_name,
+                'legal_representative_cpf' => $request->legal_representative_cpf,
+                'legal_representative_position' => $request->legal_representative_position,
+                'operational_representative_name' => $request->operational_representative_name,
+                'operational_representative_cpf' => $request->operational_representative_cpf,
+                'operational_representative_position' => $request->operational_representative_position,
+                'user_id' => $mainUser->id,
+                'status' => 'pending',
+            ]);
+
+            // Update user's entity_id
+            $mainUser->entity_id = $healthPlan->id;
+            $mainUser->save();
+
+            // Create addresses for the health plan
+            foreach ($request->addresses as $addressData) {
+                $healthPlan->addresses()->create([
+                    'address' => $addressData['address'],
+                    'number' => $addressData['number'] ?? null,
+                    'complement' => $addressData['complement'] ?? null,
+                    'neighborhood' => $addressData['neighborhood'] ?? null,
+                    'city' => $addressData['city'],
+                    'state' => $addressData['state'],
+                    'postal_code' => $addressData['postal_code'],
+                    'type' => $addressData['type'],
+                    'is_primary' => $addressData['is_primary'] ?? false,
+                    'description' => $addressData['description'] ?? null,
                 ]);
             }
-            
-            $healthPlan->save();
 
-            // Update user's entity_id after health plan is created
-            $user->entity_id = $healthPlan->id;
-            $user->save();
-
-            // Only process phones and documents for child plans
-            if (!$isParentPlan) {
-                // Create phone records
-                if ($request->has('phones')) {
-                    foreach ($request->phones as $phoneData) {
-                        $healthPlan->phones()->create([
-                            'number' => $phoneData['number'],
-                            'type' => $phoneData['type'],
-                        ]);
-                    }
-                }
-
-                // Process documents if provided
-                if ($request->has('documents')) {
-                    foreach ($request->input('documents') as $index => $documentData) {
-                        if ($request->hasFile("documents.{$index}.file")) {
-                            $documentFile = $request->file("documents.{$index}.file");
-                            
-                            if ($documentFile && $documentFile->isValid()) {
-                                $filePath = $documentFile->store('health_plans/documents/' . $healthPlan->id, 'public');
-                                
-                                // Create document
-                                $document = $healthPlan->documents()->create([
-                                    'type' => $documentData['type'],
-                                    'description' => $documentData['description'],
-                                    'name' => $documentData['name'] ?? $documentFile->getClientOriginalName(),
-                                    'file_path' => $filePath,
-                                    'file_name' => $documentFile->getClientOriginalName(),
-                                    'file_type' => $documentFile->getClientMimeType(),
-                                    'file_size' => $documentFile->getSize(),
-                                    'reference_date' => $documentData['reference_date'] ?? null,
-                                    'expiration_date' => $documentData['expiration_date'] ?? null,
-                                    'contract_expiration_alert_days' => $documentData['contract_expiration_alert_days'] ?? null,
-                                    'uploaded_by' => Auth::id(),
-                                    'user_id' => Auth::id(),
-                                ]);
-                            }
-                        }
-                    }
-                }
+            // Create phone records for the health plan
+            foreach ($request->phones as $phoneData) {
+                $healthPlan->phones()->create([
+                    'number' => $phoneData['number'],
+                    'type' => $phoneData['type'],
+                    'is_primary' => $phoneData['is_primary'] ?? false,
+                    'description' => $phoneData['description'] ?? null,
+                ]);
             }
 
-            // Send welcome email with temporary password
-            $user->temporary_password = $temporaryPassword;
-            $user->notify(new WelcomeNotification($user, $healthPlan));
+            // Send welcome email to main admin
+            $mainUser->notify(new WelcomeNotification($mainUser, $healthPlan, $temporaryPassword));
 
             // Commit transaction
             DB::commit();
 
+            // Load relationships for response
+            $healthPlan->load(['addresses', 'phones']);
+
             return response()->json([
                 'success' => true,
-                'message' => $isParentPlan ? 'Plano pai criado com sucesso' : 'Plano filho criado com sucesso',
+                'message' => 'Plano de saúde criado com sucesso',
                 'data' => new HealthPlanResource($healthPlan)
             ], 201);
+
         } catch (\Exception $e) {
             DB::rollBack();
             
             Log::error('Error creating health plan', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'request_data' => $request->except(['password', 'documents']),
+                'request_data' => $request->except(['password']),
                 'user_id' => Auth::id()
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Falha ao criar plano de saúde',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a new user for a health plan
+     */
+    public function createUser(Request $request, HealthPlan $health_plan)
+    {
+        try {
+            // Validate request
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'email' => 'required|email|max:255|unique:users,email',
+                
+                // Endereço
+                'address' => 'nullable|string|max:255',
+                'city' => 'nullable|string|max:100',
+                'state' => 'nullable|string|max:2',
+                'postal_code' => 'nullable|string|max:9',
+                'neighborhood' => 'nullable|string|max:100',
+                'complement' => 'nullable|string|max:100',
+                'number' => 'nullable|string|max:20',
+                'use_plan_address' => 'boolean',
+                
+                // Telefones
+                'phones' => 'required|array|min:1',
+                'phones.*.number' => 'required|string|max:20',
+                'phones.*.type' => 'required|string|in:commercial,mobile,fax,whatsapp',
+                'phones.*.is_primary' => 'boolean',
+                'phones.*.description' => 'nullable|string|max:100',
+                
+                // Documentos
+                'documents' => 'nullable|array',
+                'documents.*.type' => 'required|string|exists:entity_document_types,code',
+                'documents.*.file' => 'required|file|max:10240', // 10MB max
+                'documents.*.description' => 'nullable|string|max:255',
+                'documents.*.expiration_date' => 'nullable|date|after:today',
+                'documents.*.observation' => 'nullable|string|max:500',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Erro de validação',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            // Generate password for the user
+            $userPassword = Str::random(12);
+            
+            // Create user account
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($userPassword),
+                'entity_type' => 'health_plan_user',
+                'entity_id' => $health_plan->id,
+                'is_active' => true,
+            ]);
+
+            // Assign basic health plan user roles
+            $user->assignRole('plan_user');
+            
+            // Determine if user should use plan's address
+            $usesPlanAddress = $request->use_plan_address ?? 
+                (empty($request->address) || 
+                (empty($request->city) && empty($request->state) && empty($request->postal_code)));
+            
+
+            // Create phone records for the user
+            foreach ($request->phones as $phoneData) {
+                $user->phones()->create([
+                    'number' => $phoneData['number'],
+                    'type' => $phoneData['type'],
+                    'is_primary' => $phoneData['is_primary'] ?? false,
+                    'description' => $phoneData['description'] ?? null,
+                ]);
+            }
+
+            // Process documents if provided
+            if ($request->has('documents')) {
+                foreach ($request->file('documents') as $index => $documentFile) {
+                    $documentData = $request->input("documents.{$index}");
+                    
+                    if ($documentFile && $documentFile->isValid()) {
+                        // Get document type
+                        $documentType = EntityDocumentType::where('code', $documentData['type'])
+                            ->where('entity_type', 'health_plan_user')
+                            ->first();
+
+                        if (!$documentType) {
+                            throw new \Exception("Tipo de documento inválido: {$documentData['type']}");
+                        }
+
+                        // Store the file
+                        $filePath = $documentFile->store(
+                            "health_plans/{$health_plan->id}/users/{$user->id}/documents",
+                            'public'
+                        );
+                        
+                        // Create document record
+                        $document = $user->documents()->create([
+                            'type' => $documentData['type'],
+                            'description' => $documentData['description'] ?? null,
+                            'name' => $documentFile->getClientOriginalName(),
+                            'file_path' => $filePath,
+                            'file_name' => $documentFile->getClientOriginalName(),
+                            'file_type' => $documentFile->getClientMimeType(),
+                            'file_size' => $documentFile->getSize(),
+                            'expiration_date' => $documentData['expiration_date'] ?? null,
+                            'observation' => $documentData['observation'] ?? null,
+                            'entity_document_type_id' => $documentType->id,
+                            'uploaded_by' => Auth::id(),
+                        ]);
+                    }
+                }
+            }
+
+            // Send welcome email with temporary password
+            $user->notify(new WelcomeNotification($user, $health_plan, $userPassword));
+
+            DB::commit();
+
+            // Load relationships for response
+            $user->load(['phones', 'documents']);
+            $user->load(['healthPlan']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Usuário do plano de saúde criado com sucesso',
+                'data' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'phones' => $user->phones,
+                    'documents' => $user->documents,
+                    'health_plan_user' => $user
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error creating health plan user', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->except(['password', 'documents']),
+                'health_plan_id' => $health_plan->id,
+                'user_id' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao criar usuário do plano de saúde',
                 'error' => $e->getMessage()
             ], 500);
         }

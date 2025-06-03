@@ -64,15 +64,19 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     });
 
     // Health Plans
-    Route::apiResource('health-plans', HealthPlanController::class);
-    Route::post('/health-plans/{health_plan}/approve', [HealthPlanController::class, 'approve'])->middleware('permission:approve health plans');
-    Route::post('/health-plans/{health_plan}/documents', [HealthPlanController::class, 'uploadDocuments']);
-    Route::put('/health-plans/{health_plan}/procedures', [HealthPlanController::class, 'updateProcedures'])->middleware('permission:edit health plans');
-    Route::get('/health-plans/{health_plan}/procedures', [HealthPlanController::class, 'getProcedures']);
-    Route::post('/health-plans/{health_plan}/parent', [HealthPlanController::class, 'setParent'])->middleware('permission:edit health plans');
-    Route::delete('/health-plans/{health_plan}/parent', [HealthPlanController::class, 'removeParent'])->middleware('permission:edit health plans');
-    Route::get('/health-plans/{health_plan}/children', [HealthPlanController::class, 'getChildren']);
-    
+    Route::prefix('health-plans')->group(function () {
+        Route::get('/', [HealthPlanController::class, 'index']);
+        Route::post('/', [HealthPlanController::class, 'store']);
+        Route::get('/{health_plan}', [HealthPlanController::class, 'show']);
+        Route::put('/{health_plan}', [HealthPlanController::class, 'update']);
+        Route::delete('/{health_plan}', [HealthPlanController::class, 'destroy']);
+        Route::post('/{health_plan}/approve', [HealthPlanController::class, 'approve']);
+        Route::post('/{health_plan}/users', [HealthPlanController::class, 'createUser']);
+        Route::get('/{health_plan}/procedures', [HealthPlanController::class, 'getProcedures']);
+        Route::put('/{health_plan}/procedures', [HealthPlanController::class, 'updateProcedures']);
+        Route::post('/{health_plan}/documents', [HealthPlanController::class, 'uploadDocuments']);
+    });
+
     // Health Plans Dashboard
     Route::get('/health-plans/dashboard/stats', [HealthPlanDashboardController::class, 'getStats']);
     Route::get('/health-plans/dashboard/procedures', [HealthPlanDashboardController::class, 'getProcedures']);

@@ -222,6 +222,25 @@ class RolesAndPermissionsSeeder extends Seeder
             'respond to negotiations',
             'counter negotiations',
         ]);
+
+        // Health Plan User permissions
+        Permission::create(['name' => 'view appointments']);
+        Permission::create(['name' => 'list appointments']);
+        Permission::create(['name' => 'create solicitations']);
+        Permission::create(['name' => 'edit solicitations']);
+        Permission::create(['name' => 'list solicitations']);
+        Permission::create(['name' => 'view health plan details']);
+
+        // Create health plan user role
+        $planUserRole = Role::create(['name' => 'plan_user']);
+        $planUserRole->givePermissionTo([
+            'view appointments',
+            'list appointments',
+            'create solicitations',
+            'edit solicitations',
+            'list solicitations',
+            'view health plan details'
+        ]);
     }
     
     /**
