@@ -308,7 +308,7 @@ class HealthPlanController extends Controller
             // Create addresses for the health plan
             foreach ($request->addresses as $addressData) {
                 $mainUser->addresses()->create([
-                    'address' => $addressData['address'],
+                    'street' => $addressData['address'],
                     'number' => $addressData['number'] ?? null,
                     'complement' => $addressData['complement'] ?? null,
                     'neighborhood' => $addressData['neighborhood'] ?? null,
@@ -316,7 +316,7 @@ class HealthPlanController extends Controller
                     'state' => $addressData['state'],
                     'postal_code' => $addressData['postal_code'],
                     'type' => $addressData['type'],
-                    'is_primary' => $addressData['is_primary'] ?? false,
+                    'is_primary' => $addressData['type'] === 'main' ? true : false,
                     'description' => $addressData['description'] ?? null,
                 ]);
             }
