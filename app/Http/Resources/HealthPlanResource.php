@@ -16,7 +16,7 @@ class HealthPlanResource extends JsonResource
     public function toArray($request)
     {
         return [
-            'id' => $this->id,
+            'id' => $this->entity_id,
             'name' => $this->name,
             'cnpj' => $this->cnpj,
             'ans_code' => $this->ans_code,
