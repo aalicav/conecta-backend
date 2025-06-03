@@ -46,14 +46,9 @@ class ClinicResource extends JsonResource
             'documents' => DocumentResource::collection($this->whenLoaded('documents')),
             'approver' => new UserResource($this->whenLoaded('approver')),
             'contract' => new ContractResource($this->whenLoaded('contract')),
-            'parent_clinic' => new ClinicResource($this->whenLoaded('parentClinic')),
-            'pricing_contracts' => PricingContractResource::collection($this->whenLoaded('pricingContracts')),
-            'professionals' => ProfessionalResource::collection($this->whenLoaded('professionals')),
             
             // Counts
-            'professionals_count' => $this->when(isset($this->professionals_count), $this->professionals_count),
             'appointments_count' => $this->when(isset($this->appointments_count), $this->appointments_count),
-            'branches_count' => $this->when(isset($this->branches_count), $this->branches_count),
             
             // Computed values
             'distance' => $this->when(isset($this->distance), number_format($this->distance, 2) . ' km'),
