@@ -305,7 +305,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/{negotiation}/submit-approval', [NegotiationController::class, 'submitForApproval'])
             ->middleware('permission:submit negotiations');
         Route::post('/{negotiation}/process-approval', [NegotiationController::class, 'processApproval'])
-            ->middleware(['approve negotiation']);
+            ->middleware('permission:approve negotiations');
         Route::post('/{negotiation}/formalize', [NegotiationController::class, 'markAsFormalized'])
             ->middleware('permission:formalize negotiations');
         Route::post('/{negotiation}/mark-complete', [NegotiationController::class, 'markAsComplete'])
