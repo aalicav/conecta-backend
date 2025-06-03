@@ -11,6 +11,7 @@ use OwenIt\Auditing\Contracts\Auditable;
 use Spatie\Permission\Traits\HasRoles;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class User extends Authenticatable implements Auditable
 {
@@ -145,5 +146,10 @@ class User extends Authenticatable implements Auditable
     {
         $preferences = $this->notificationPreferences();
         return isset($preferences[$channel]) ? $preferences[$channel] : true;
+    }
+
+    public function addresses(): MorphMany
+    {
+        return $this->morphMany(Address::class, 'addressable');
     }
 }
