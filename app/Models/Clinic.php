@@ -103,6 +103,15 @@ class Clinic extends Model
         return $this->morphMany(Document::class, 'documentable');
     }
 
+
+    /**
+     * Get the user account associated with this professional.
+     */
+    public function user(): MorphOne
+    {
+        return $this->morphOne(User::class, 'entity');
+    }
+
     /**
      * Get the user that approved this clinic.
      */

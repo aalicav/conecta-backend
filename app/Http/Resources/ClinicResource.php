@@ -19,6 +19,7 @@ class ClinicResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'cnpj' => $this->cnpj,
+            'user' => new UserResource($this->whenLoaded('user')),
             'description' => $this->description,
             'cnes' => $this->cnes,
             'technical_director' => $this->technical_director,
