@@ -324,7 +324,6 @@ class ClinicController extends Controller
                 'documents', 
                 'approver', 
                 'contract', 
-                'parentClinic',
                 'pricingContracts',
                 'addresses',
                 'professionals' => function($query) {
