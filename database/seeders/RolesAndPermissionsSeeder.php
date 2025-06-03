@@ -32,6 +32,16 @@ class RolesAndPermissionsSeeder extends Seeder
             'view health plan procedures',
             'view health plan solicitations',
             'view health plan financial data',
+            
+            // Novas permissões para endereços e telefones
+            'manage health plan addresses',
+            'view health plan addresses',
+            'manage health plan phones',
+            'view health plan phones',
+            'manage user addresses',
+            'view user addresses',
+            'manage user phones',
+            'view user phones',
 
             // Clinic permissions
             'view clinics',
@@ -133,7 +143,8 @@ class RolesAndPermissionsSeeder extends Seeder
         // Check if roles already exist, create if they don't
         $this->createOrUpdateRole('super_admin', Permission::all());
         
-        $this->createOrUpdateRole('plan_admin', [
+        // Adicionar novas permissões aos papéis existentes
+        $planAdminPermissions = [
             'view health plans',
             'view health plan details',
             'view health plan documents',
@@ -141,6 +152,14 @@ class RolesAndPermissionsSeeder extends Seeder
             'view health plan procedures',
             'view health plan solicitations',
             'view health plan financial data',
+            'manage health plan addresses',
+            'view health plan addresses',
+            'manage health plan phones',
+            'view health plan phones',
+            'manage user addresses',
+            'view user addresses',
+            'manage user phones',
+            'view user phones',
             'view patients',
             'create patients',
             'edit patients',
@@ -152,7 +171,6 @@ class RolesAndPermissionsSeeder extends Seeder
             'sign contracts',
             'view payments',
             'view reports',
-            // Negotiation permissions for plan_admin
             'view negotiations',
             'create negotiations',
             'edit negotiations',
@@ -160,31 +178,41 @@ class RolesAndPermissionsSeeder extends Seeder
             'cancel negotiations',
             'approve negotiations',
             'generate contracts from negotiations',
-        ]);
+        ];
+        
+        $this->createOrUpdateRole('plan_admin', $planAdminPermissions);
 
-        // Legal Representative Role
-        $this->createOrUpdateRole('legal_representative', [
+        // Legal Representative Role - Adicionar permissões de visualização
+        $legalRepPermissions = [
             'view health plan details',
             'view health plan documents',
             'view health plan contracts',
             'view health plan financial data',
+            'view health plan addresses',
+            'view health plan phones',
             'view contracts',
             'sign contracts',
             'view negotiations',
             'view payments',
-        ]);
+        ];
+        
+        $this->createOrUpdateRole('legal_representative', $legalRepPermissions);
 
-        // Operational Representative Role
-        $this->createOrUpdateRole('operational_representative', [
+        // Operational Representative Role - Adicionar permissões de visualização
+        $operationalRepPermissions = [
             'view health plan details',
             'view health plan documents',
             'view health plan procedures',
             'view health plan solicitations',
+            'view health plan addresses',
+            'view health plan phones',
             'view solicitations',
             'view appointments',
             'view contracts',
             'view negotiations',
-        ]);
+        ];
+        
+        $this->createOrUpdateRole('operational_representative', $operationalRepPermissions);
         
         $this->createOrUpdateRole('clinic_admin', [
             'view clinics',
@@ -203,7 +231,6 @@ class RolesAndPermissionsSeeder extends Seeder
             'sign contracts',
             'view payments',
             'view reports',
-            // Negotiation permissions for clinic_admin
             'view negotiations',
             'respond to negotiations',
             'counter negotiations',
@@ -217,30 +244,31 @@ class RolesAndPermissionsSeeder extends Seeder
             'sign contracts',
             'view payments',
             'view professional procedures',
-            // Negotiation permissions for professional
             'view negotiations',
             'respond to negotiations',
             'counter negotiations',
         ]);
 
-        // Health Plan User permissions
-        Permission::create(['name' => 'view appointments']);
-        Permission::create(['name' => 'list appointments']);
-        Permission::create(['name' => 'create solicitations']);
-        Permission::create(['name' => 'edit solicitations']);
-        Permission::create(['name' => 'list solicitations']);
-        Permission::create(['name' => 'view health plan details']);
-
-        // Create health plan user role
-        $planUserRole = Role::create(['name' => 'plan_user']);
-        $planUserRole->givePermissionTo([
+        // Health Plan User permissions - Adicionar permissões de endereço e telefone
+        $planUserPermissions = [
             'view appointments',
             'list appointments',
             'create solicitations',
             'edit solicitations',
             'list solicitations',
-            'view health plan details'
-        ]);
+            'view health plan details',
+            'view user addresses',
+            'manage user addresses',
+            'view user phones',
+            'manage user phones',
+        ];
+
+        // Create health plan user role
+        $planUserRole = Role::where('name', 'plan_user')->first();
+        if (!$planUserRole) {
+            $planUserRole = Role::create(['name' => 'plan_user', 'guard_name' => 'api']);
+        }
+        $planUserRole->syncPermissions($planUserPermissions);
     }
     
     /**
@@ -254,6 +282,10 @@ class RolesAndPermissionsSeeder extends Seeder
             $role = Role::create(['name' => $roleName, 'guard_name' => 'api']);
         }
         
-        $role->syncPermissions($permissions);
+        // Mantém as permissões existentes e adiciona as novas
+        $existingPermissions = $role->permissions->pluck('name')->toArray();
+        $newPermissions = array_unique(array_merge($existingPermissions, is_array($permissions) ? $permissions : $permissions->pluck('name')->toArray()));
+        
+        $role->syncPermissions($newPermissions);
     }
 } 
