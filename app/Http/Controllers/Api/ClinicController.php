@@ -227,17 +227,6 @@ class ClinicController extends Controller
                         'is_primary' => $addressData['is_primary'] ?? false,
                     ]);
                 }
-            } else if ($request->has('address')) {
-                // Create address from legacy fields if no addresses array is provided
-                $clinic->addresses()->create([
-                    'street' => $request->address,
-                    'city' => $request->city,
-                    'state' => $request->state,
-                    'postal_code' => $request->postal_code,
-                    'latitude' => $request->latitude,
-                    'longitude' => $request->longitude,
-                    'is_primary' => true,
-                ]);
             }
 
             // Create user account and send welcome email
