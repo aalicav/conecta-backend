@@ -323,6 +323,7 @@ class ClinicController extends Controller
                 'phones', 
                 'documents', 
                 'approver', 
+                'user',
                 'contract', 
                 'pricingContracts',
                 'addresses',
