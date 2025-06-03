@@ -1660,18 +1660,64 @@ class NegotiationController extends Controller
     public function getApprovalHistory(Negotiation $negotiation)
     {
         try {
+            // Load the approval history with related user and additional details
             $history = $negotiation->approvalHistory()
-                ->with('user')
+                ->with(['user' => function($query) {
+                    $query->select('id', 'name', 'email');
+                }])
+                ->select([
+                    'id',
+                    'level',
+                    'status',
+                    'user_id',
+                    'notes',
+                    'created_at',
+                    'negotiation_id'
+                ])
                 ->orderBy('created_at', 'desc')
                 ->get();
 
+            // Transform the history data to include readable status and level labels
+            $transformedHistory = $history->map(function($item) {
+                $statusLabels = [
+                    'pending' => 'Pendente',
+                    'approve' => 'Aprovado',
+                    'reject' => 'Rejeitado',
+                    'partial_approve' => 'Parcialmente Aprovado'
+                ];
+
+                $levelLabels = [
+                    'internal' => 'Aprovação Interna',
+                    'external' => 'Aprovação Externa',
+                    'director' => 'Aprovação da Direção'
+                ];
+
+                return [
+                    'id' => $item->id,
+                    'level' => $levelLabels[$item->level] ?? $item->level,
+                    'status' => $statusLabels[$item->status] ?? $item->status,
+                    'user' => [
+                        'id' => $item->user->id,
+                        'name' => $item->user->name,
+                        'email' => $item->user->email
+                    ],
+                    'notes' => $item->notes,
+                    'date' => $item->created_at->format('d/m/Y H:i:s'),
+                    'negotiation_id' => $item->negotiation_id
+                ];
+            });
+
             return response()->json([
-                'data' => NegotiationApprovalHistoryResource::collection($history)
+                'success' => true,
+                'data' => $transformedHistory,
+                'message' => 'Histórico de aprovações recuperado com sucesso'
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to get approval history: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Failed to get approval history'
+                'success' => false,
+                'message' => 'Falha ao recuperar histórico de aprovações',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
