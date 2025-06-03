@@ -34,6 +34,10 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
             'reject_negotiation_management',
             'reject_negotiation_legal',
             'reject_negotiation_direction',
+            'approve negotiations',
+            'reject negotiations',
+            'counter negotiations',
+            'respond to negotiations',
             
             // Contract approval workflow permissions
             'approve contracts final',
@@ -121,6 +125,10 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
             'export reports',
             'view contracts',
             'sign contracts',
+            'approve negotiations',
+            'reject negotiations',
+            'counter negotiations',
+            'respond to negotiations',
             'view negotiations',
             'view health plans',
             'view clinics',
@@ -152,6 +160,10 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
             'counter negotiations',
             'view contracts',
             'create contracts',
+            'approve negotiations',
+            'reject negotiations',
+            'counter negotiations',
+            'respond to negotiations',
             'edit contracts',
             'sign contracts',
             'initiate contract approval',
@@ -229,6 +241,10 @@ class EnhancedRolesAndPermissionsSeeder extends Seeder
             'view patients',
             'view reports',
             'sign contracts',
+            'approve negotiations',
+            'reject negotiations',
+            'counter negotiations',
+            'respond to negotiations',
         ];
         $this->createOrUpdateRole('health_plan_portal', $healthPlanPortalPermissions);
         
