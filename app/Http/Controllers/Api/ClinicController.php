@@ -291,7 +291,7 @@ class ClinicController extends Controller
             DB::commit();
 
             // Load relationships
-            $clinic->load(['phones', 'parentClinic', 'addresses']);
+            $clinic->load(['phones', 'addresses']);
 
             return response()->json([
                 'success' => true,
