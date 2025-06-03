@@ -345,4 +345,9 @@ class HealthPlan extends Model implements Auditable
     {
         return !$this->is_parent && $this->parent_id !== null;
     }
+
+    public function addresses(): MorphMany
+    {
+        return $this->morphMany(Address::class, 'addressable');
+    }
 } 
