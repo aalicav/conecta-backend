@@ -12,13 +12,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('solicitations', function (Blueprint $table) {
+            // Adicionar novos campos
+            $table->string('state')->nullable()->after('description');
+            $table->string('city')->nullable()->after('state');
+            
+            // Remover campos não utilizados
             $table->dropColumn([
-                'preferred_date_start',
-                'preferred_date_end',
-                'preferred_location_lat',
-                'preferred_location_lng',
-                'max_distance_km',
-                'notes'
+                'secondary_contact_name',
+                'secondary_contact_phone',
+                'secondary_contact_relationship'
             ]);
         });
     }
@@ -29,12 +31,13 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('solicitations', function (Blueprint $table) {
-            $table->dateTime('preferred_date_start')->nullable();
-            $table->dateTime('preferred_date_end')->nullable();
-            $table->decimal('preferred_location_lat', 10, 8)->nullable();
-            $table->decimal('preferred_location_lng', 11, 8)->nullable();
-            $table->decimal('max_distance_km', 5, 2)->nullable();
-            $table->text('notes')->nullable();
+            // Reverter adição dos novos campos
+            $table->dropColumn(['state', 'city']);
+            
+            // Restaurar campos removidos
+            $table->string('secondary_contact_name')->nullable();
+            $table->string('secondary_contact_phone')->nullable();
+            $table->string('secondary_contact_relationship')->nullable();
         });
     }
 }; 

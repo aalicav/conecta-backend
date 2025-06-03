@@ -108,6 +108,8 @@ class SolicitationController extends Controller
                 'patient_id' => 'required|exists:patients,id',
                 'tuss_id' => 'required|exists:tuss_procedures,id',
                 'description' => 'required|string',
+                'state' => 'nullable|string|size:2',
+                'city' => 'nullable|string',
             ]);
 
             if ($validator->fails()) {
@@ -165,6 +167,8 @@ class SolicitationController extends Controller
                 'priority' => $request->priority ?? 'normal',
                 'description' => $request->description,
                 'requested_by' => Auth::id(),
+                'state' => $request->state,
+                'city' => $request->city,
             ]);
 
             // Load relationships for the resource
@@ -262,6 +266,8 @@ class SolicitationController extends Controller
             $validator = Validator::make($request->all(), [
                 'priority' => 'sometimes|in:low,normal,high',
                 'description' => 'sometimes|required|string',
+                'state' => 'nullable|string|size:2',
+                'city' => 'nullable|string',
             ]);
 
             if ($validator->fails()) {
@@ -276,7 +282,7 @@ class SolicitationController extends Controller
 
             // Track changes for notification
             $changes = [];
-            $updateFields = ['priority', 'description'];
+            $updateFields = ['priority', 'description', 'state', 'city'];
             
             // Save original values for tracking changes
             foreach ($updateFields as $field) {

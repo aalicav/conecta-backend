@@ -28,6 +28,8 @@ class SolicitationResource extends JsonResource
             'completed_at' => $this->completed_at,
             'cancelled_at' => $this->cancelled_at,
             'cancel_reason' => $this->cancel_reason,
+            'state' => $this->state,
+            'city' => $this->city,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             

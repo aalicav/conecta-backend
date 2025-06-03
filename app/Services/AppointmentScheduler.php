@@ -140,7 +140,7 @@ class AppointmentScheduler
 
             if (!$provider) {
                 Log::error("No suitable provider found for solicitation #{$solicitation->id}");
-                $this->notifySchedulingFailed($solicitation, 'Não foi encontrado nenhum prestador disponível para esta especialidade/procedimento.');
+                $this->notifyNoProvidersFound($solicitation);
                 return null;
             }
 
@@ -508,86 +508,61 @@ class AppointmentScheduler
     public function findBestProvider(Solicitation $solicitation): array
     {
         try {
-            $tussId = $solicitation->tuss_id;
+            // Get providers that offer this procedure
+            $clinics = $this->getClinicsForProcedure($solicitation, $solicitation->tuss);
+            $professionals = $this->getProfessionalsForProcedure($solicitation, $solicitation->tuss);
 
-            // Get active providers who can perform this procedure
-            $providers = [];
+            // Filter providers by state and city if provided
+            if ($solicitation->state) {
+                $clinics = $clinics->filter(function ($clinic) use ($solicitation) {
+                    return $clinic->state === $solicitation->state &&
+                           (!$solicitation->city || $clinic->city === $solicitation->city);
+                });
 
-            // Get clinics
-            $clinics = Clinic::active()
-                ->whereHas('pricingContracts', function($query) use ($tussId) {
-                    $query->where('tuss_procedure_id', $tussId)
-                          ->where('is_active', true);
-                })
-                ->get();
-
-            foreach ($clinics as $clinic) {
-                $contract = $clinic->pricingContracts()
-                    ->where('tuss_procedure_id', $tussId)
-                    ->where('is_active', true)
-                    ->first();
-                
-                if ($contract) {
-                    $providers[] = [
-                        'provider_type' => Clinic::class,
-                        'provider_id' => $clinic->id,
-                        'name' => $clinic->name,
-                        'price' => $contract->price
-                    ];
-                }
+                $professionals = $professionals->filter(function ($professional) use ($solicitation) {
+                    return $professional->state === $solicitation->state &&
+                           (!$solicitation->city || $professional->city === $solicitation->city);
+                });
             }
 
-            // Get professionals
-            $professionals = Professional::active()
-                ->whereHas('pricingContracts', function($query) use ($tussId) {
-                    $query->where('tuss_procedure_id', $tussId)
-                          ->where('is_active', true);
-                })
-                ->get();
-
-            foreach ($professionals as $professional) {
-                $contract = $professional->pricingContracts()
-                    ->where('tuss_procedure_id', $tussId)
-                    ->where('is_active', true)
-                    ->first();
-                
-                if ($contract) {
-                    $providers[] = [
-                        'provider_type' => Professional::class,
-                        'provider_id' => $professional->id,
-                        'name' => $professional->name,
-                        'price' => $contract->price
-                    ];
-                }
-            }
+            // Combine providers into a single array
+            $providers = $this->combineProviders($clinics, $professionals);
 
             if (empty($providers)) {
-                // Notify network managers, admins, and directors
+                Log::warning("No providers found for solicitation #{$solicitation->id}");
                 $this->notifyNoProvidersFound($solicitation);
-                
-                return [
-                    'success' => false,
-                    'message' => 'Nenhum profissional encontrado para esta especialidade'
-                ];
+                return [];
             }
 
-            // Sort providers by price
-            usort($providers, function($a, $b) {
-                return $a['price'] <=> $b['price'];
-            });
+            // Get scheduling priority from settings
+            $priority = SchedulingConfigService::getSchedulingPriority();
 
-            // Return the provider with lowest price
-            return [
-                'success' => true,
-                'provider' => $providers[0]
-            ];
+            // Rank providers based on priority
+            switch ($priority) {
+                case self::PRIORITY_COST:
+                    $providers = $this->rankByCost($providers, $solicitation->tuss_id);
+                    break;
+
+                case self::PRIORITY_DISTANCE:
+                    $providers = $this->rankByDistance($providers, $solicitation);
+                    break;
+
+                case self::PRIORITY_AVAILABILITY:
+                    $providers = $this->rankByAvailability($providers, $solicitation);
+                    break;
+
+                case self::PRIORITY_BALANCED:
+                default:
+                    $providers = $this->rankBalanced($providers, $solicitation, $solicitation->tuss_id);
+                    break;
+            }
+
+            // Return the best provider
+            return !empty($providers) ? $providers[0] : [];
 
         } catch (\Exception $e) {
-            Log::error("Erro ao buscar melhor profissional para solicitação #{$solicitation->id}: " . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Erro ao buscar profissional: ' . $e->getMessage()
-            ];
+            Log::error("Error finding best provider for solicitation #{$solicitation->id}: " . $e->getMessage());
+            return [];
         }
     }
 
@@ -600,38 +575,33 @@ class AppointmentScheduler
     protected function notifyNoProvidersFound(Solicitation $solicitation): void
     {
         try {
-            // Get users to notify
-            $users = User::whereHas('roles', function($query) {
-                $query->whereIn('name', ['network_manager', 'admin', 'director']);
-            })->get();
-
-            if ($users->isEmpty()) {
-                return;
+            // Build location message
+            $locationMsg = '';
+            if ($solicitation->state) {
+                $locationMsg = " no estado {$solicitation->state}";
+                if ($solicitation->city) {
+                    $locationMsg .= " e cidade {$solicitation->city}";
+                }
             }
 
-            $tuss = $solicitation->tuss;
-            $patient = $solicitation->patient;
-            $healthPlan = $solicitation->healthPlan;
+            // Get users to notify
+            $users = User::whereHas('roles', function($query) {
+                $query->whereIn('name', ['super_admin', 'network_manager']);
+            })->get();
 
-            // Create notification data
-            $notificationData = [
-                'title' => 'Profissional não encontrado',
-                'type' => 'provider_not_found',
-                'solicitation_id' => $solicitation->id,
-                'tuss_code' => $tuss->code,
-                'tuss_description' => $tuss->description,
-                'patient_name' => $patient->name,
-                'health_plan_name' => $healthPlan->name,
-                'created_at' => now(),
-                'url' => "/solicitations/{$solicitation->id}"
-            ];
+            // Send notification
+            Notification::send($users, new SchedulingFailed(
+                $solicitation,
+                "Não foram encontrados prestadores disponíveis{$locationMsg} para esta especialidade/procedimento."
+            ));
 
-            // Send notification to each user
-            Notification::send($users, new \App\Notifications\NoProvidersFound($solicitation, $notificationData));
-
-            Log::info("Notificação enviada para " . $users->count() . " usuários sobre falta de profissionais para solicitação #{$solicitation->id}");
+            // Log the event
+            Log::warning(
+                "No providers found for solicitation #{$solicitation->id}" .
+                ($locationMsg ? " (filtering by location:{$locationMsg})" : '')
+            );
         } catch (\Exception $e) {
-            Log::error("Erro ao enviar notificação de falta de profissionais: " . $e->getMessage());
+            Log::error("Error sending no providers notification: " . $e->getMessage());
         }
     }
 
@@ -673,42 +643,22 @@ class AppointmentScheduler
      */
     protected function getClinicsForProcedure(Solicitation $solicitation, TussProcedure $procedure): array
     {
-        // Get clinics that offer this procedure for this health plan
-        $clinics = DB::table('clinics')
-            ->join('clinic_procedures', 'clinics.id', '=', 'clinic_procedures.clinic_id')
-            ->join('health_plan_clinic_procedures', function ($join) use ($solicitation) {
-                $join->on('clinic_procedures.id', '=', 'health_plan_clinic_procedures.clinic_procedure_id')
-                    ->where('health_plan_clinic_procedures.health_plan_id', '=', $solicitation->health_plan_id);
-            })
-            ->where('clinic_procedures.tuss_procedure_id', '=', $procedure->id)
-            ->where('clinics.status', '=', 'approved')
-            ->select(
-                'clinics.id',
-                'clinics.name',
-                'clinics.address',
-                'clinics.city',
-                'clinics.state',
-                'clinics.postal_code',
-                'clinics.latitude',
-                'clinics.longitude',
-                'health_plan_clinic_procedures.price'
-            )
-            ->get();
+        $query = Clinic::active()
+            ->whereHas('pricingContracts', function($query) use ($procedure) {
+                $query->whereHas('pricingItems', function($query) use ($procedure) {
+                    $query->where('tuss_id', $procedure->id);
+                });
+            });
 
-        return $clinics->map(function ($clinic) {
-            return [
-                'provider_type' => Clinic::class,
-                'provider_id' => $clinic->id,
-                'name' => $clinic->name,
-                'address' => $clinic->address,
-                'city' => $clinic->city,
-                'state' => $clinic->state,
-                'postal_code' => $clinic->postal_code,
-                'latitude' => $clinic->latitude,
-                'longitude' => $clinic->longitude,
-                'price' => $clinic->price,
-            ];
-        })->toArray();
+        // Filter by state and city if provided
+        if ($solicitation->state) {
+            $query->where('state', $solicitation->state);
+            if ($solicitation->city) {
+                $query->where('city', $solicitation->city);
+            }
+        }
+
+        return $query->get();
     }
 
     /**
@@ -720,42 +670,22 @@ class AppointmentScheduler
      */
     protected function getProfessionalsForProcedure(Solicitation $solicitation, TussProcedure $procedure): array
     {
-        // Get professionals that offer this procedure for this health plan
-        $professionals = DB::table('professionals')
-            ->join('professional_procedures', 'professionals.id', '=', 'professional_procedures.professional_id')
-            ->join('health_plan_professional_procedures', function ($join) use ($solicitation) {
-                $join->on('professional_procedures.id', '=', 'health_plan_professional_procedures.professional_procedure_id')
-                    ->where('health_plan_professional_procedures.health_plan_id', '=', $solicitation->health_plan_id);
-            })
-            ->where('professional_procedures.tuss_procedure_id', '=', $procedure->id)
-            ->where('professionals.status', '=', 'approved')
-            ->select(
-                'professionals.id',
-                'professionals.name',
-                'professionals.address',
-                'professionals.city',
-                'professionals.state',
-                'professionals.postal_code',
-                'professionals.latitude',
-                'professionals.longitude',
-                'health_plan_professional_procedures.price'
-            )
-            ->get();
+        $query = Professional::active()
+            ->whereHas('pricingContracts', function($query) use ($procedure) {
+                $query->whereHas('pricingItems', function($query) use ($procedure) {
+                    $query->where('tuss_id', $procedure->id);
+                });
+            });
 
-        return $professionals->map(function ($professional) {
-            return [
-                'provider_type' => Professional::class,
-                'provider_id' => $professional->id,
-                'name' => $professional->name,
-                'address' => $professional->address,
-                'city' => $professional->city,
-                'state' => $professional->state,
-                'postal_code' => $professional->postal_code,
-                'latitude' => $professional->latitude,
-                'longitude' => $professional->longitude,
-                'price' => $professional->price,
-            ];
-        })->toArray();
+        // Filter by state and city if provided
+        if ($solicitation->state) {
+            $query->where('state', $solicitation->state);
+            if ($solicitation->city) {
+                $query->where('city', $solicitation->city);
+            }
+        }
+
+        return $query->get();
     }
 
     /**

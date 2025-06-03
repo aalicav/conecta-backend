@@ -32,6 +32,8 @@ class Solicitation extends Model
         'completed_at',
         'cancelled_at',
         'cancel_reason',
+        'state',
+        'city',
     ];
 
     /**
