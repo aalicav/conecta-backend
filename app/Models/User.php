@@ -147,9 +147,4 @@ class User extends Authenticatable implements Auditable
         $preferences = $this->notificationPreferences();
         return isset($preferences[$channel]) ? $preferences[$channel] : true;
     }
-
-    public function addresses(): MorphMany
-    {
-        return $this->morphMany(Address::class, 'addressable');
-    }
 }
