@@ -316,7 +316,7 @@ class ProfessionalController extends Controller
             Notification::send($commercialTeam, new ProfessionalRegistrationSubmitted($professional));
 
             // Notify legal team to analyze documents
-            $legalTeam = User::role('legal')->get();
+            $legalTeam = User::role('legal_manager')->get();
             Notification::send($legalTeam, new DocumentAnalysisRequired($professional, 'professional'));
 
             // Notify validators about the new professional registration
