@@ -86,9 +86,11 @@ class RolesAndPermissionsSeeder extends Seeder
             'create solicitations',
             'edit solicitations',
             'delete solicitations',
+            'list solicitations',
 
             // Appointment permissions
             'view appointments',
+            'list appointments',
             'create appointments',
             'edit appointments',
             'delete appointments',
@@ -164,9 +166,11 @@ class RolesAndPermissionsSeeder extends Seeder
             'create patients',
             'edit patients',
             'view solicitations',
+            'list solicitations',
             'create solicitations',
             'edit solicitations',
             'view appointments',
+            'list appointments',
             'view contracts',
             'sign contracts',
             'view payments',
@@ -207,7 +211,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'view health plan addresses',
             'view health plan phones',
             'view solicitations',
+            'list solicitations',
             'view appointments',
+            'list appointments',
             'view contracts',
             'view negotiations',
         ];
@@ -225,6 +231,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'edit professional procedures',
             'manage professional procedures',
             'view appointments',
+            'list appointments',
             'confirm presence',
             'complete appointment',
             'view contracts',
@@ -238,6 +245,7 @@ class RolesAndPermissionsSeeder extends Seeder
         
         $this->createOrUpdateRole('professional', [
             'view appointments',
+            'list appointments',
             'confirm presence',
             'complete appointment',
             'view contracts',
