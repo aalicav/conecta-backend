@@ -78,7 +78,7 @@ class SolicitationController extends Controller
         // Restrict health plan users to only see their own solicitations
         if (Auth::user()->hasRole('plan_admin')) {
             $query->whereHas('healthPlan', function ($q) {
-                $q->where('id', Auth::user()->health_plan_id);
+                $q->where('id', Auth::user()->entity_id);
             });
         }
         
