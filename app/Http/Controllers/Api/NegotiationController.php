@@ -498,14 +498,14 @@ class NegotiationController extends Controller
             // Check if the approver is different from the creator
             if ($negotiation->creator_id === Auth::id()) {
                 return response()->json([
-                    'message' => 'You cannot approve your own negotiation request.'
+                    'message' => 'Você não pode aprovar sua própria solicitação de negociação.'
                 ], 403);
             }
 
             // Validate current status
-            if ($negotiation->approval_level !== 'pending_approval') {
+            if ($negotiation->approval_level !== 'submitted') {
                 return response()->json([
-                    'message' => 'Negotiation is not pending internal approval.'
+                    'message' => 'Negociação não está pendente de aprovação interna.'
                 ], 422);
             }
 
