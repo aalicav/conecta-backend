@@ -473,7 +473,7 @@ class NegotiationController extends Controller
     }
 
     /**
-     * Process approval for negotiation.
+     * Process internal approval for negotiation.
      *
      * @param Request $request
      * @param Negotiation $negotiation
@@ -487,10 +487,11 @@ class NegotiationController extends Controller
                 'approved' => 'required|boolean'
             ]);
 
-            // Validate user has approval permission
-            if (!Auth::user()->hasPermissionTo('approve negotiations')) {
+            // Validate user has internal approval permission
+            $user = Auth::user();
+            if (!$user->hasAnyRole(['commercial_manager', 'super_admin', 'director'])) {
                 return response()->json([
-                    'message' => 'Unauthorized. You do not have permission to approve negotiations.'
+                    'message' => 'Não autorizado. Apenas gerentes comerciais, super administradores ou diretores podem aprovar internamente.'
                 ], 403);
             }
 
@@ -504,24 +505,48 @@ class NegotiationController extends Controller
             // Validate current status
             if ($negotiation->approval_level !== 'pending_approval') {
                 return response()->json([
-                    'message' => 'Negotiation is not pending approval.'
+                    'message' => 'Negotiation is not pending internal approval.'
                 ], 422);
             }
 
             DB::beginTransaction();
 
             if ($validated['approved']) {
-                $negotiation->status = self::STATUS_APPROVED;
-                $negotiation->approval_level = null;
-                $negotiation->approved_by = Auth::id();
-                $negotiation->approved_at = now();
-                $negotiation->approval_notes = $validated['approval_notes'];
-                $negotiation->formalization_status = 'pending_aditivo';
+                // Internal approval - mark for director approval if needed
+                $needsDirectorApproval = $this->needsDirectorApproval($negotiation);
+                
+                if ($needsDirectorApproval) {
+                    $negotiation->status = self::STATUS_PENDING_DIRECTOR_APPROVAL;
+                    $negotiation->approval_level = 'pending_director_approval';
+                    
+                    // Notify director about pending approval
+                    $this->notificationService->notifyApprovalRequired($negotiation, 'director');
+                } else {
+                    // If no director approval needed, mark as internally approved
+                    $negotiation->status = self::STATUS_APPROVED;
+                    $negotiation->approval_level = null;
+                    $negotiation->approved_by = Auth::id();
+                    $negotiation->approved_at = now();
+                    $negotiation->approval_notes = $validated['approval_notes'];
+                    $negotiation->formalization_status = 'pending_aditivo';
+                }
+                
                 $negotiation->save();
 
-                // Dispatch the approval event
-                event(new NegotiationApproved($negotiation));
+                // Add to approval history
+                $negotiation->approvalHistory()->create([
+                    'level' => 'internal',
+                    'status' => 'approved',
+                    'user_id' => Auth::id(),
+                    'notes' => $validated['approval_notes'] ?? 'Approved internally'
+                ]);
+
+                // If approved without needing director approval, dispatch event
+                if (!$needsDirectorApproval) {
+                    event(new NegotiationApproved($negotiation));
+                }
             } else {
+                // Internal rejection
                 $negotiation->status = self::STATUS_REJECTED;
                 $negotiation->approval_level = null;
                 $negotiation->rejection_notes = $validated['approval_notes'];
@@ -529,10 +554,18 @@ class NegotiationController extends Controller
                 $negotiation->rejected_at = now();
                 $negotiation->save();
 
+                // Add to approval history
+                $negotiation->approvalHistory()->create([
+                    'level' => 'internal',
+                    'status' => 'rejected',
+                    'user_id' => Auth::id(),
+                    'notes' => $validated['approval_notes'] ?? 'Rejected internally'
+                ]);
+
                 // Send notification to the creator about rejection
                 $this->notificationService->sendToUser($negotiation->creator_id, [
                     'title' => 'Negociação Rejeitada',
-                    'body' => "Sua negociação #{$negotiation->id} foi rejeitada.",
+                    'body' => "Sua negociação #{$negotiation->id} foi rejeitada internamente.",
                     'action_link' => "/negotiations/{$negotiation->id}",
                     'priority' => 'high'
                 ]);
@@ -541,14 +574,165 @@ class NegotiationController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Approval processed successfully.',
+                'message' => 'Internal approval processed successfully.',
                 'data' => new NegotiationResource($negotiation)
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Failed to process approval: ' . $e->getMessage());
-            return response()->json(['message' => 'Failed to process approval.'], 500);
+            Log::error('Failed to process internal approval: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to process internal approval.'], 500);
+        }
+    }
+
+    /**
+     * Process external approval for negotiation.
+     *
+     * @param Request $request
+     * @param Negotiation $negotiation
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function processExternalApproval(Request $request, Negotiation $negotiation)
+    {
+        try {
+            $validated = $request->validate([
+                'approval_notes' => 'nullable|string',
+                'approved' => 'required|boolean',
+                'approved_items' => 'required|array',
+                'approved_items.*.item_id' => 'required|exists:negotiation_items,id',
+                'approved_items.*.approved_value' => 'required|numeric|min:0'
+            ]);
+
+            // Validate if user belongs to the target entity and has proper role
+            if (!$this->canApproveExternally($negotiation)) {
+                return response()->json([
+                    'message' => 'Unauthorized. Only the target entity can approve or reject this negotiation.'
+                ], 403);
+            }
+
+            // Validate current status
+            if ($negotiation->status !== self::STATUS_APPROVED) {
+                return response()->json([
+                    'message' => 'Negotiation must be approved by commercial team first.'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            if ($validated['approved']) {
+                // Process approved items
+                foreach ($validated['approved_items'] as $itemData) {
+                    $item = $negotiation->items()->find($itemData['item_id']);
+                    if ($item) {
+                        $item->update([
+                            'status' => 'approved',
+                            'approved_value' => $itemData['approved_value'],
+                            'responded_at' => now()
+                        ]);
+                    }
+                }
+
+                // Check if all items were approved
+                $allApproved = $negotiation->items()->where('status', '!=', 'approved')->count() === 0;
+
+                if ($allApproved) {
+                    $negotiation->status = self::STATUS_COMPLETE;
+                    $negotiation->completed_at = now();
+                } else {
+                    $negotiation->status = self::STATUS_PARTIALLY_COMPLETE;
+                }
+
+                $negotiation->external_approval_notes = $validated['approval_notes'];
+                $negotiation->external_approved_at = now();
+                $negotiation->external_approved_by = Auth::id();
+                $negotiation->save();
+
+                // Add to approval history
+                $negotiation->approvalHistory()->create([
+                    'level' => 'external',
+                    'status' => $allApproved ? 'approved' : 'partially_approved',
+                    'user_id' => Auth::id(),
+                    'notes' => $validated['approval_notes'] ?? 'Approved externally'
+                ]);
+
+                // Send notifications
+                if ($allApproved) {
+                    $this->notificationService->notifyNegotiationCompleted($negotiation);
+                } else {
+                    $this->notificationService->notifyNegotiationPartiallyCompleted($negotiation);
+                }
+            } else {
+                // External rejection
+                $negotiation->status = self::STATUS_REJECTED;
+                $negotiation->external_rejection_notes = $validated['approval_notes'];
+                $negotiation->external_rejected_at = now();
+                $negotiation->external_rejected_by = Auth::id();
+                $negotiation->save();
+
+                // Add to approval history
+                $negotiation->approvalHistory()->create([
+                    'level' => 'external',
+                    'status' => 'rejected',
+                    'user_id' => Auth::id(),
+                    'notes' => $validated['approval_notes'] ?? 'Rejected externally'
+                ]);
+
+                // Notify about rejection
+                $this->notificationService->notifyNegotiationRejected($negotiation);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'External approval processed successfully.',
+                'data' => new NegotiationResource($negotiation)
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to process external approval: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to process external approval.'], 500);
+        }
+    }
+
+    /**
+     * Check if negotiation needs director approval based on business rules
+     *
+     * @param Negotiation $negotiation
+     * @return bool
+     */
+    private function needsDirectorApproval(Negotiation $negotiation): bool
+    {
+        // Example criteria - adjust according to your business rules
+        $totalValue = $negotiation->items->sum('proposed_value');
+        $hasHighValueItems = $negotiation->items->where('proposed_value', '>', 10000)->count() > 0;
+        
+        return $totalValue > 50000 || $hasHighValueItems;
+    }
+
+    /**
+     * Check if the current user can approve externally
+     */
+    private function canApproveExternally(Negotiation $negotiation): bool
+    {
+        $user = Auth::user();
+        
+        // Check if user belongs to the target entity
+        switch ($negotiation->negotiable_type) {
+            case HealthPlan::class:
+                return $user->hasRole('plan_admin') && 
+                       $user->entity_id === $negotiation->negotiable_id;
+                
+            case Professional::class:
+                return $user->hasRole('professional') && 
+                       $user->entity_id === $negotiation->negotiable_id;
+                
+            case Clinic::class:
+                return $user->hasRole('clinic_admin') && 
+                       $user->entity_id === $negotiation->negotiable_id;
+                
+            default:
+                return false;
         }
     }
 
@@ -1398,7 +1582,6 @@ class NegotiationController extends Controller
                 $negotiation->approved_by_director_id = Auth::id();
                 $negotiation->director_approval_date = now();
                 $negotiation->director_approval_notes = $validated['approval_notes'];
-                $negotiation->formalization_status = 'pending_aditivo';
             } else {
                 $negotiation->status = self::STATUS_REJECTED;
                 $negotiation->approval_level = null;
