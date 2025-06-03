@@ -502,13 +502,6 @@ class NegotiationController extends Controller
                 ], 403);
             }
 
-            // Validate current status
-            if ($negotiation->approval_level !== 'submitted') {
-                return response()->json([
-                    'message' => 'Negociação não está pendente de aprovação interna.'
-                ], 422);
-            }
-
             DB::beginTransaction();
 
             if ($validated['approved']) {
