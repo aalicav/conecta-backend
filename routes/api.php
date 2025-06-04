@@ -179,6 +179,7 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::get('/reports/financials', [ReportController::class, 'financials'])->middleware('permission:view financial reports');
     Route::get('/reports/performance', [ReportController::class, 'performance']);
     Route::post('/reports/export', [ReportController::class, 'export']);
+    Route::get('/reports/generations/{id}/download', [ReportController::class, 'download']);
     
     // System Settings
     Route::get('/system-settings', [SystemSettingController::class, 'index']);
