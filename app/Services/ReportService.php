@@ -315,7 +315,7 @@ class ReportService
             ? Carbon::parse($parameters['end_date']) 
             : Carbon::now();
         
-        $query = Payment::with(['payable'])
+        $query = Payment::with(['payable', 'payable.healthPlan', 'payable.patient', 'payable.professional'])
             ->whereBetween('created_at', [$startDate, $endDate]);
         
         // Apply type filter if provided
@@ -341,69 +341,91 @@ class ReportService
         $reportData = [];
         foreach ($payments as $payment) {
             $healthPlanName = '';
+            $patientName = '';
+            $professionalName = '';
+            $procedureName = '';
             
-            // Try to get health plan name if available
-            if ($payment->payable && 
-                method_exists($payment->payable, 'healthPlan') && 
-                $payment->payable->healthPlan) {
-                $healthPlanName = $payment->payable->healthPlan->name;
+            // Try to get related data if available
+            if ($payment->payable) {
+                if (method_exists($payment->payable, 'healthPlan') && $payment->payable->healthPlan) {
+                    $healthPlanName = $payment->payable->healthPlan->name;
+                }
+                if (method_exists($payment->payable, 'patient') && $payment->payable->patient) {
+                    $patientName = $payment->payable->patient->name;
+                }
+                if (method_exists($payment->payable, 'professional') && $payment->payable->professional) {
+                    $professionalName = $payment->payable->professional->name;
+                }
+                if (method_exists($payment->payable, 'procedure_name')) {
+                    $procedureName = $payment->payable->procedure_name;
+                }
             }
             
             $reportData[] = [
                 'ID' => $payment->id,
-                'Reference' => $payment->reference_id,
-                'Type' => $payment->payment_type,
-                'Date' => $payment->created_at->format('Y-m-d'),
-                'Amount' => number_format($payment->amount, 2),
-                'Discount' => number_format($payment->discount_amount, 2),
-                'Gloss' => number_format($payment->gloss_amount, 2),
-                'Total' => number_format($payment->total_amount, 2),
-                'Status' => $payment->status,
-                'Payment Method' => $payment->payment_method ?? 'N/A',
-                'Paid Date' => $payment->paid_at ? $payment->paid_at->format('Y-m-d') : 'N/A',
-                'Health Plan' => $healthPlanName,
+                'Data' => $payment->created_at->format('d/m/Y'),
+                'Hora' => $payment->created_at->format('H:i'),
+                'Paciente' => $patientName ?: 'N/A',
+                'Profissional' => $professionalName ?: 'N/A',
+                'Procedimento' => $procedureName ?: 'N/A',
+                'Convênio' => $healthPlanName ?: 'Particular',
+                'Tipo' => ucfirst($payment->payment_type),
+                'Valor Base' => $payment->amount,
+                'Desconto' => $payment->discount_amount,
+                'Glosa' => $payment->gloss_amount,
+                'Valor Total' => $payment->total_amount,
+                'Status' => ucfirst($payment->status),
+                'Forma Pagamento' => $payment->payment_method ? ucfirst($payment->payment_method) : 'N/A',
+                'Data Pagamento' => $payment->paid_at ? $payment->paid_at->format('d/m/Y') : 'N/A'
             ];
         }
         
-        // Add summary data if requested
-        if (isset($parameters['include_summary']) && $parameters['include_summary']) {
-            $totalAmount = $payments->sum('amount');
-            $totalDiscount = $payments->sum('discount_amount');
-            $totalGloss = $payments->sum('gloss_amount');
-            $totalFinal = $payments->sum('total_amount');
-            
-            $summary = [
-                'total_revenue' => $totalAmount,
-                'total_received' => $payments->where('status', 'paid')->sum('total_amount'),
-                'total_pending' => $payments->where('status', 'pending')->sum('total_amount'),
-                'total_gloss' => $totalGloss
-            ];
-            
-            return [
-                'summary' => $summary,
-                'transactions' => $reportData
-            ];
-        }
-        
-        // If no data was found, return an array with the expected structure
-        if (empty($reportData)) {
-            return [[
-                'ID' => '',
-                'Reference' => '',
-                'Type' => '',
-                'Date' => '',
-                'Amount' => '',
-                'Discount' => '',
-                'Gloss' => '',
-                'Total' => '',
-                'Status' => '',
-                'Payment Method' => '',
-                'Paid Date' => '',
-                'Health Plan' => '',
-            ]];
-        }
-        
-        return $reportData;
+        // Add summary data with detailed breakdowns
+        $summary = [
+            'Período' => $startDate->format('d/m/Y') . ' até ' . $endDate->format('d/m/Y'),
+            'Total de Transações' => $payments->count(),
+            'Valor Total (Bruto)' => $payments->sum('amount'),
+            'Total Descontos' => $payments->sum('discount_amount'),
+            'Total Glosas' => $payments->sum('gloss_amount'),
+            'Valor Total (Líquido)' => $payments->sum('total_amount'),
+            'Total Recebido' => $payments->where('status', 'paid')->sum('total_amount'),
+            'Total Pendente' => $payments->where('status', 'pending')->sum('total_amount'),
+            'Total Cancelado' => $payments->where('status', 'cancelled')->sum('total_amount'),
+        ];
+
+        // Add payment method breakdown
+        $paymentMethodBreakdown = $payments
+            ->where('status', 'paid')
+            ->groupBy('payment_method')
+            ->map(function ($group) {
+                return [
+                    'count' => $group->count(),
+                    'total' => $group->sum('total_amount')
+                ];
+            })
+            ->toArray();
+
+        // Add health plan breakdown
+        $healthPlanBreakdown = $payments
+            ->groupBy(function ($payment) {
+                return $payment->payable && method_exists($payment->payable, 'healthPlan') && $payment->payable->healthPlan
+                    ? $payment->payable->healthPlan->name
+                    : 'Particular';
+            })
+            ->map(function ($group) {
+                return [
+                    'count' => $group->count(),
+                    'total' => $group->sum('total_amount')
+                ];
+            })
+            ->toArray();
+
+        return [
+            'summary' => $summary,
+            'payment_methods' => $paymentMethodBreakdown,
+            'health_plans' => $healthPlanBreakdown,
+            'transactions' => $reportData
+        ];
     }
 
     /**

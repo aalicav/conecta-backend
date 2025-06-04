@@ -38,36 +38,57 @@
             margin: 0 0 15px;
             font-size: 18px;
         }
-        .summary-table {
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .summary-box {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .summary-box h3 {
+            color: #1e40af;
+            margin: 0 0 10px;
+            font-size: 16px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .breakdown-table {
             width: 100%;
             border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 12px;
         }
-        .summary-table th {
+        .breakdown-table th {
+            background: #e5e7eb;
             text-align: left;
             padding: 8px;
-            background: #e5e7eb;
-            font-weight: bold;
         }
-        .summary-table td {
-            padding: 8px;
+        .breakdown-table td {
+            padding: 6px 8px;
             border-bottom: 1px solid #eee;
         }
         .main-table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
+            font-size: 11px;
         }
         .main-table th {
             background: #2563eb;
             color: white;
-            padding: 12px 8px;
+            padding: 8px 4px;
             text-align: left;
-            font-size: 14px;
+            font-size: 11px;
+            white-space: nowrap;
         }
         .main-table td {
-            padding: 8px;
+            padding: 6px 4px;
             border-bottom: 1px solid #eee;
-            font-size: 13px;
         }
         .main-table tr:nth-child(even) {
             background: #f8fafc;
@@ -77,12 +98,24 @@
             text-align: center;
             font-size: 12px;
             color: #666;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
         }
         .no-data {
             text-align: center;
             padding: 20px;
             color: #666;
             font-style: italic;
+        }
+        .text-right {
+            text-align: right;
+        }
+        .text-center {
+            text-align: center;
+        }
+        .highlight {
+            font-weight: bold;
+            color: #2563eb;
         }
     </style>
 </head>
@@ -94,32 +127,99 @@
 
     @if($summary)
     <div class="summary">
-        <h2>Resumo</h2>
-        <table class="summary-table">
-            @foreach($summary as $key => $value)
-            <tr>
-                <th>{{ ucwords(str_replace('_', ' ', $key)) }}</th>
-                <td>{{ is_numeric($value) ? number_format($value, 2, ',', '.') : $value }}</td>
-            </tr>
-            @endforeach
-        </table>
+        <h2>Resumo do Período</h2>
+        <div class="summary-box">
+            <table class="breakdown-table">
+                <tr>
+                    <th>Período:</th>
+                    <td>{{ $summary['Período'] }}</td>
+                    <th>Total de Transações:</th>
+                    <td>{{ $summary['Total de Transações'] }}</td>
+                </tr>
+                <tr>
+                    <th>Valor Total (Bruto):</th>
+                    <td>R$ {{ number_format($summary['Valor Total (Bruto)'], 2, ',', '.') }}</td>
+                    <th>Valor Total (Líquido):</th>
+                    <td>R$ {{ number_format($summary['Valor Total (Líquido)'], 2, ',', '.') }}</td>
+                </tr>
+                <tr>
+                    <th>Total Descontos:</th>
+                    <td>R$ {{ number_format($summary['Total Descontos'], 2, ',', '.') }}</td>
+                    <th>Total Glosas:</th>
+                    <td>R$ {{ number_format($summary['Total Glosas'], 2, ',', '.') }}</td>
+                </tr>
+                <tr>
+                    <th>Total Recebido:</th>
+                    <td class="highlight">R$ {{ number_format($summary['Total Recebido'], 2, ',', '.') }}</td>
+                    <th>Total Pendente:</th>
+                    <td>R$ {{ number_format($summary['Total Pendente'], 2, ',', '.') }}</td>
+                </tr>
+            </table>
+        </div>
+
+        @if(isset($payment_methods))
+        <div class="summary-grid">
+            <div class="summary-box">
+                <h3>Formas de Pagamento</h3>
+                <table class="breakdown-table">
+                    <tr>
+                        <th>Método</th>
+                        <th>Quantidade</th>
+                        <th>Total</th>
+                    </tr>
+                    @foreach($payment_methods as $method => $data)
+                    <tr>
+                        <td>{{ ucfirst($method ?: 'N/A') }}</td>
+                        <td class="text-center">{{ $data['count'] }}</td>
+                        <td class="text-right">R$ {{ number_format($data['total'], 2, ',', '.') }}</td>
+                    </tr>
+                    @endforeach
+                </table>
+            </div>
+
+            <div class="summary-box">
+                <h3>Convênios</h3>
+                <table class="breakdown-table">
+                    <tr>
+                        <th>Convênio</th>
+                        <th>Quantidade</th>
+                        <th>Total</th>
+                    </tr>
+                    @foreach($health_plans as $plan => $data)
+                    <tr>
+                        <td>{{ $plan }}</td>
+                        <td class="text-center">{{ $data['count'] }}</td>
+                        <td class="text-right">R$ {{ number_format($data['total'], 2, ',', '.') }}</td>
+                    </tr>
+                    @endforeach
+                </table>
+            </div>
+        </div>
+        @endif
     </div>
     @endif
 
     @if(!empty($data))
+        <h2>Detalhamento das Transações</h2>
         <table class="main-table">
             <thead>
                 <tr>
                     @foreach(array_keys($data[0]) as $header)
-                        <th>{{ ucwords(str_replace('_', ' ', $header)) }}</th>
+                        <th>{{ $header }}</th>
                     @endforeach
                 </tr>
             </thead>
             <tbody>
                 @foreach($data as $row)
                     <tr>
-                        @foreach($row as $cell)
-                            <td>{{ is_numeric($cell) ? number_format($cell, 2, ',', '.') : $cell }}</td>
+                        @foreach($row as $key => $cell)
+                            <td @if(in_array($key, ['Valor Base', 'Desconto', 'Glosa', 'Valor Total'])) class="text-right" @endif>
+                                @if(in_array($key, ['Valor Base', 'Desconto', 'Glosa', 'Valor Total']))
+                                    R$ {{ number_format($cell, 2, ',', '.') }}
+                                @else
+                                    {{ $cell }}
+                                @endif
+                            </td>
                         @endforeach
                     </tr>
                 @endforeach
@@ -132,7 +232,7 @@
     @endif
 
     <div class="footer">
-        <p>Este é um relatório gerado automaticamente pelo sistema.</p>
+        <p>Este relatório foi gerado automaticamente pelo sistema em {{ $generatedAt }}</p>
     </div>
 </body>
 </html> 
