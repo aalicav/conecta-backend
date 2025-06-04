@@ -54,8 +54,10 @@ class ReportService
             $generation->markAsCompleted(count($reportData), $fileSize);
             
             // If the report is set to be sent to recipients and has recipients defined
-            if (($report->recipients && count($report->recipients)) || 
-                ($parameters['recipients'] && count($parameters['recipients']))) {
+            $reportRecipients = $report->recipients ?? [];
+            $paramRecipients = $parameters['recipients'] ?? [];
+            
+            if (!empty($reportRecipients) || !empty($paramRecipients)) {
                 // Would trigger a job to send the report via email here
                 // $this->sendReportToRecipients($generation);
             }
