@@ -31,6 +31,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Api\HealthPlanDashboardController;
 use App\Http\Controllers\Api\SchedulingExceptionController;
 use App\Http\Controllers\Api\EntityDocumentTypeController;
+use App\Http\Controllers\Api\BillingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -212,6 +213,14 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
 
     // Notifications
     Route::post('/notifications/pending-registrations', [NotificationController::class, 'notifyPendingRegistrations']);
+
+    // Billing
+    Route::prefix('billing')->group(function () {
+        Route::get('/overview', [BillingController::class, 'overview']);
+        Route::get('/transactions', [BillingController::class, 'transactions']);
+        Route::get('/transactions/{id}/invoice', [BillingController::class, 'generateInvoice']);
+        Route::patch('/transactions/{id}/status', [BillingController::class, 'updateStatus']);
+    });
 
     // Profile routes
     Route::prefix('profile')->group(function () {
