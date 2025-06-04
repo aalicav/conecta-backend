@@ -130,26 +130,59 @@ class ReportService
      */
     public function generateCsvFile(string $filePath, array $data): void
     {
-        if (empty($data)) {
-            // Create an empty CSV with a default header
-            Storage::put($filePath, "No data available\n");
-            return;
-        }
-        
         // Open a temporary file
         $handle = fopen('php://temp', 'w+');
         
-        // Add headers (keys from the first data item)
-        $headers = array_keys($data[0]);
-        fputcsv($handle, $headers);
-        
-        // Add data rows
-        foreach ($data as $row) {
-            // Ensure all rows have the same keys as the headers
-            $rowData = array_map(function($header) use ($row) {
-                return $row[$header] ?? '';
-            }, $headers);
-            fputcsv($handle, $rowData);
+        if (empty($data)) {
+            // For empty data, create headers based on report type
+            $headers = ['Data', 'Mensagem'];
+            fputcsv($handle, $headers);
+            fputcsv($handle, [now()->format('d/m/Y H:i:s'), 'Nenhum dado encontrado para o período selecionado']);
+        } else {
+            // If we have data in the expected format (summary + transactions)
+            if (isset($data['summary']) && isset($data['transactions'])) {
+                // Write summary first
+                fputcsv($handle, ['RESUMO']);
+                foreach ($data['summary'] as $key => $value) {
+                    fputcsv($handle, [$key, is_numeric($value) ? number_format($value, 2, ',', '.') : $value]);
+                }
+                
+                // Add a blank line between summary and transactions
+                fputcsv($handle, []);
+                
+                // Write transactions
+                if (!empty($data['transactions'])) {
+                    // Add transactions header
+                    fputcsv($handle, ['TRANSAÇÕES']);
+                    
+                    // Add headers (keys from the first transaction)
+                    $headers = array_keys($data['transactions'][0]);
+                    fputcsv($handle, $headers);
+                    
+                    // Add transaction rows
+                    foreach ($data['transactions'] as $row) {
+                        $rowData = array_map(function($header) use ($row) {
+                            $value = $row[$header] ?? '';
+                            return is_numeric($value) ? number_format($value, 2, ',', '.') : $value;
+                        }, $headers);
+                        fputcsv($handle, $rowData);
+                    }
+                }
+            } else {
+                // Regular data array
+                // Add headers (keys from the first data item)
+                $headers = array_keys($data[0]);
+                fputcsv($handle, $headers);
+                
+                // Add data rows
+                foreach ($data as $row) {
+                    $rowData = array_map(function($header) use ($row) {
+                        $value = $row[$header] ?? '';
+                        return is_numeric($value) ? number_format($value, 2, ',', '.') : $value;
+                    }, $headers);
+                    fputcsv($handle, $rowData);
+                }
+            }
         }
         
         // Get the contents of the temporary file
@@ -336,6 +369,28 @@ class ReportService
         }
         
         $payments = $query->get();
+        
+        // If no payments found, return empty data with proper structure
+        if ($payments->isEmpty()) {
+            $emptyData = [
+                'summary' => [
+                    'Período' => $startDate->format('d/m/Y') . ' até ' . $endDate->format('d/m/Y'),
+                    'Total de Transações' => 0,
+                    'Valor Total (Bruto)' => 0,
+                    'Total Descontos' => 0,
+                    'Total Glosas' => 0,
+                    'Valor Total (Líquido)' => 0,
+                    'Total Recebido' => 0,
+                    'Total Pendente' => 0,
+                    'Total Cancelado' => 0,
+                ],
+                'payment_methods' => [],
+                'health_plans' => [],
+                'transactions' => []
+            ];
+            
+            return $emptyData;
+        }
         
         // Transform into report data
         $reportData = [];
