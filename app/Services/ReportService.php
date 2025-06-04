@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Exception;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class ReportService
 {
@@ -188,79 +189,21 @@ class ReportService
      */
     public function generatePdfFile(string $filePath, array $data, Report $report): void
     {
-        // Placeholder - would use DOMPDF or similar library
-        $htmlContent = '<html><head><title>' . $report->name . '</title></head><body>';
-        $htmlContent .= '<h1>' . $report->name . '</h1>';
-        $htmlContent .= '<p>Generated on: ' . now()->format('Y-m-d H:i:s') . '</p>';
-        
-        // Check if data has summary structure
         $hasSummary = isset($data['summary']) && isset($data['transactions']);
         $reportData = $hasSummary ? $data['transactions'] : $data;
+
+        $view = view('reports.pdf', [
+            'report' => $report,
+            'data' => $reportData,
+            'summary' => $hasSummary ? $data['summary'] : null,
+            'generatedAt' => now()->format('Y-m-d H:i:s'),
+        ])->render();
+
+        $pdf = PDF::loadHTML($view);
+        $pdf->setPaper('A4', 'portrait');
         
-        // Add summary section if available
-        if ($hasSummary && !empty($data['summary'])) {
-            $htmlContent .= '<h2>Summary</h2>';
-            $htmlContent .= '<table border="1" cellpadding="5">';
-            foreach ($data['summary'] as $key => $value) {
-                $htmlContent .= '<tr>';
-                $htmlContent .= '<th>' . htmlspecialchars(ucwords(str_replace('_', ' ', $key))) . '</th>';
-                $htmlContent .= '<td>' . htmlspecialchars(is_numeric($value) ? number_format($value, 2) : $value) . '</td>';
-                $htmlContent .= '</tr>';
-            }
-            $htmlContent .= '</table>';
-            $htmlContent .= '<br><h2>Transactions</h2>';
-        }
-        
-        if (!empty($reportData)) {
-            $htmlContent .= '<table border="1" cellpadding="5">';
-            
-            // Get headers from the first data item if it exists
-            $headers = array_keys($reportData[0]);
-            
-            // Headers
-            $htmlContent .= '<tr>';
-            foreach ($headers as $header) {
-                $htmlContent .= '<th>' . htmlspecialchars($header) . '</th>';
-            }
-            $htmlContent .= '</tr>';
-            
-            // Data rows
-            foreach ($reportData as $row) {
-                $htmlContent .= '<tr>';
-                foreach ($row as $cell) {
-                    $htmlContent .= '<td>' . htmlspecialchars($cell) . '</td>';
-                }
-                $htmlContent .= '</tr>';
-            }
-            
-            $htmlContent .= '</table>';
-        } else {
-            // If data is empty, show a message and create a default table structure
-            $htmlContent .= '<p>No data available for this report.</p>';
-            
-            // Get default headers based on report type
-            $headers = $this->getDefaultHeaders($report->type);
-            
-            if (!empty($headers)) {
-                $htmlContent .= '<table border="1" cellpadding="5">';
-                $htmlContent .= '<tr>';
-                foreach ($headers as $header) {
-                    $htmlContent .= '<th>' . htmlspecialchars($header) . '</th>';
-                }
-                $htmlContent .= '</tr>';
-                $htmlContent .= '<tr>';
-                foreach ($headers as $header) {
-                    $htmlContent .= '<td>-</td>';
-                }
-                $htmlContent .= '</tr>';
-                $htmlContent .= '</table>';
-            }
-        }
-        
-        $htmlContent .= '</body></html>';
-        
-        // In a real implementation, we would convert HTML to PDF using a library
-        Storage::put($filePath, $htmlContent);
+        // Save the PDF to storage
+        Storage::put($filePath, $pdf->output());
     }
 
     /**
