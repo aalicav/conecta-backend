@@ -37,7 +37,6 @@ return new class extends Migration
             
             // Indexes
             $table->index(['status', 'due_date']);
-            $table->index(['entity_type', 'entity_id']);
             $table->index('health_plan_id');
         });
     }
