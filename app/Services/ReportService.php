@@ -137,6 +137,13 @@ class ReportService
      */
     public function generateCsvFile(string $filePath, array $data): void
     {
+        if (empty($data)) {
+            $data[] = [
+                'Data' => date('d/m/Y H:i:s'),
+                'Mensagem' => 'Nenhum dado encontrado para o período selecionado'
+            ];
+        }
+
         // Get the full path
         $fullPath = storage_path('app/' . $filePath);
         
@@ -146,70 +153,16 @@ class ReportService
             mkdir($directory, 0755, true);
         }
 
-        // Create a temporary file with UTF-8 BOM for Excel compatibility
-        $handle = fopen($fullPath, 'w+b');
+        // Open file for writing
+        $handle = fopen($fullPath, 'w');
         
         try {
-            // Add BOM for UTF-8
-            fwrite($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            // Write headers first
+            fputcsv($handle, array_keys($data[0]), ';');
             
-            if (empty($data)) {
-                // For empty data, create headers based on report type
-                $headers = ['Data', 'Mensagem'];
-                fputcsv($handle, $headers, ';'); // Using ; as delimiter for Excel compatibility
-                fputcsv($handle, [now()->format('d/m/Y H:i:s'), 'Nenhum dado encontrado para o período selecionado'], ';');
-            } else {
-                // If we have data in the expected format (summary + transactions)
-                if (isset($data['summary']) && isset($data['transactions'])) {
-                    // Write summary first
-                    fputcsv($handle, ['RESUMO'], ';');
-                    foreach ($data['summary'] as $key => $value) {
-                        $formattedValue = is_numeric($value) ? str_replace('.', ',', number_format($value, 2, ',', '.')) : $value;
-                        fputcsv($handle, [$key, $formattedValue], ';');
-                    }
-                    
-                    // Add a blank line between summary and transactions
-                    fputcsv($handle, [], ';');
-                    
-                    // Write transactions
-                    if (!empty($data['transactions'])) {
-                        // Add transactions header
-                        fputcsv($handle, ['TRANSAÇÕES'], ';');
-                        
-                        // Add headers (keys from the first transaction)
-                        $headers = array_keys($data['transactions'][0]);
-                        fputcsv($handle, $headers, ';');
-                        
-                        // Add transaction rows
-                        foreach ($data['transactions'] as $row) {
-                            $rowData = array_map(function($header) use ($row) {
-                                $value = $row[$header] ?? '';
-                                if (is_numeric($value)) {
-                                    return str_replace('.', ',', number_format($value, 2, ',', '.'));
-                                }
-                                return $value;
-                            }, $headers);
-                            fputcsv($handle, $rowData, ';');
-                        }
-                    }
-                } else {
-                    // Regular data array
-                    // Add headers (keys from the first data item)
-                    $headers = array_keys($data[0]);
-                    fputcsv($handle, $headers, ';');
-                    
-                    // Add data rows
-                    foreach ($data as $row) {
-                        $rowData = array_map(function($header) use ($row) {
-                            $value = $row[$header] ?? '';
-                            if (is_numeric($value)) {
-                                return str_replace('.', ',', number_format($value, 2, ',', '.'));
-                            }
-                            return $value;
-                        }, $headers);
-                        fputcsv($handle, $rowData, ';');
-                    }
-                }
+            // Write data rows
+            foreach ($data as $row) {
+                fputcsv($handle, $row, ';');
             }
         } finally {
             fclose($handle);
@@ -373,7 +326,14 @@ class ReportService
             ? Carbon::parse($parameters['end_date']) 
             : Carbon::now();
         
-        $query = Payment::with(['payable', 'payable.healthPlan', 'payable.patient', 'payable.professional'])
+        $query = Payment::with([
+                'payable',
+                'payable.healthPlan',
+                'payable.patient',
+                'payable.professional',
+                'payable.clinic',
+                'payable.procedure'
+            ])
             ->whereBetween('created_at', [$startDate, $endDate]);
         
         // Apply type filter if provided
@@ -395,117 +355,59 @@ class ReportService
         
         $payments = $query->get();
         
-        // If no payments found, return empty data with proper structure
-        if ($payments->isEmpty()) {
-            $emptyData = [
-                'summary' => [
-                    'Período' => $startDate->format('d/m/Y') . ' até ' . $endDate->format('d/m/Y'),
-                    'Total de Transações' => 0,
-                    'Valor Total (Bruto)' => 0,
-                    'Total Descontos' => 0,
-                    'Total Glosas' => 0,
-                    'Valor Total (Líquido)' => 0,
-                    'Total Recebido' => 0,
-                    'Total Pendente' => 0,
-                    'Total Cancelado' => 0,
-                ],
-                'payment_methods' => [],
-                'health_plans' => [],
-                'transactions' => []
-            ];
-            
-            return $emptyData;
-        }
-        
         // Transform into report data
         $reportData = [];
         foreach ($payments as $payment) {
-            $healthPlanName = '';
-            $patientName = '';
-            $professionalName = '';
-            $procedureName = '';
+            $payable = $payment->payable;
             
-            // Try to get related data if available
-            if ($payment->payable) {
-                if (method_exists($payment->payable, 'healthPlan') && $payment->payable->healthPlan) {
-                    $healthPlanName = $payment->payable->healthPlan->name;
-                }
-                if (method_exists($payment->payable, 'patient') && $payment->payable->patient) {
-                    $patientName = $payment->payable->patient->name;
-                }
-                if (method_exists($payment->payable, 'professional') && $payment->payable->professional) {
-                    $professionalName = $payment->payable->professional->name;
-                }
-                if (method_exists($payment->payable, 'procedure_name')) {
-                    $procedureName = $payment->payable->procedure_name;
-                }
-            }
+            // Get related data safely
+            $healthPlan = $payable && method_exists($payable, 'healthPlan') && $payable->healthPlan 
+                ? $payable->healthPlan : null;
+            $patient = $payable && method_exists($payable, 'patient') && $payable->patient 
+                ? $payable->patient : null;
+            $professional = $payable && method_exists($payable, 'professional') && $payable->professional 
+                ? $payable->professional : null;
+            $clinic = $payable && method_exists($payable, 'clinic') && $payable->clinic 
+                ? $payable->clinic : null;
+            $procedure = $payable && method_exists($payable, 'procedure') && $payable->procedure 
+                ? $payable->procedure : null;
+            
+            // Get appointment date if available
+            $appointmentDate = $payable && method_exists($payable, 'scheduled_at') && $payable->scheduled_at 
+                ? Carbon::parse($payable->scheduled_at)->format('d/m/Y H:i') 
+                : null;
             
             $reportData[] = [
-                'ID' => $payment->id,
-                'Data' => $payment->created_at->format('d/m/Y'),
-                'Hora' => $payment->created_at->format('H:i'),
-                'Paciente' => $patientName ?: 'N/A',
-                'Profissional' => $professionalName ?: 'N/A',
-                'Procedimento' => $procedureName ?: 'N/A',
-                'Convênio' => $healthPlanName ?: 'Particular',
-                'Tipo' => ucfirst($payment->payment_type),
-                'Valor Base' => $payment->amount,
-                'Desconto' => $payment->discount_amount,
-                'Glosa' => $payment->gloss_amount,
-                'Valor Total' => $payment->total_amount,
-                'Status' => ucfirst($payment->status),
+                'ID Pagamento' => $payment->id,
+                'Data Pagamento' => $payment->created_at->format('d/m/Y'),
+                'Hora Pagamento' => $payment->created_at->format('H:i'),
+                'ID Paciente' => $patient ? $patient->id : 'N/A',
+                'Nome Paciente' => $patient ? $patient->name : 'N/A',
+                'CPF Paciente' => $patient ? $patient->cpf : 'N/A',
+                'ID Profissional' => $professional ? $professional->id : 'N/A',
+                'Nome Profissional' => $professional ? $professional->name : 'N/A',
+                'Especialidade' => $professional ? $professional->specialty : 'N/A',
+                'ID Clinica' => $clinic ? $clinic->id : 'N/A',
+                'Nome Clinica' => $clinic ? $clinic->name : 'N/A',
+                'ID Convenio' => $healthPlan ? $healthPlan->id : 'N/A',
+                'Nome Convenio' => $healthPlan ? $healthPlan->name : 'Particular',
+                'Codigo Procedimento' => $procedure ? $procedure->code : 'N/A',
+                'Nome Procedimento' => $procedure ? $procedure->name : ($payable->procedure_name ?? 'N/A'),
+                'Data Agendamento' => $appointmentDate ?: 'N/A',
+                'Tipo Pagamento' => ucfirst($payment->payment_type),
                 'Forma Pagamento' => $payment->payment_method ? ucfirst($payment->payment_method) : 'N/A',
-                'Data Pagamento' => $payment->paid_at ? $payment->paid_at->format('d/m/Y') : 'N/A'
+                'Valor Base' => number_format($payment->amount, 2, ',', '.'),
+                'Desconto' => number_format($payment->discount_amount, 2, ',', '.'),
+                'Glosa' => number_format($payment->gloss_amount, 2, ',', '.'),
+                'Valor Total' => number_format($payment->total_amount, 2, ',', '.'),
+                'Status' => ucfirst($payment->status),
+                'Data Compensacao' => $payment->paid_at ? $payment->paid_at->format('d/m/Y') : 'N/A',
+                'Referencia' => $payment->reference_id ?: 'N/A',
+                'Observacoes' => $payment->notes ?: ''
             ];
         }
-        
-        // Add summary data with detailed breakdowns
-        $summary = [
-            'Período' => $startDate->format('d/m/Y') . ' até ' . $endDate->format('d/m/Y'),
-            'Total de Transações' => $payments->count(),
-            'Valor Total (Bruto)' => $payments->sum('amount'),
-            'Total Descontos' => $payments->sum('discount_amount'),
-            'Total Glosas' => $payments->sum('gloss_amount'),
-            'Valor Total (Líquido)' => $payments->sum('total_amount'),
-            'Total Recebido' => $payments->where('status', 'paid')->sum('total_amount'),
-            'Total Pendente' => $payments->where('status', 'pending')->sum('total_amount'),
-            'Total Cancelado' => $payments->where('status', 'cancelled')->sum('total_amount'),
-        ];
 
-        // Add payment method breakdown
-        $paymentMethodBreakdown = $payments
-            ->where('status', 'paid')
-            ->groupBy('payment_method')
-            ->map(function ($group) {
-                return [
-                    'count' => $group->count(),
-                    'total' => $group->sum('total_amount')
-                ];
-            })
-            ->toArray();
-
-        // Add health plan breakdown
-        $healthPlanBreakdown = $payments
-            ->groupBy(function ($payment) {
-                return $payment->payable && method_exists($payment->payable, 'healthPlan') && $payment->payable->healthPlan
-                    ? $payment->payable->healthPlan->name
-                    : 'Particular';
-            })
-            ->map(function ($group) {
-                return [
-                    'count' => $group->count(),
-                    'total' => $group->sum('total_amount')
-                ];
-            })
-            ->toArray();
-
-        return [
-            'summary' => $summary,
-            'payment_methods' => $paymentMethodBreakdown,
-            'health_plans' => $healthPlanBreakdown,
-            'transactions' => $reportData
-        ];
+        return $reportData;
     }
 
     /**
