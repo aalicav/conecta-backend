@@ -15,7 +15,7 @@ class AddPatientJourneyToAppointments extends Migration
     {
         Schema::table('appointments', function (Blueprint $table) {
             // Scheduling and confirmation tracking
-            $table->timestamp('scheduled_at')->nullable()->after('date');
+            $table->timestamp('scheduled_at')->nullable()->after('scheduled_date');
             $table->timestamp('pre_confirmation_sent_at')->nullable();
             $table->timestamp('pre_confirmation_response_at')->nullable();
             $table->boolean('pre_confirmation_response')->nullable();
