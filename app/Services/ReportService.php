@@ -128,7 +128,8 @@ class ReportService
     public function generateCsvFile(string $filePath, array $data): void
     {
         if (empty($data)) {
-            Storage::put($filePath, '');
+            // Create an empty CSV with a default header
+            Storage::put($filePath, "No data available\n");
             return;
         }
         
@@ -136,11 +137,16 @@ class ReportService
         $handle = fopen('php://temp', 'w+');
         
         // Add headers (keys from the first data item)
-        fputcsv($handle, array_keys($data[0]));
+        $headers = array_keys($data[0]);
+        fputcsv($handle, $headers);
         
         // Add data rows
         foreach ($data as $row) {
-            fputcsv($handle, $row);
+            // Ensure all rows have the same keys as the headers
+            $rowData = array_map(function($header) use ($row) {
+                return $row[$header] ?? '';
+            }, $headers);
+            fputcsv($handle, $rowData);
         }
         
         // Get the contents of the temporary file
