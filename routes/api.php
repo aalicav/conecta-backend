@@ -171,7 +171,11 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/payments/{payment}/glosses/{gloss}/revert', [PaymentController::class, 'revertGloss'])->middleware('permission:manage financials');
     
     // Reports
+    Route::get('/reports', [ReportController::class, 'index']);
+    Route::get('/reports/solicitations', [ReportController::class, 'solicitations']);
     Route::get('/reports/appointments', [ReportController::class, 'appointments']);
+    Route::get('/reports/providers', [ReportController::class, 'providers']);
+    Route::get('/reports/health-plans', [ReportController::class, 'healthPlans']);
     Route::get('/reports/financials', [ReportController::class, 'financials'])->middleware('permission:view financial reports');
     Route::get('/reports/performance', [ReportController::class, 'performance']);
     Route::post('/reports/export', [ReportController::class, 'export']);

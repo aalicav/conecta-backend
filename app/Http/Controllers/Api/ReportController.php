@@ -12,6 +12,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use App\Models\Solicitation;
+use App\Models\Appointment;
+use App\Models\HealthPlan;
+use App\Models\Professional;
+use App\Models\Clinic;
+use Carbon\Carbon;
 
 class ReportController extends Controller
 {
@@ -764,6 +770,296 @@ class ReportController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to export report',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate solicitations report
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function solicitations(Request $request): JsonResponse
+    {
+        try {
+            $query = Solicitation::with(['healthPlan', 'patient', 'tuss', 'appointments']);
+
+            // Filtrar por plano de saúde se o usuário for admin do plano
+            if (Auth::user()->hasRole('plan_admin')) {
+                $query->where('health_plan_id', Auth::user()->entity_id);
+            }
+            // Filtrar por plano de saúde específico se fornecido
+            elseif ($request->has('health_plan_id')) {
+                $query->where('health_plan_id', $request->health_plan_id);
+            }
+
+            // Filtrar por período
+            if ($request->has('start_date')) {
+                $query->whereDate('created_at', '>=', $request->start_date);
+            }
+            if ($request->has('end_date')) {
+                $query->whereDate('created_at', '<=', $request->end_date);
+            }
+
+            // Filtrar por status
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            // Agrupar por status
+            $byStatus = $query->clone()
+                ->select('status', DB::raw('count(*) as total'))
+                ->groupBy('status')
+                ->get();
+
+            // Agrupar por mês
+            $byMonth = $query->clone()
+                ->select(
+                    DB::raw('DATE_FORMAT(created_at, "%Y-%m") as month'),
+                    DB::raw('count(*) as total')
+                )
+                ->groupBy('month')
+                ->orderBy('month')
+                ->get();
+
+            // Total de solicitações
+            $total = $query->clone()->count();
+
+            // Tempo médio de agendamento (entre criação e primeiro agendamento)
+            $avgSchedulingTime = $query->clone()
+                ->whereHas('appointments')
+                ->join('appointments', 'solicitations.id', '=', 'appointments.solicitation_id')
+                ->select(DB::raw('AVG(TIMESTAMPDIFF(HOUR, solicitations.created_at, appointments.created_at)) as avg_time'))
+                ->first()
+                ->avg_time;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'total' => $total,
+                    'by_status' => $byStatus,
+                    'by_month' => $byMonth,
+                    'avg_scheduling_time' => round($avgSchedulingTime, 2),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao gerar relatório de solicitações',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate appointments report
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function appointments(Request $request): JsonResponse
+    {
+        try {
+            $query = Appointment::with(['solicitation.healthPlan', 'provider']);
+
+            // Filtrar por plano de saúde se o usuário for admin do plano
+            if (Auth::user()->hasRole('plan_admin')) {
+                $query->whereHas('solicitation', function ($q) {
+                    $q->where('health_plan_id', Auth::user()->entity_id);
+                });
+            }
+            // Filtrar por plano de saúde específico se fornecido
+            elseif ($request->has('health_plan_id')) {
+                $query->whereHas('solicitation', function ($q) use ($request) {
+                    $q->where('health_plan_id', $request->health_plan_id);
+                });
+            }
+
+            // Filtrar por período
+            if ($request->has('start_date')) {
+                $query->whereDate('scheduled_date', '>=', $request->start_date);
+            }
+            if ($request->has('end_date')) {
+                $query->whereDate('scheduled_date', '<=', $request->end_date);
+            }
+
+            // Filtrar por status
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            // Agrupar por status
+            $byStatus = $query->clone()
+                ->select('status', DB::raw('count(*) as total'))
+                ->groupBy('status')
+                ->get();
+
+            // Agrupar por mês
+            $byMonth = $query->clone()
+                ->select(
+                    DB::raw('DATE_FORMAT(scheduled_date, "%Y-%m") as month'),
+                    DB::raw('count(*) as total')
+                )
+                ->groupBy('month')
+                ->orderBy('month')
+                ->get();
+
+            // Agrupar por tipo de provedor
+            $byProviderType = $query->clone()
+                ->select('provider_type', DB::raw('count(*) as total'))
+                ->groupBy('provider_type')
+                ->get();
+
+            // Total de agendamentos
+            $total = $query->clone()->count();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'total' => $total,
+                    'by_status' => $byStatus,
+                    'by_month' => $byMonth,
+                    'by_provider_type' => $byProviderType
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao gerar relatório de agendamentos',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate providers report
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function providers(Request $request): JsonResponse
+    {
+        try {
+            // Profissionais mais agendados
+            $topProfessionals = Appointment::where('provider_type', Professional::class)
+                ->select(
+                    'provider_id',
+                    DB::raw('count(*) as total_appointments')
+                )
+                ->with('provider:id,name')
+                ->groupBy('provider_id')
+                ->orderByDesc('total_appointments')
+                ->limit(10)
+                ->get();
+
+            // Clínicas mais agendadas
+            $topClinics = Appointment::where('provider_type', Clinic::class)
+                ->select(
+                    'provider_id',
+                    DB::raw('count(*) as total_appointments')
+                )
+                ->with('provider:id,name')
+                ->groupBy('provider_id')
+                ->orderByDesc('total_appointments')
+                ->limit(10)
+                ->get();
+
+            // Taxa de conclusão por provedor
+            $completionRates = Appointment::select(
+                'provider_type',
+                'provider_id',
+                DB::raw('count(*) as total_appointments'),
+                DB::raw('sum(case when status = "completed" then 1 else 0 end) as completed_appointments')
+            )
+                ->with('provider:id,name')
+                ->groupBy('provider_type', 'provider_id')
+                ->having('total_appointments', '>=', 5)
+                ->get()
+                ->map(function ($item) {
+                    $item->completion_rate = round(($item->completed_appointments / $item->total_appointments) * 100, 2);
+                    return $item;
+                })
+                ->sortByDesc('completion_rate')
+                ->values()
+                ->take(10);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'top_professionals' => $topProfessionals,
+                    'top_clinics' => $topClinics,
+                    'top_completion_rates' => $completionRates
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao gerar relatório de prestadores',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate health plans report
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function healthPlans(Request $request): JsonResponse
+    {
+        try {
+            // Se for admin de plano de saúde, retorna apenas dados do seu plano
+            if (Auth::user()->hasRole('plan_admin')) {
+                $healthPlanId = Auth::user()->entity_id;
+                
+                $data = [
+                    'health_plan' => HealthPlan::find($healthPlanId),
+                    'total_solicitations' => Solicitation::where('health_plan_id', $healthPlanId)->count(),
+                    'total_appointments' => Appointment::whereHas('solicitation', function ($q) use ($healthPlanId) {
+                        $q->where('health_plan_id', $healthPlanId);
+                    })->count(),
+                    'solicitations_by_status' => Solicitation::where('health_plan_id', $healthPlanId)
+                        ->select('status', DB::raw('count(*) as total'))
+                        ->groupBy('status')
+                        ->get(),
+                    'appointments_by_status' => Appointment::whereHas('solicitation', function ($q) use ($healthPlanId) {
+                        $q->where('health_plan_id', $healthPlanId);
+                    })
+                        ->select('status', DB::raw('count(*) as total'))
+                        ->groupBy('status')
+                        ->get(),
+                ];
+            } else {
+                // Para super admin, retorna dados de todos os planos
+                $data = [
+                    'total_health_plans' => HealthPlan::count(),
+                    'active_health_plans' => HealthPlan::where('status', 'approved')->count(),
+                    'top_health_plans' => Solicitation::select(
+                        'health_plan_id',
+                        DB::raw('count(*) as total_solicitations')
+                    )
+                        ->with('healthPlan:id,name')
+                        ->groupBy('health_plan_id')
+                        ->orderByDesc('total_solicitations')
+                        ->limit(10)
+                        ->get(),
+                    'health_plans_by_status' => HealthPlan::select('status', DB::raw('count(*) as total'))
+                        ->groupBy('status')
+                        ->get(),
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $data
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao gerar relatório de planos de saúde',
                 'error' => $e->getMessage()
             ], 500);
         }
