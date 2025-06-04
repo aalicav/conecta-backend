@@ -247,4 +247,67 @@ class BillingController extends Controller
 
         return response()->json(['message' => 'Verificação de atrasos concluída']);
     }
+
+    /**
+     * Provides an overview of billing information including totals and recent activity
+     */
+    public function overview(Request $request)
+    {
+        try {
+            // Get recent billing batches
+            $recentBatches = BillingBatch::with(['billingItems', 'fiscalDocuments'])
+                ->orderBy('created_at', 'desc')
+                ->limit(5)
+                ->get();
+
+            // Calculate overall statistics
+            $totalStats = [
+                'pending_amount' => BillingBatch::where('payment_status', 'pending')->sum('total_amount'),
+                'paid_amount' => BillingBatch::where('payment_status', 'paid')->sum('total_amount'),
+                'total_batches' => BillingBatch::count(),
+                'pending_batches' => BillingBatch::where('payment_status', 'pending')->count(),
+                'overdue_batches' => BillingBatch::where('payment_status', 'pending')
+                    ->where('due_date', '<', now())
+                    ->count()
+            ];
+
+            // Get payment status distribution
+            $paymentStatusDistribution = BillingBatch::select('payment_status', DB::raw('count(*) as total'))
+                ->groupBy('payment_status')
+                ->get();
+
+            // Get monthly billing totals for the last 6 months
+            $monthlyTotals = BillingBatch::select(
+                    DB::raw('DATE_FORMAT(billing_date, "%Y-%m") as month'),
+                    DB::raw('SUM(total_amount) as total_amount'),
+                    DB::raw('COUNT(*) as batch_count')
+                )
+                ->where('billing_date', '>=', now()->subMonths(6))
+                ->groupBy(DB::raw('DATE_FORMAT(billing_date, "%Y-%m")'))
+                ->orderBy('month', 'desc')
+                ->get();
+
+            // Get glosa statistics
+            $glosaStats = PaymentGloss::select(
+                    DB::raw('SUM(amount) as total_glosa_amount'),
+                    DB::raw('COUNT(*) as total_glosas'),
+                    DB::raw('COUNT(CASE WHEN resolution_status = "pending" THEN 1 END) as pending_glosas')
+                )
+                ->first();
+
+            return response()->json([
+                'total_statistics' => $totalStats,
+                'recent_batches' => $recentBatches,
+                'payment_status_distribution' => $paymentStatusDistribution,
+                'monthly_totals' => $monthlyTotals,
+                'glosa_statistics' => $glosaStats
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erro ao obter visão geral do faturamento',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 
