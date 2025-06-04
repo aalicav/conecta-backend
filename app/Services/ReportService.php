@@ -194,9 +194,12 @@ class ReportService
         if (!empty($data)) {
             $htmlContent .= '<table border="1" cellpadding="5">';
             
+            // Get headers from the first data item if it exists
+            $headers = array_keys($data[0]);
+            
             // Headers
             $htmlContent .= '<tr>';
-            foreach (array_keys($data[0]) as $header) {
+            foreach ($headers as $header) {
                 $htmlContent .= '<th>' . htmlspecialchars($header) . '</th>';
             }
             $htmlContent .= '</tr>';
@@ -212,13 +215,83 @@ class ReportService
             
             $htmlContent .= '</table>';
         } else {
+            // If data is empty, show a message and create a default table structure
             $htmlContent .= '<p>No data available for this report.</p>';
+            
+            // Get default headers based on report type
+            $headers = $this->getDefaultHeaders($report->type);
+            
+            if (!empty($headers)) {
+                $htmlContent .= '<table border="1" cellpadding="5">';
+                $htmlContent .= '<tr>';
+                foreach ($headers as $header) {
+                    $htmlContent .= '<th>' . htmlspecialchars($header) . '</th>';
+                }
+                $htmlContent .= '</tr>';
+                $htmlContent .= '<tr>';
+                foreach ($headers as $header) {
+                    $htmlContent .= '<td>-</td>';
+                }
+                $htmlContent .= '</tr>';
+                $htmlContent .= '</table>';
+            }
         }
         
         $htmlContent .= '</body></html>';
         
         // In a real implementation, we would convert HTML to PDF using a library
         Storage::put($filePath, $htmlContent);
+    }
+
+    /**
+     * Get default headers based on report type.
+     *
+     * @param string $reportType
+     * @return array
+     */
+    private function getDefaultHeaders(string $reportType): array
+    {
+        switch ($reportType) {
+            case 'financial':
+                return [
+                    'ID',
+                    'Reference',
+                    'Type',
+                    'Date',
+                    'Amount',
+                    'Discount',
+                    'Gloss',
+                    'Total',
+                    'Status',
+                    'Payment Method',
+                    'Paid Date',
+                    'Health Plan'
+                ];
+            case 'appointment':
+                return [
+                    'id',
+                    'scheduled_date',
+                    'patient_name',
+                    'professional_name',
+                    'clinic_name',
+                    'procedure_name',
+                    'status',
+                    'health_plan_name'
+                ];
+            case 'performance':
+                return [
+                    'id',
+                    'name',
+                    'specialty',
+                    'total_appointments',
+                    'attendance_rate',
+                    'patient_satisfaction',
+                    'efficiency',
+                    'overall_score'
+                ];
+            default:
+                return [];
+        }
     }
 
     /**
@@ -347,6 +420,24 @@ class ReportService
                 'summary' => $summary,
                 'transactions' => $reportData
             ];
+        }
+        
+        // If no data was found, return an array with the expected structure
+        if (empty($reportData)) {
+            return [[
+                'ID' => '',
+                'Reference' => '',
+                'Type' => '',
+                'Date' => '',
+                'Amount' => '',
+                'Discount' => '',
+                'Gloss' => '',
+                'Total' => '',
+                'Status' => '',
+                'Payment Method' => '',
+                'Paid Date' => '',
+                'Health Plan' => '',
+            ]];
         }
         
         return $reportData;
