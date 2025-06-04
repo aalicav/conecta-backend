@@ -26,53 +26,66 @@ class ReportService
      */
     public function generateReport(Report $report, array $parameters = [], int $userId, bool $isScheduled = false): ReportGeneration
     {
-        // Generate the file path first
-        $format = $parameters['format'] ?? $report->file_format ?? 'pdf';
-        $fileName = $this->generateFileName($report, null);
-        $filePath = storage_path("app/public/reports/{$report->type}/{$fileName}.{$format}");
-        $storagePath = "public/reports/{$report->type}/{$fileName}.{$format}";
-
-        // Create the directory if it doesn't exist
-        $directory = dirname($filePath);
-        if (!file_exists($directory)) {
-            mkdir($directory, 0755, true);
-        }
-
-        // Create a new report generation record with the file path
-        $generation = ReportGeneration::create([
-            'report_id' => $report->id,
-            'file_format' => $format,
-            'file_path' => $storagePath,
-            'parameters' => array_merge($report->parameters ?? [], $parameters),
-            'generated_by' => $userId,
-            'started_at' => now(),
-            'status' => 'processing',
-            'was_scheduled' => $isScheduled,
-        ]);
-
         try {
+            // Generate the file path first
+            $format = $parameters['format'] ?? $report->file_format ?? 'pdf';
+            $fileName = $this->generateFileName($report, null);
+            
+            // Ensure base directory exists
+            $baseDir = storage_path('app/public/reports');
+            if (!file_exists($baseDir)) {
+                mkdir($baseDir, 0755, true);
+            }
+            
+            // Create type-specific directory
+            $typeDir = $baseDir . '/' . $report->type;
+            if (!file_exists($typeDir)) {
+                mkdir($typeDir, 0755, true);
+            }
+            
+            // Set storage paths
+            $storagePath = "public/reports/{$report->type}/{$fileName}.{$format}";
+            $fullPath = storage_path("app/{$storagePath}");
+
+            // Create a new report generation record with the file path
+            $generation = ReportGeneration::create([
+                'report_id' => $report->id,
+                'file_format' => $format,
+                'file_path' => $storagePath,
+                'parameters' => array_merge($report->parameters ?? [], $parameters),
+                'generated_by' => $userId,
+                'started_at' => now(),
+                'status' => 'processing',
+                'was_scheduled' => $isScheduled,
+            ]);
+
             // Generate report based on type
             $reportData = $this->getReportData($report, $generation->parameters);
             
             // Create the file
             $this->createReportFile($report, $generation, $reportData);
             
+            // Verify file exists
+            if (!file_exists($fullPath)) {
+                throw new Exception("Failed to create report file");
+            }
+            
             // Update the generation with file info
             $fileSize = $this->getFileSize($generation->file_path);
             $generation->markAsCompleted(is_array($reportData) ? count($reportData) : 0, $fileSize);
             
-            // If the report is set to be sent to recipients and has recipients defined
-            $reportRecipients = $report->recipients ?? [];
-            $paramRecipients = $parameters['recipients'] ?? [];
-            
-            if (!empty($reportRecipients) || !empty($paramRecipients)) {
-                // Would trigger a job to send the report via email here
-                // $this->sendReportToRecipients($generation);
-            }
-            
             return $generation;
         } catch (Exception $e) {
-            $generation->markAsFailed($e->getMessage());
+            \Log::error('Failed to generate report: ' . $e->getMessage(), [
+                'report_id' => $report->id,
+                'parameters' => $parameters,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            if (isset($generation)) {
+                $generation->markAsFailed($e->getMessage());
+            }
             throw $e;
         }
     }
@@ -153,23 +166,42 @@ class ReportService
             mkdir($directory, 0755, true);
         }
 
-        // Open file for writing
-        $handle = fopen($fullPath, 'w');
-        
         try {
+            // Open file for writing with proper encoding
+            $handle = fopen($fullPath, 'w');
+            if ($handle === false) {
+                throw new Exception("Could not open file for writing: {$fullPath}");
+            }
+
             // Write headers first
-            fputcsv($handle, array_keys($data[0]), ';');
+            if (!fputcsv($handle, array_keys($data[0]), ';')) {
+                throw new Exception("Failed to write headers to CSV file");
+            }
             
             // Write data rows
             foreach ($data as $row) {
-                fputcsv($handle, $row, ';');
+                if (!fputcsv($handle, $row, ';')) {
+                    throw new Exception("Failed to write data row to CSV file");
+                }
             }
-        } finally {
+
+            // Close the file
             fclose($handle);
+            
+            // Verify file exists and has content
+            if (!file_exists($fullPath) || filesize($fullPath) === 0) {
+                throw new Exception("CSV file was not created successfully or is empty");
+            }
+
+            // Ensure the file has the correct permissions
+            chmod($fullPath, 0644);
+        } catch (Exception $e) {
+            // Clean up if file exists but is incomplete
+            if (file_exists($fullPath)) {
+                unlink($fullPath);
+            }
+            throw new Exception("Failed to generate CSV file: " . $e->getMessage());
         }
-        
-        // Ensure the file has the correct permissions
-        chmod($fullPath, 0644);
     }
 
     /**
@@ -292,11 +324,13 @@ class ReportService
      */
     public function getFileSize(string $filePath): string
     {
-        if (!Storage::exists($filePath)) {
+        $fullPath = storage_path('app/' . $filePath);
+        
+        if (!file_exists($fullPath)) {
             return 'Unknown';
         }
         
-        $size = Storage::size($filePath);
+        $size = filesize($fullPath);
         
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
         $unitIndex = 0;
