@@ -15,7 +15,7 @@ class EnhanceGlosaManagement extends Migration
     {
         Schema::table('payment_glosses', function (Blueprint $table) {
             // Glosa categorization
-            $table->string('glosa_type')->after('description');
+            $table->string('glosa_type')->after('reason');
             $table->string('glosa_code')->nullable();
             $table->string('glosa_category')->nullable();
             $table->decimal('original_amount', 10, 2)->after('amount');
