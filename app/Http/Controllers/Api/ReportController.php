@@ -719,6 +719,8 @@ class ReportController extends Controller
                 $validated['parameters']['health_plan_id'] = $healthPlanId;
             }
             
+            DB::beginTransaction();
+            
             // Create a temporary report for export
             $report = new Report([
                 'name' => $validated['name'],
@@ -732,10 +734,8 @@ class ReportController extends Controller
                 'is_scheduled' => false
             ]);
             
-            // Decide whether to save the report permanently
-            if ($validated['save_as_report'] ?? false) {
-                $report->save();
-            }
+            // Always save the report initially
+            $report->save();
             
             // Generate the report
             $generation = $this->reportService->generateReport(
@@ -744,6 +744,8 @@ class ReportController extends Controller
                 Auth::id(),
                 false
             );
+            
+            DB::commit();
             
             return response()->json([
                 'status' => 'success',
@@ -755,12 +757,15 @@ class ReportController extends Controller
                 ]
             ]);
         } catch (ValidationException $e) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Validation failed',
                 'errors' => $e->errors()
             ], 422);
         } catch (\Exception $e) {
+            DB::rollBack();
+            
             Log::error('Failed to export report: ' . $e->getMessage(), [
                 'exception' => $e,
                 'user_id' => Auth::id(),
