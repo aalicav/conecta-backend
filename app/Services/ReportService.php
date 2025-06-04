@@ -191,11 +191,29 @@ class ReportService
         $htmlContent .= '<h1>' . $report->name . '</h1>';
         $htmlContent .= '<p>Generated on: ' . now()->format('Y-m-d H:i:s') . '</p>';
         
-        if (!empty($data)) {
+        // Check if data has summary structure
+        $hasSummary = isset($data['summary']) && isset($data['transactions']);
+        $reportData = $hasSummary ? $data['transactions'] : $data;
+        
+        // Add summary section if available
+        if ($hasSummary && !empty($data['summary'])) {
+            $htmlContent .= '<h2>Summary</h2>';
+            $htmlContent .= '<table border="1" cellpadding="5">';
+            foreach ($data['summary'] as $key => $value) {
+                $htmlContent .= '<tr>';
+                $htmlContent .= '<th>' . htmlspecialchars(ucwords(str_replace('_', ' ', $key))) . '</th>';
+                $htmlContent .= '<td>' . htmlspecialchars(is_numeric($value) ? number_format($value, 2) : $value) . '</td>';
+                $htmlContent .= '</tr>';
+            }
+            $htmlContent .= '</table>';
+            $htmlContent .= '<br><h2>Transactions</h2>';
+        }
+        
+        if (!empty($reportData)) {
             $htmlContent .= '<table border="1" cellpadding="5">';
             
             // Get headers from the first data item if it exists
-            $headers = array_keys($data[0]);
+            $headers = array_keys($reportData[0]);
             
             // Headers
             $htmlContent .= '<tr>';
@@ -205,7 +223,7 @@ class ReportService
             $htmlContent .= '</tr>';
             
             // Data rows
-            foreach ($data as $row) {
+            foreach ($reportData as $row) {
                 $htmlContent .= '<tr>';
                 foreach ($row as $cell) {
                     $htmlContent .= '<td>' . htmlspecialchars($cell) . '</td>';
