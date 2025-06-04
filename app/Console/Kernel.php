@@ -38,6 +38,11 @@ class Kernel extends ConsoleKernel
             ->daily()
             ->at('00:00')
             ->appendOutputTo(storage_path('logs/negotiations-cleanup.log'));
+
+        // Verifica pagamentos em atraso diariamente às 8h
+        $schedule->command('billing:check-overdue')
+            ->dailyAt('08:00')
+            ->appendOutputTo(storage_path('logs/billing-overdue.log'));
     }
 
     /**

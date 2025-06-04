@@ -220,6 +220,14 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::get('/transactions', [BillingController::class, 'transactions']);
         Route::get('/transactions/{id}/invoice', [BillingController::class, 'generateInvoice']);
         Route::patch('/transactions/{id}/status', [BillingController::class, 'updateStatus']);
+        Route::get('/batches', [BillingController::class, 'index']);
+        Route::post('/batches', [BillingController::class, 'generateBatch']);
+        Route::get('/batches/{batch}', [BillingController::class, 'show']);
+        Route::post('/batches/{batch}/payment', [BillingController::class, 'registerPayment']);
+        Route::post('/items/{item}/glosa', [BillingController::class, 'registerGlosa']);
+        Route::get('/glosses/{gloss}', [BillingController::class, 'showGlosa']);
+        Route::post('/glosses/{gloss}/appeal', [BillingController::class, 'appealGlosa']);
+        Route::post('/check-overdue', [BillingController::class, 'checkOverduePayments']);
     });
 
     // Profile routes

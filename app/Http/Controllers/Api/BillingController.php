@@ -3,186 +3,248 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\BillingBatch;
+use App\Models\BillingItem;
+use App\Models\Appointment;
+use App\Models\PaymentGloss;
+use App\Models\FiscalDocument;
+use App\Notifications\BillingBatchCreated;
+use App\Notifications\PaymentReceived;
+use App\Notifications\PaymentOverdue;
+use App\Notifications\GlosaReceived;
 use Illuminate\Http\Request;
-use App\Models\Billing;
-use App\Models\Transaction;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Auth;
-use PDF;
+use Illuminate\Support\Facades\Notification;
+use Carbon\Carbon;
 
 class BillingController extends Controller
 {
-    public function overview(Request $request)
+    /**
+     * Lista os lotes de faturamento com filtros
+     */
+    public function index(Request $request)
     {
+        $query = BillingBatch::with(['billingItems', 'fiscalDocuments'])
+            ->when($request->status, function ($q, $status) {
+                return $q->where('status', $status);
+            })
+            ->when($request->start_date, function ($q, $date) {
+                return $q->where('billing_date', '>=', $date);
+            })
+            ->when($request->end_date, function ($q, $date) {
+                return $q->where('billing_date', '<=', $date);
+            })
+            ->when($request->operator_id, function ($q, $operatorId) {
+                return $q->where('entity_id', $operatorId)
+                    ->where('entity_type', 'health_plan');
+            });
+
+        return response()->json($query->paginate($request->per_page ?? 15));
+    }
+
+    /**
+     * Gera um novo lote de faturamento
+     */
+    public function generateBatch(Request $request)
+    {
+        $request->validate([
+            'operator_id' => 'required|exists:health_plans,id',
+            'reference_period_start' => 'required|date',
+            'reference_period_end' => 'required|date|after:reference_period_start',
+        ]);
+
         try {
-            $startDate = Carbon::parse($request->start_date);
-            $endDate = Carbon::parse($request->end_date);
-            $healthPlanId = $request->health_plan_id;
+            DB::beginTransaction();
 
-            $query = Transaction::query()
-                ->whereBetween('created_at', [$startDate, $endDate]);
-
-            if ($healthPlanId) {
-                $query->where('health_plan_id', $healthPlanId);
-            }
-
-            $transactions = $query->get();
-
-            // Calculate total revenue
-            $totalRevenue = $transactions->sum('amount');
-
-            // Calculate pending payments
-            $pendingPayments = $transactions
-                ->where('status', 'pending')
-                ->sum('amount');
-
-            // Get active subscriptions count
-            $activeSubscriptions = DB::table('subscriptions')
-                ->where('status', 'active')
-                ->when($healthPlanId, function ($query) use ($healthPlanId) {
-                    return $query->where('health_plan_id', $healthPlanId);
-                })
-                ->count();
-
-            // Calculate growth rate
-            $previousPeriodStart = (clone $startDate)->subMonth();
-            $previousPeriodEnd = (clone $endDate)->subMonth();
-            
-            $previousRevenue = Transaction::query()
-                ->whereBetween('created_at', [$previousPeriodStart, $previousPeriodEnd])
-                ->when($healthPlanId, function ($query) use ($healthPlanId) {
-                    return $query->where('health_plan_id', $healthPlanId);
-                })
-                ->sum('amount');
-
-            $growthRate = $previousRevenue > 0 
-                ? (($totalRevenue - $previousRevenue) / $previousRevenue) * 100 
-                : 0;
-
-            // Get revenue trend
-            $revenueTrend = Transaction::query()
-                ->select(
-                    DB::raw('DATE(created_at) as date'),
-                    DB::raw('SUM(amount) as value')
-                )
-                ->whereBetween('created_at', [$startDate, $endDate])
-                ->when($healthPlanId, function ($query) use ($healthPlanId) {
-                    return $query->where('health_plan_id', $healthPlanId);
-                })
-                ->groupBy('date')
-                ->orderBy('date')
+            // Busca atendimentos elegíveis para faturamento
+            $appointments = Appointment::where('eligible_for_billing', true)
+                ->whereBetween('date', [
+                    $request->reference_period_start,
+                    $request->reference_period_end
+                ])
+                ->where('health_plan_id', $request->operator_id)
+                ->whereNull('billing_batch_id')
                 ->get();
 
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'total_revenue' => $totalRevenue,
-                    'pending_payments' => $pendingPayments,
-                    'active_subscriptions' => $activeSubscriptions,
-                    'growth_rate' => round($growthRate, 2),
-                    'revenue_trend' => $revenueTrend,
-                    'clinic_revenue' => $transactions->where('entity_type', 'clinic')->sum('amount'),
-                    'professional_revenue' => $transactions->where('entity_type', 'professional')->sum('amount'),
-                    'health_plan_revenue' => $transactions->where('entity_type', 'health_plan')->sum('amount'),
-                ]
+            if ($appointments->isEmpty()) {
+                return response()->json([
+                    'message' => 'Nenhum atendimento elegível encontrado para o período'
+                ], 404);
+            }
+
+            // Cria o lote de faturamento
+            $batch = BillingBatch::create([
+                'billing_rule_id' => $request->billing_rule_id,
+                'entity_type' => 'health_plan',
+                'entity_id' => $request->operator_id,
+                'reference_period_start' => $request->reference_period_start,
+                'reference_period_end' => $request->reference_period_end,
+                'billing_date' => now(),
+                'due_date' => now()->addDays(30), // Configurável pela regra de faturamento
+                'status' => 'pending',
+                'created_by' => auth()->id()
             ]);
+
+            // Cria os itens do lote
+            foreach ($appointments as $appointment) {
+                BillingItem::create([
+                    'billing_batch_id' => $batch->id,
+                    'item_type' => 'appointment',
+                    'item_id' => $appointment->id,
+                    'description' => "Atendimento {$appointment->professional->specialty} - {$appointment->date}",
+                    'unit_price' => $appointment->procedure_price,
+                    'total_amount' => $appointment->procedure_price,
+                    'tuss_code' => $appointment->procedure_code,
+                    'tuss_description' => $appointment->procedure_description,
+                    'professional_name' => $appointment->professional->name,
+                    'professional_specialty' => $appointment->professional->specialty,
+                    'patient_name' => $appointment->patient->name,
+                    'patient_document' => $appointment->patient->document,
+                    'patient_journey_data' => [
+                        'scheduled_at' => $appointment->scheduled_at,
+                        'pre_confirmation' => $appointment->pre_confirmation_response,
+                        'patient_confirmed' => $appointment->patient_confirmed,
+                        'professional_confirmed' => $appointment->professional_confirmed,
+                        'guide_status' => $appointment->guide_status,
+                        'patient_attended' => $appointment->patient_attended
+                    ]
+                ]);
+
+                $appointment->update(['billing_batch_id' => $batch->id]);
+            }
+
+            // Atualiza totais do lote
+            $batch->update([
+                'items_count' => $appointments->count(),
+                'total_amount' => $appointments->sum('procedure_price')
+            ]);
+
+            // Notifica sobre a criação do lote
+            Notification::send($batch->entity, new BillingBatchCreated($batch));
+
+            DB::commit();
+
+            return response()->json($batch->load('billingItems'), 201);
+
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error fetching billing overview',
-                'error' => $e->getMessage()
-            ], 500);
+            DB::rollBack();
+            return response()->json(['message' => 'Erro ao gerar lote de faturamento', 'error' => $e->getMessage()], 500);
         }
     }
 
-    public function transactions(Request $request)
+    /**
+     * Registra o pagamento de um lote
+     */
+    public function registerPayment(Request $request, BillingBatch $batch)
     {
+        $request->validate([
+            'payment_method' => 'required|string',
+            'payment_reference' => 'required|string',
+            'payment_amount' => 'required|numeric',
+            'payment_date' => 'required|date',
+            'payment_proof' => 'required|file'
+        ]);
+
         try {
-            $query = Transaction::query()
-                ->with(['entity', 'subscription'])
-                ->when($request->start_date && $request->end_date, function ($query) use ($request) {
-                    return $query->whereBetween('created_at', [
-                        Carbon::parse($request->start_date),
-                        Carbon::parse($request->end_date)
-                    ]);
-                })
-                ->when($request->health_plan_id, function ($query) use ($request) {
-                    return $query->where('health_plan_id', $request->health_plan_id);
-                })
-                ->when($request->status, function ($query) use ($request) {
-                    return $query->where('status', $request->status);
-                })
-                ->when($request->type, function ($query) use ($request) {
-                    return $query->where('type', $request->type);
-                });
+            DB::beginTransaction();
 
-            $transactions = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 10);
+            // Armazena o comprovante
+            $proofPath = $request->file('payment_proof')->store('payment_proofs');
 
-            return response()->json([
-                'success' => true,
-                'data' => $transactions
+            // Atualiza o lote
+            $batch->update([
+                'payment_status' => 'paid',
+                'payment_received_at' => $request->payment_date,
+                'payment_method' => $request->payment_method,
+                'payment_reference' => $request->payment_reference,
+                'payment_proof_path' => $proofPath
             ]);
+
+            // Notifica sobre o pagamento
+            Notification::send($batch->entity, new PaymentReceived($batch));
+
+            DB::commit();
+
+            return response()->json($batch);
+
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error fetching transactions',
-                'error' => $e->getMessage()
-            ], 500);
+            DB::rollBack();
+            return response()->json(['message' => 'Erro ao registrar pagamento', 'error' => $e->getMessage()], 500);
         }
     }
 
-    public function generateInvoice(Request $request, $transactionId)
+    /**
+     * Registra uma glosa
+     */
+    public function registerGlosa(Request $request, BillingItem $item)
     {
-        try {
-            $transaction = Transaction::with(['entity', 'subscription'])->findOrFail($transactionId);
+        $request->validate([
+            'glosa_type' => 'required|string',
+            'glosa_code' => 'required|string',
+            'amount' => 'required|numeric',
+            'description' => 'required|string',
+            'supporting_documents' => 'array'
+        ]);
 
-            // Generate PDF invoice using a template
-            $pdf = PDF::loadView('invoices.template', [
-                'transaction' => $transaction,
-                'company' => [
-                    'name' => config('app.name'),
-                    'address' => config('app.address'),
-                    'phone' => config('app.phone'),
-                    'email' => config('app.email'),
-                ]
+        try {
+            DB::beginTransaction();
+
+            $glosa = PaymentGloss::create([
+                'billing_item_id' => $item->id,
+                'glosa_type' => $request->glosa_type,
+                'glosa_code' => $request->glosa_code,
+                'amount' => $request->amount,
+                'original_amount' => $item->total_amount,
+                'description' => $request->description,
+                'operator_response_status' => 'pending',
+                'resolution_status' => 'pending',
+                'can_appeal' => true,
+                'appeal_deadline_days' => 30, // Configurável
+                'appeal_deadline_at' => now()->addDays(30)
             ]);
 
-            return $pdf->download("invoice-{$transactionId}.pdf");
+            // Armazena documentos de suporte
+            if ($request->hasFile('supporting_documents')) {
+                $documents = [];
+                foreach ($request->file('supporting_documents') as $document) {
+                    $documents[] = $document->store('glosa_documents');
+                }
+                $glosa->update(['supporting_documents' => $documents]);
+            }
+
+            // Notifica sobre a glosa
+            Notification::send($item->billingBatch->entity, new GlosaReceived($glosa));
+
+            DB::commit();
+
+            return response()->json($glosa, 201);
+
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error generating invoice',
-                'error' => $e->getMessage()
-            ], 500);
+            DB::rollBack();
+            return response()->json(['message' => 'Erro ao registrar glosa', 'error' => $e->getMessage()], 500);
         }
     }
 
-    public function updateStatus(Request $request, $transactionId)
+    /**
+     * Verifica pagamentos atrasados e envia notificações
+     */
+    public function checkOverduePayments()
     {
-        try {
-            $transaction = Transaction::findOrFail($transactionId);
-            
-            $request->validate([
-                'status' => 'required|in:pending,paid,cancelled,refunded'
+        $overdueBatches = BillingBatch::where('payment_status', 'pending')
+            ->where('due_date', '<', now())
+            ->where('is_late', false)
+            ->get();
+
+        foreach ($overdueBatches as $batch) {
+            $batch->update([
+                'is_late' => true,
+                'days_late' => now()->diffInDays($batch->due_date)
             ]);
 
-            $transaction->update([
-                'status' => $request->status,
-                'updated_by' => Auth::id()
-            ]);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Transaction status updated successfully',
-                'data' => $transaction
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error updating transaction status',
-                'error' => $e->getMessage()
-            ], 500);
+            // Notifica sobre o atraso
+            Notification::send($batch->entity, new PaymentOverdue($batch));
         }
+
+        return response()->json(['message' => 'Verificação de atrasos concluída']);
     }
 } 
