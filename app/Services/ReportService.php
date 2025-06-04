@@ -31,23 +31,20 @@ class ReportService
             $format = $parameters['format'] ?? $report->file_format ?? 'pdf';
             $fileName = $this->generateFileName($report, null);
             
-            // Ensure base directory exists
-            $baseDir = storage_path('app/public/reports');
-            if (!file_exists($baseDir)) {
-                mkdir($baseDir, 0755, true);
-            }
-            
-            // Create type-specific directory
-            $typeDir = $baseDir . '/' . $report->type;
-            if (!file_exists($typeDir)) {
-                mkdir($typeDir, 0755, true);
-            }
-            
-            // Set storage paths
-            $storagePath = "public/reports/{$report->type}/{$fileName}.{$format}";
+            // Define storage paths
+            $relativePath = "reports/{$report->type}/{$fileName}.{$format}";
+            $storagePath = "public/{$relativePath}";
             $fullPath = storage_path("app/{$storagePath}");
+            
+            \Log::info('Generating report', [
+                'report_id' => $report->id,
+                'format' => $format,
+                'fileName' => $fileName,
+                'storagePath' => $storagePath,
+                'fullPath' => $fullPath
+            ]);
 
-            // Create a new report generation record with the file path
+            // Create a new report generation record
             $generation = ReportGeneration::create([
                 'report_id' => $report->id,
                 'file_format' => $format,
@@ -59,26 +56,44 @@ class ReportService
                 'was_scheduled' => $isScheduled,
             ]);
 
-            // Generate report based on type
+            // Generate report data
             $reportData = $this->getReportData($report, $generation->parameters);
+            
+            \Log::info('Report data generated', [
+                'report_id' => $report->id,
+                'generation_id' => $generation->id,
+                'data_count' => is_array($reportData) ? count($reportData) : 0
+            ]);
             
             // Create the file
             $this->createReportFile($report, $generation, $reportData);
             
             // Verify file exists
-            if (!file_exists($fullPath)) {
-                throw new Exception("Failed to create report file");
+            if (!Storage::exists($generation->file_path)) {
+                \Log::error('Report file not found after generation', [
+                    'report_id' => $report->id,
+                    'generation_id' => $generation->id,
+                    'file_path' => $generation->file_path,
+                    'full_path' => $fullPath
+                ]);
+                throw new Exception("Report file not found after generation");
             }
             
             // Update the generation with file info
-            $fileSize = $this->getFileSize($generation->file_path);
+            $fileSize = Storage::size($generation->file_path);
             $generation->markAsCompleted(is_array($reportData) ? count($reportData) : 0, $fileSize);
+            
+            \Log::info('Report generated successfully', [
+                'report_id' => $report->id,
+                'generation_id' => $generation->id,
+                'file_path' => $generation->file_path,
+                'file_size' => $fileSize
+            ]);
             
             return $generation;
         } catch (Exception $e) {
-            \Log::error('Failed to generate report: ' . $e->getMessage(), [
+            \Log::error('Failed to generate report', [
                 'report_id' => $report->id,
-                'parameters' => $parameters,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -124,20 +139,40 @@ class ReportService
      */
     public function createReportFile(Report $report, ReportGeneration $generation, array $data): void
     {
+        \Log::info('Creating report file', [
+            'report_id' => $report->id,
+            'generation_id' => $generation->id,
+            'format' => $generation->file_format,
+            'file_path' => $generation->file_path
+        ]);
+
         $format = $generation->file_format;
         
-        // Based on format, generate the appropriate file
-        switch ($format) {
-            case 'csv':
-                $this->generateCsvFile($generation->file_path, $data);
-                break;
-            case 'xlsx':
-                $this->generateExcelFile($generation->file_path, $data);
-                break;
-            case 'pdf':
-            default:
-                $this->generatePdfFile($generation->file_path, $data, $report);
-                break;
+        try {
+            // Based on format, generate the appropriate file
+            switch ($format) {
+                case 'csv':
+                    $this->generateCsvFile($generation->file_path, $data);
+                    break;
+                case 'xlsx':
+                    $this->generateExcelFile($generation->file_path, $data);
+                    break;
+                case 'pdf':
+                default:
+                    $this->generatePdfFile($generation->file_path, $data, $report);
+                    break;
+            }
+            
+            if (!Storage::exists($generation->file_path)) {
+                throw new Exception("File not created successfully");
+            }
+        } catch (Exception $e) {
+            \Log::error('Failed to create report file', [
+                'report_id' => $report->id,
+                'generation_id' => $generation->id,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
         }
     }
 
@@ -150,6 +185,10 @@ class ReportService
      */
     public function generateCsvFile(string $filePath, array $data): void
     {
+        \Log::info('Starting CSV generation', [
+            'file_path' => $filePath
+        ]);
+
         if (empty($data)) {
             $data[] = [
                 'Data' => date('d/m/Y H:i:s'),
@@ -157,50 +196,54 @@ class ReportService
             ];
         }
 
-        // Get the full path
-        $fullPath = storage_path('app/' . $filePath);
-        
-        // Create the directory if it doesn't exist
-        $directory = dirname($fullPath);
-        if (!file_exists($directory)) {
-            mkdir($directory, 0755, true);
-        }
-
         try {
-            // Open file for writing with proper encoding
-            $handle = fopen($fullPath, 'w');
-            if ($handle === false) {
-                throw new Exception("Could not open file for writing: {$fullPath}");
+            // Ensure the directory exists
+            $directory = dirname(storage_path("app/{$filePath}"));
+            if (!file_exists($directory)) {
+                mkdir($directory, 0755, true);
+                \Log::info('Created directory', ['directory' => $directory]);
             }
 
-            // Write headers first
-            if (!fputcsv($handle, array_keys($data[0]), ';')) {
-                throw new Exception("Failed to write headers to CSV file");
-            }
+            // Generate CSV content
+            $output = fopen('php://temp', 'r+');
             
-            // Write data rows
+            // Write headers
+            fputcsv($output, array_keys($data[0]), ';');
+            
+            // Write data
             foreach ($data as $row) {
-                if (!fputcsv($handle, $row, ';')) {
-                    throw new Exception("Failed to write data row to CSV file");
-                }
+                fputcsv($output, $row, ';');
             }
-
-            // Close the file
-            fclose($handle);
             
-            // Verify file exists and has content
-            if (!file_exists($fullPath) || filesize($fullPath) === 0) {
-                throw new Exception("CSV file was not created successfully or is empty");
+            // Get content
+            rewind($output);
+            $content = stream_get_contents($output);
+            fclose($output);
+            
+            // Store the file
+            $stored = Storage::put($filePath, $content);
+            
+            if (!$stored) {
+                throw new Exception("Failed to store CSV file");
             }
 
-            // Ensure the file has the correct permissions
-            chmod($fullPath, 0644);
-        } catch (Exception $e) {
-            // Clean up if file exists but is incomplete
+            \Log::info('CSV file generated successfully', [
+                'file_path' => $filePath,
+                'size' => Storage::size($filePath)
+            ]);
+            
+            // Set permissions if the file exists
+            $fullPath = storage_path("app/{$filePath}");
             if (file_exists($fullPath)) {
-                unlink($fullPath);
+                chmod($fullPath, 0644);
             }
-            throw new Exception("Failed to generate CSV file: " . $e->getMessage());
+        } catch (Exception $e) {
+            \Log::error('Failed to generate CSV file', [
+                'file_path' => $filePath,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
         }
     }
 
