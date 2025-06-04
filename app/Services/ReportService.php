@@ -25,10 +25,16 @@ class ReportService
      */
     public function generateReport(Report $report, array $parameters = [], int $userId, bool $isScheduled = false): ReportGeneration
     {
-        // Create a new report generation record
+        // Generate the file path first
+        $format = $parameters['format'] ?? $report->file_format ?? 'pdf';
+        $fileName = $this->generateFileName($report, null);
+        $filePath = "reports/{$report->type}/{$fileName}.{$format}";
+
+        // Create a new report generation record with the file path
         $generation = ReportGeneration::create([
             'report_id' => $report->id,
-            'file_format' => $parameters['format'] ?? $report->file_format ?? 'pdf',
+            'file_format' => $format,
+            'file_path' => $filePath,
             'parameters' => array_merge($report->parameters ?? [], $parameters),
             'generated_by' => $userId,
             'started_at' => now(),
@@ -41,12 +47,11 @@ class ReportService
             $reportData = $this->getReportData($report, $generation->parameters);
             
             // Create the file
-            $filePath = $this->createReportFile($report, $generation, $reportData);
+            $this->createReportFile($report, $generation, $reportData);
             
             // Update the generation with file info
             $fileSize = $this->getFileSize($filePath);
             $generation->markAsCompleted(count($reportData), $fileSize);
-            $generation->update(['file_path' => $filePath]);
             
             // If the report is set to be sent to recipients and has recipients defined
             if (($report->recipients && count($report->recipients)) || 
@@ -87,34 +92,30 @@ class ReportService
     }
 
     /**
-     * Create the report file and return the file path.
+     * Create the report file.
      *
      * @param Report $report
      * @param ReportGeneration $generation
      * @param array $data
-     * @return string
+     * @return void
      */
-    public function createReportFile(Report $report, ReportGeneration $generation, array $data): string
+    public function createReportFile(Report $report, ReportGeneration $generation, array $data): void
     {
         $format = $generation->file_format;
-        $fileName = $this->generateFileName($report, $generation);
-        $filePath = "reports/{$report->type}/{$fileName}.{$format}";
         
         // Based on format, generate the appropriate file
         switch ($format) {
             case 'csv':
-                $this->generateCsvFile($filePath, $data);
+                $this->generateCsvFile($generation->file_path, $data);
                 break;
             case 'xlsx':
-                $this->generateExcelFile($filePath, $data);
+                $this->generateExcelFile($generation->file_path, $data);
                 break;
             case 'pdf':
             default:
-                $this->generatePdfFile($filePath, $data, $report);
+                $this->generatePdfFile($generation->file_path, $data, $report);
                 break;
         }
-        
-        return $filePath;
     }
 
     /**
@@ -218,15 +219,16 @@ class ReportService
      * Generate a filename for the report file.
      *
      * @param Report $report
-     * @param ReportGeneration $generation
+     * @param ReportGeneration|null $generation
      * @return string
      */
-    public function generateFileName(Report $report, ReportGeneration $generation): string
+    public function generateFileName(Report $report, ?ReportGeneration $generation = null): string
     {
         $datePart = now()->format('Y-m-d_His');
         $reportName = str_replace(' ', '_', strtolower($report->name));
+        $generationId = $generation ? $generation->id : uniqid();
         
-        return "{$reportName}_{$generation->id}_{$datePart}";
+        return "{$reportName}_{$generationId}_{$datePart}";
     }
 
     /**
