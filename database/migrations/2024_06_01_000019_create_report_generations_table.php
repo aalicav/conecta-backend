@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('report_generations', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('report_id');
-            $table->string('file_path');
+            $table->string('file_path')->nullable();
             $table->string('file_format');
             $table->json('parameters')->nullable();
             $table->unsignedBigInteger('generated_by');
