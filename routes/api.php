@@ -172,7 +172,6 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     
     // Reports
     Route::get('/reports', [ReportController::class, 'index']);
-    Route::get('/reports/{id}', [ReportController::class, 'show']);
     Route::get('/reports/solicitations', [ReportController::class, 'solicitations']);
     Route::get('/reports/appointments', [ReportController::class, 'appointments']);
     Route::get('/reports/providers', [ReportController::class, 'providers']);
@@ -181,6 +180,8 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::get('/reports/performance', [ReportController::class, 'performance']);
     Route::post('/reports/export', [ReportController::class, 'export']);
     Route::get('/reports/generations/{id}/download', [ReportController::class, 'download']);
+    Route::post('/reports/{id}/generate', [ReportController::class, 'generate']);
+    Route::get('/reports/{id}', [ReportController::class, 'show']);
     
     // System Settings
     Route::get('/system-settings', [SystemSettingController::class, 'index']);
