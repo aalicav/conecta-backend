@@ -172,6 +172,7 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     
     // Reports
     Route::get('/reports', [ReportController::class, 'index']);
+    Route::get('/reports/{id}', [ReportController::class, 'show']);
     Route::get('/reports/solicitations', [ReportController::class, 'solicitations']);
     Route::get('/reports/appointments', [ReportController::class, 'appointments']);
     Route::get('/reports/providers', [ReportController::class, 'providers']);
