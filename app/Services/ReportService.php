@@ -130,68 +130,88 @@ class ReportService
      */
     public function generateCsvFile(string $filePath, array $data): void
     {
-        // Open a temporary file
-        $handle = fopen('php://temp', 'w+');
+        // Create the directory if it doesn't exist
+        $directory = dirname($filePath);
+        if (!Storage::exists($directory)) {
+            Storage::makeDirectory($directory);
+        }
+
+        // Create a temporary file with UTF-8 BOM for Excel compatibility
+        $temp = fopen('php://temp', 'w+b');
+        // Add BOM for UTF-8
+        fputs($temp, chr(0xEF) . chr(0xBB) . chr(0xBF));
         
         if (empty($data)) {
             // For empty data, create headers based on report type
             $headers = ['Data', 'Mensagem'];
-            fputcsv($handle, $headers);
-            fputcsv($handle, [now()->format('d/m/Y H:i:s'), 'Nenhum dado encontrado para o período selecionado']);
+            fputcsv($temp, $headers, ';'); // Using ; as delimiter for Excel compatibility
+            fputcsv($temp, [now()->format('d/m/Y H:i:s'), 'Nenhum dado encontrado para o período selecionado'], ';');
         } else {
             // If we have data in the expected format (summary + transactions)
             if (isset($data['summary']) && isset($data['transactions'])) {
                 // Write summary first
-                fputcsv($handle, ['RESUMO']);
+                fputcsv($temp, ['RESUMO'], ';');
                 foreach ($data['summary'] as $key => $value) {
-                    fputcsv($handle, [$key, is_numeric($value) ? number_format($value, 2, ',', '.') : $value]);
+                    $formattedValue = is_numeric($value) ? str_replace('.', ',', number_format($value, 2, ',', '.')) : $value;
+                    fputcsv($temp, [$key, $formattedValue], ';');
                 }
                 
                 // Add a blank line between summary and transactions
-                fputcsv($handle, []);
+                fputcsv($temp, [], ';');
                 
                 // Write transactions
                 if (!empty($data['transactions'])) {
                     // Add transactions header
-                    fputcsv($handle, ['TRANSAÇÕES']);
+                    fputcsv($temp, ['TRANSAÇÕES'], ';');
                     
                     // Add headers (keys from the first transaction)
                     $headers = array_keys($data['transactions'][0]);
-                    fputcsv($handle, $headers);
+                    fputcsv($temp, $headers, ';');
                     
                     // Add transaction rows
                     foreach ($data['transactions'] as $row) {
                         $rowData = array_map(function($header) use ($row) {
                             $value = $row[$header] ?? '';
-                            return is_numeric($value) ? number_format($value, 2, ',', '.') : $value;
+                            if (is_numeric($value)) {
+                                return str_replace('.', ',', number_format($value, 2, ',', '.'));
+                            }
+                            return $value;
                         }, $headers);
-                        fputcsv($handle, $rowData);
+                        fputcsv($temp, $rowData, ';');
                     }
                 }
             } else {
                 // Regular data array
                 // Add headers (keys from the first data item)
                 $headers = array_keys($data[0]);
-                fputcsv($handle, $headers);
+                fputcsv($temp, $headers, ';');
                 
                 // Add data rows
                 foreach ($data as $row) {
                     $rowData = array_map(function($header) use ($row) {
                         $value = $row[$header] ?? '';
-                        return is_numeric($value) ? number_format($value, 2, ',', '.') : $value;
+                        if (is_numeric($value)) {
+                            return str_replace('.', ',', number_format($value, 2, ',', '.'));
+                        }
+                        return $value;
                     }, $headers);
-                    fputcsv($handle, $rowData);
+                    fputcsv($temp, $rowData, ';');
                 }
             }
         }
         
         // Get the contents of the temporary file
-        rewind($handle);
-        $csvContent = stream_get_contents($handle);
-        fclose($handle);
+        rewind($temp);
+        $csvContent = stream_get_contents($temp);
+        fclose($temp);
         
-        // Store the file
+        // Store the file with proper encoding
         Storage::put($filePath, $csvContent);
+        
+        // Ensure the file has the correct permissions
+        if (Storage::exists($filePath)) {
+            chmod(Storage::path($filePath), 0644);
+        }
     }
 
     /**
