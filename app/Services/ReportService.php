@@ -207,12 +207,25 @@ class ReportService
             // Generate CSV content
             $output = fopen('php://temp', 'r+');
             
-            // Write headers
-            fputcsv($output, array_keys($data[0]), ';');
+            // Add BOM for UTF-8
+            fputs($output, "\xEF\xBB\xBF");
             
-            // Write data
+            // Write headers with proper encoding
+            $headers = array_keys($data[0]);
+            $encodedHeaders = array_map(function($header) {
+                return mb_convert_encoding($header, 'UTF-8', 'UTF-8');
+            }, $headers);
+            fputcsv($output, $encodedHeaders, ';');
+            
+            // Write data with proper encoding
             foreach ($data as $row) {
-                fputcsv($output, $row, ';');
+                $encodedRow = array_map(function($value) {
+                    if (is_string($value)) {
+                        return mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+                    }
+                    return $value;
+                }, $row);
+                fputcsv($output, $encodedRow, ';');
             }
             
             // Get content
@@ -220,7 +233,7 @@ class ReportService
             $content = stream_get_contents($output);
             fclose($output);
             
-            // Store the file
+            // Store the file with UTF-8 encoding
             $stored = Storage::put($filePath, $content);
             
             if (!$stored) {
