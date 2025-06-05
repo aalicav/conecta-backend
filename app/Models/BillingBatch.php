@@ -5,6 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class BillingBatch extends Model
 {
@@ -16,23 +19,16 @@ class BillingBatch extends Model
      * @var array
      */
     protected $fillable = [
-        'billing_rule_id',
         'entity_type',
         'entity_id',
         'reference_period_start',
         'reference_period_end',
-        'items_count',
-        'total_amount',
-        'fees_amount',
-        'taxes_amount',
-        'net_amount',
         'billing_date',
         'due_date',
+        'total_amount',
         'status',
-        'invoice_number',
-        'invoice_path',
-        'created_by',
-        'processing_notes',
+        'items_count',
+        'created_by'
     ];
 
     /**
@@ -46,10 +42,48 @@ class BillingBatch extends Model
         'billing_date' => 'date',
         'due_date' => 'date',
         'total_amount' => 'decimal:2',
-        'fees_amount' => 'decimal:2',
-        'taxes_amount' => 'decimal:2',
-        'net_amount' => 'decimal:2',
+        'items_count' => 'integer'
     ];
+
+    /**
+     * Get the entity that owns the billing batch.
+     */
+    public function entity(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    /**
+     * Get the user that created the billing batch.
+     */
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Get the billing items for the batch.
+     */
+    public function items(): HasMany
+    {
+        return $this->hasMany(BillingItem::class);
+    }
+
+    /**
+     * Get the fiscal documents for the batch.
+     */
+    public function fiscalDocuments(): HasMany
+    {
+        return $this->hasMany(FiscalDocument::class);
+    }
+
+    /**
+     * Get the payment proofs for the batch.
+     */
+    public function paymentProofs(): HasMany
+    {
+        return $this->hasMany(PaymentProof::class);
+    }
 
     /**
      * Get the billing rule that was used for this batch.
@@ -57,30 +91,6 @@ class BillingBatch extends Model
     public function billingRule()
     {
         return $this->belongsTo(BillingRule::class);
-    }
-
-    /**
-     * Get the entity that this billing batch applies to.
-     */
-    public function entity()
-    {
-        return $this->morphTo();
-    }
-
-    /**
-     * Get the user who created the billing batch.
-     */
-    public function creator()
-    {
-        return $this->belongsTo(User::class, 'created_by');
-    }
-
-    /**
-     * Get the billing items for this batch.
-     */
-    public function items()
-    {
-        return $this->hasMany(BillingItem::class);
     }
 
     /**

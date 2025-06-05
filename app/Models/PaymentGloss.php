@@ -4,11 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PaymentGloss extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -16,16 +17,13 @@ class PaymentGloss extends Model
      * @var array
      */
     protected $fillable = [
-        'payment_id',
+        'billing_item_id',
         'amount',
         'reason',
-        'gloss_code',
         'status',
-        'is_appealable',
-        'applied_by',
-        'reverted_by',
-        'reverted_at',
-        'notes'
+        'resolution_notes',
+        'resolved_at',
+        'resolved_by'
     ];
 
     /**
@@ -35,9 +33,24 @@ class PaymentGloss extends Model
      */
     protected $casts = [
         'amount' => 'decimal:2',
-        'is_appealable' => 'boolean',
-        'reverted_at' => 'datetime'
+        'resolved_at' => 'datetime'
     ];
+
+    /**
+     * Get the billing item that owns the gloss.
+     */
+    public function billingItem(): BelongsTo
+    {
+        return $this->belongsTo(BillingItem::class);
+    }
+
+    /**
+     * Get the user who resolved the gloss.
+     */
+    public function resolver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'resolved_by');
+    }
 
     /**
      * Get the payment this gloss belongs to.

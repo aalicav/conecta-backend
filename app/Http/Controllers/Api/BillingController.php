@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Carbon\Carbon;
+use App\Models\User;
 
 class BillingController extends Controller
 {
@@ -64,6 +65,10 @@ class BillingController extends Controller
                 ])
                 ->where('health_plan_id', $request->operator_id)
                 ->whereNull('billing_batch_id')
+                ->where('patient_confirmed', true)
+                ->where('professional_confirmed', true)
+                ->where('patient_attended', true)
+                ->where('guide_status', 'approved')
                 ->get();
 
             if ($appointments->isEmpty()) {
@@ -233,66 +238,180 @@ class BillingController extends Controller
         $overdueBatches = BillingBatch::where('payment_status', 'pending')
             ->where('due_date', '<', now())
             ->where('is_late', false)
+            ->with(['entity', 'billingItems'])
             ->get();
 
         foreach ($overdueBatches as $batch) {
+            $daysLate = now()->diffInDays($batch->due_date);
+            
             $batch->update([
                 'is_late' => true,
-                'days_late' => now()->diffInDays($batch->due_date)
+                'days_late' => $daysLate,
+                'last_notification_sent' => now()
             ]);
 
-            // Notifica sobre o atraso
-            Notification::send($batch->entity, new PaymentOverdue($batch));
+            // Notificação para diferentes níveis de atraso
+            if ($daysLate >= 30) {
+                Notification::send($batch->entity, new PaymentOverdue($batch, 'critical'));
+                // Notifica supervisores
+                Notification::send(User::role('financial_supervisor')->get(), new PaymentOverdue($batch, 'supervisor'));
+            } elseif ($daysLate >= 15) {
+                Notification::send($batch->entity, new PaymentOverdue($batch, 'urgent'));
+            } else {
+                Notification::send($batch->entity, new PaymentOverdue($batch, 'warning'));
+            }
         }
 
-        return response()->json(['message' => 'Verificação de atrasos concluída']);
+        return response()->json([
+            'message' => 'Verificação de atrasos concluída',
+            'batches_processed' => $overdueBatches->count()
+        ]);
     }
 
     /**
-     * Provides an overview of billing information including totals and recent activity
+     * Provides a comprehensive overview of billing information for health plans
      */
     public function overview(Request $request)
     {
         try {
-            // Get recent billing batches
-            $recentBatches = BillingBatch::with(['billingItems', 'fiscalDocuments'])
-                ->orderBy('created_at', 'desc')
-                ->limit(5)
-                ->get();
+            // Get recent billing batches with detailed information
+            $recentBatches = BillingBatch::with([
+                'billingItems.appointment.patient',
+                'billingItems.appointment.professional',
+                'fiscalDocuments',
+                'entity'
+            ])
+            ->when($request->operator_id, function ($q, $operatorId) {
+                return $q->where('entity_id', $operatorId)
+                    ->where('entity_type', 'health_plan');
+            })
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get()
+            ->map(function ($batch) {
+                return [
+                    'id' => $batch->id,
+                    'reference_period' => [
+                        'start' => $batch->reference_period_start,
+                        'end' => $batch->reference_period_end
+                    ],
+                    'billing_date' => $batch->billing_date,
+                    'due_date' => $batch->due_date,
+                    'total_amount' => $batch->total_amount,
+                    'items_count' => $batch->items_count,
+                    'status' => $batch->status,
+                    'payment_status' => $batch->payment_status,
+                    'operator' => $batch->entity->name ?? null,
+                    'items' => $batch->billingItems->map(function ($item) {
+                        return [
+                            'id' => $item->id,
+                            'description' => $item->description,
+                            'total_amount' => $item->total_amount,
+                            'tuss_code' => $item->tuss_code,
+                            'tuss_description' => $item->tuss_description,
+                            'professional' => [
+                                'name' => $item->professional_name,
+                                'specialty' => $item->professional_specialty
+                            ],
+                            'patient' => [
+                                'name' => $item->patient_name,
+                                'document' => $item->patient_document
+                            ],
+                            'patient_journey' => $item->patient_journey_data
+                        ];
+                    })
+                ];
+            });
 
-            // Calculate overall statistics
+            // Calculate financial statistics
             $totalStats = [
-                'pending_amount' => BillingBatch::where('payment_status', 'pending')->sum('total_amount'),
-                'paid_amount' => BillingBatch::where('payment_status', 'paid')->sum('total_amount'),
-                'total_batches' => BillingBatch::count(),
-                'pending_batches' => BillingBatch::where('payment_status', 'pending')->count(),
+                'pending_amount' => BillingBatch::where('payment_status', 'pending')
+                    ->when($request->operator_id, function ($q, $operatorId) {
+                        return $q->where('entity_id', $operatorId)
+                            ->where('entity_type', 'health_plan');
+                    })
+                    ->sum('total_amount'),
+                'paid_amount' => BillingBatch::where('payment_status', 'paid')
+                    ->when($request->operator_id, function ($q, $operatorId) {
+                        return $q->where('entity_id', $operatorId)
+                            ->where('entity_type', 'health_plan');
+                    })
+                    ->sum('total_amount'),
+                'total_batches' => BillingBatch::when($request->operator_id, function ($q, $operatorId) {
+                        return $q->where('entity_id', $operatorId)
+                            ->where('entity_type', 'health_plan');
+                    })->count(),
+                'pending_batches' => BillingBatch::where('payment_status', 'pending')
+                    ->when($request->operator_id, function ($q, $operatorId) {
+                        return $q->where('entity_id', $operatorId)
+                            ->where('entity_type', 'health_plan');
+                    })->count(),
                 'overdue_batches' => BillingBatch::where('payment_status', 'pending')
                     ->where('due_date', '<', now())
-                    ->count()
+                    ->when($request->operator_id, function ($q, $operatorId) {
+                        return $q->where('entity_id', $operatorId)
+                            ->where('entity_type', 'health_plan');
+                    })->count()
             ];
 
-            // Get payment status distribution
-            $paymentStatusDistribution = BillingBatch::select('payment_status', DB::raw('count(*) as total'))
+            // Get payment status distribution with amounts
+            $paymentStatusDistribution = BillingBatch::select(
+                    'payment_status',
+                    DB::raw('count(*) as total_batches'),
+                    DB::raw('sum(total_amount) as total_amount')
+                )
+                ->when($request->operator_id, function ($q, $operatorId) {
+                    return $q->where('entity_id', $operatorId)
+                        ->where('entity_type', 'health_plan');
+                })
                 ->groupBy('payment_status')
                 ->get();
 
-            // Get monthly billing totals for the last 6 months
+            // Get monthly billing totals with additional metrics
             $monthlyTotals = BillingBatch::select(
                     DB::raw('DATE_FORMAT(billing_date, "%Y-%m") as month'),
                     DB::raw('SUM(total_amount) as total_amount'),
-                    DB::raw('COUNT(*) as batch_count')
+                    DB::raw('COUNT(*) as batch_count'),
+                    DB::raw('SUM(CASE WHEN payment_status = "paid" THEN total_amount ELSE 0 END) as paid_amount'),
+                    DB::raw('SUM(CASE WHEN payment_status = "pending" THEN total_amount ELSE 0 END) as pending_amount'),
+                    DB::raw('COUNT(CASE WHEN payment_status = "pending" AND due_date < NOW() THEN 1 END) as overdue_count')
                 )
+                ->when($request->operator_id, function ($q, $operatorId) {
+                    return $q->where('entity_id', $operatorId)
+                        ->where('entity_type', 'health_plan');
+                })
                 ->where('billing_date', '>=', now()->subMonths(6))
                 ->groupBy(DB::raw('DATE_FORMAT(billing_date, "%Y-%m")'))
                 ->orderBy('month', 'desc')
                 ->get();
 
-            // Get glosa statistics
+            // Get detailed glosa statistics
             $glosaStats = PaymentGloss::select(
                     DB::raw('SUM(amount) as total_glosa_amount'),
                     DB::raw('COUNT(*) as total_glosas'),
-                    DB::raw('COUNT(CASE WHEN resolution_status = "pending" THEN 1 END) as pending_glosas')
+                    DB::raw('COUNT(CASE WHEN resolution_status = "pending" THEN 1 END) as pending_glosas'),
+                    DB::raw('COUNT(CASE WHEN can_appeal = true THEN 1 END) as appealable_glosas'),
+                    DB::raw('AVG(amount) as average_glosa_amount')
                 )
+                ->when($request->operator_id, function ($q, $operatorId) {
+                    return $q->whereHas('billingItem.billingBatch', function ($query) use ($operatorId) {
+                        $query->where('entity_id', $operatorId)
+                            ->where('entity_type', 'health_plan');
+                    });
+                })
+                ->first();
+
+            // Get attendance statistics
+            $attendanceStats = Appointment::select(
+                    DB::raw('COUNT(*) as total_appointments'),
+                    DB::raw('COUNT(CASE WHEN patient_attended = true THEN 1 END) as attended_appointments'),
+                    DB::raw('COUNT(CASE WHEN patient_attended = false THEN 1 END) as missed_appointments'),
+                    DB::raw('COUNT(CASE WHEN eligible_for_billing = true THEN 1 END) as billable_appointments')
+                )
+                ->when($request->operator_id, function ($q, $operatorId) {
+                    return $q->where('health_plan_id', $operatorId);
+                })
+                ->where('date', '>=', now()->subMonths(6))
                 ->first();
 
             return response()->json([
@@ -300,7 +419,13 @@ class BillingController extends Controller
                 'recent_batches' => $recentBatches,
                 'payment_status_distribution' => $paymentStatusDistribution,
                 'monthly_totals' => $monthlyTotals,
-                'glosa_statistics' => $glosaStats
+                'glosa_statistics' => $glosaStats,
+                'attendance_statistics' => $attendanceStats,
+                'filters' => [
+                    'start_date' => now()->subMonths(6)->format('Y-m-d'),
+                    'end_date' => now()->format('Y-m-d'),
+                    'operator_id' => $request->operator_id
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -309,5 +434,16 @@ class BillingController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Verifies if an appointment is eligible for billing based on attendance criteria
+     */
+    private function verifyBillingEligibility($appointment)
+    {
+        return $appointment->patient_confirmed &&
+               $appointment->professional_confirmed &&
+               $appointment->patient_attended === true &&
+               $appointment->guide_status === 'approved';
     }
 } 

@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\HealthPlanDashboardController;
 use App\Http\Controllers\Api\SchedulingExceptionController;
 use App\Http\Controllers\Api\EntityDocumentTypeController;
 use App\Http\Controllers\Api\BillingController;
+use App\Http\Controllers\Api\HealthPlanBillingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -565,4 +566,11 @@ Route::post('/appointments/{id}/generate-verification', [AppointmentController::
     
 // Rotas públicas para verificação de agendamentos (acessíveis por token)
 Route::get('/appointments/verify/{token}', [AppointmentController::class, 'verifyAppointment']);
-Route::post('/appointments/confirm/{token}', [AppointmentController::class, 'confirmAppointment']); 
+Route::post('/appointments/confirm/{token}', [AppointmentController::class, 'confirmAppointment']);
+
+// Health Plan Billing Routes
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/health-plans/{healthPlanId}/billing', [HealthPlanBillingController::class, 'index']);
+    Route::get('/health-plans/{healthPlanId}/billing/export', [HealthPlanBillingController::class, 'exportCsv']);
+    Route::get('/health-plans/{healthPlanId}/billing/overview', [HealthPlanBillingController::class, 'overview']);
+}); 

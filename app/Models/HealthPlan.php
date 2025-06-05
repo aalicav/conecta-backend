@@ -350,4 +350,12 @@ class HealthPlan extends Model implements Auditable
     {
         return $this->morphMany(Address::class, 'addressable');
     }
+
+    /**
+     * Get the billing batches for the health plan.
+     */
+    public function billingBatches(): MorphMany
+    {
+        return $this->morphMany(BillingBatch::class, 'entity');
+    }
 } 
