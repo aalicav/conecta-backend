@@ -181,6 +181,7 @@ class NegotiationController extends Controller
             'items.*.status' => 'sometimes|in:pending,approved',
             'items.*.approved_value' => 'required_if:items.*.status,approved|numeric|min:0',
             'items.*.notes' => 'nullable|string',
+            'items.*.medical_specialty_id' => 'required_if:items.*.tuss_code,10101012|exists:medical_specialties,id',
         ]);
         
         // Check if entity exists
@@ -223,11 +224,21 @@ class NegotiationController extends Controller
                 // Determine item status - use requested status or default to 'pending'
                 $itemStatus = $itemData['status'] ?? 'pending';
                 
+                // Get TUSS code to check if specialty is required
+                $tuss = Tuss::find($itemData['tuss_id']);
+                if ($tuss && $tuss->code === '10101012' && empty($itemData['medical_specialty_id'])) {
+                    return response()->json([
+                        'message' => 'Especialidade médica é obrigatória para o procedimento 10101012',
+                        'errors' => ['medical_specialty_id' => ['Este campo é obrigatório para o procedimento selecionado']]
+                    ], 422);
+                }
+                
                 $item = [
                     'tuss_id' => $itemData['tuss_id'],
                     'proposed_value' => $itemData['proposed_value'],
                     'status' => $itemStatus,
                     'notes' => $itemData['notes'] ?? null,
+                    'medical_specialty_id' => $itemData['medical_specialty_id'] ?? null,
                 ];
                 
                 // If approved, set approved_value and responded_at
@@ -300,6 +311,7 @@ class NegotiationController extends Controller
             'items.*.tuss_id' => 'required|exists:tuss,id',
             'items.*.proposed_value' => 'required|numeric|min:0',
             'items.*.notes' => 'nullable|string',
+            'items.*.medical_specialty_id' => 'required_if:items.*.tuss_code,10101012|exists:medical_specialties,id',
         ]);
         
         // Check if entity type and id are changed and valid
@@ -352,10 +364,20 @@ class NegotiationController extends Controller
                         // Update existing item
                         $item = NegotiationItem::find($itemData['id']);
                         if ($item && $item->negotiation_id == $negotiation->id) {
+                            // Get TUSS code to check if specialty is required
+                            $tuss = Tuss::find($itemData['tuss_id']);
+                            if ($tuss && $tuss->code === '10101012' && empty($itemData['medical_specialty_id'])) {
+                                return response()->json([
+                                    'message' => 'Especialidade médica é obrigatória para o procedimento 10101012',
+                                    'errors' => ['medical_specialty_id' => ['Este campo é obrigatório para o procedimento selecionado']]
+                                ], 422);
+                            }
+                            
                             $item->update([
                                 'tuss_id' => $itemData['tuss_id'],
                                 'proposed_value' => $itemData['proposed_value'],
                                 'notes' => $itemData['notes'] ?? $item->notes,
+                                'medical_specialty_id' => $itemData['medical_specialty_id'] ?? null,
                             ]);
                         }
                     } else {
@@ -365,6 +387,7 @@ class NegotiationController extends Controller
                             'proposed_value' => $itemData['proposed_value'],
                             'status' => 'pending',
                             'notes' => $itemData['notes'] ?? null,
+                            'medical_specialty_id' => $itemData['medical_specialty_id'] ?? null,
                         ]);
                     }
                 }
@@ -1415,6 +1438,14 @@ class NegotiationController extends Controller
         if (!in_array($negotiation->status, [self::STATUS_SUBMITTED, self::STATUS_PARTIALLY_APPROVED])) {
             return response()->json([
                 'message' => 'Apenas negociações em andamento podem ser bifurcadas',
+            ], 403);
+        }
+
+        // Verificar se há pelo menos 2 itens pendentes
+        $pendingItemsCount = $negotiation->items()->where('status', 'pending')->count();
+        if ($pendingItemsCount < 2) {
+            return response()->json([
+                'message' => 'É necessário ter pelo menos 2 itens pendentes para bifurcar a negociação',
             ], 403);
         }
         
