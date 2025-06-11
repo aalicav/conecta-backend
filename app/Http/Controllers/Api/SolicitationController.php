@@ -107,7 +107,6 @@ class SolicitationController extends Controller
                 'health_plan_id' => 'required|exists:health_plans,id',
                 'patient_id' => 'required|exists:patients,id',
                 'tuss_id' => 'required|exists:tuss_procedures,id',
-                'description' => 'required|string',
                 'state' => 'nullable|string|size:2',
                 'city' => 'nullable|string',
             ]);
