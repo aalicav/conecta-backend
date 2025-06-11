@@ -617,7 +617,6 @@ class NegotiationController extends Controller
                 'approved_items' => 'required|array',
                 'approved_items.*.item_id' => 'required|exists:negotiation_items,id',
                 'approved_items.*.approved_value' => 'required|numeric|min:0',
-                'approved_items.*.medical_specialty_id' => 'required_if:approved_items.*.tuss_code,10101012|exists:medical_specialties,id'
             ]);
 
             // Validate if user belongs to the target entity and has proper role
@@ -641,20 +640,10 @@ class NegotiationController extends Controller
                 foreach ($validated['approved_items'] as $itemData) {
                     $item = $negotiation->items()->find($itemData['item_id']);
                     if ($item) {
-                        // Verificar se precisa de especialidade médica
-                        $tuss = $item->tuss;
-                        if ($tuss && $tuss->code === '10101012' && empty($itemData['medical_specialty_id'])) {
-                            DB::rollBack();
-                            return response()->json([
-                                'message' => 'Especialidade médica é obrigatória para o procedimento 10101012',
-                                'errors' => ['medical_specialty_id' => ['Este campo é obrigatório para o procedimento selecionado']]
-                            ], 422);
-                        }
 
                         $item->update([
                             'status' => 'approved',
                             'approved_value' => $itemData['approved_value'],
-                            'medical_specialty_id' => $itemData['medical_specialty_id'] ?? $item->medical_specialty_id,
                             'responded_at' => now()
                         ]);
                     }
