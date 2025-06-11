@@ -616,7 +616,8 @@ class NegotiationController extends Controller
                 'approved' => 'required|boolean',
                 'approved_items' => 'required|array',
                 'approved_items.*.item_id' => 'required|exists:negotiation_items,id',
-                'approved_items.*.approved_value' => 'required|numeric|min:0'
+                'approved_items.*.approved_value' => 'required|numeric|min:0',
+                'approved_items.*.medical_specialty_id' => 'required_if:approved_items.*.tuss_code,10101012|exists:medical_specialties,id'
             ]);
 
             // Validate if user belongs to the target entity and has proper role
@@ -640,9 +641,20 @@ class NegotiationController extends Controller
                 foreach ($validated['approved_items'] as $itemData) {
                     $item = $negotiation->items()->find($itemData['item_id']);
                     if ($item) {
+                        // Verificar se precisa de especialidade médica
+                        $tuss = $item->tuss;
+                        if ($tuss && $tuss->code === '10101012' && empty($itemData['medical_specialty_id'])) {
+                            DB::rollBack();
+                            return response()->json([
+                                'message' => 'Especialidade médica é obrigatória para o procedimento 10101012',
+                                'errors' => ['medical_specialty_id' => ['Este campo é obrigatório para o procedimento selecionado']]
+                            ], 422);
+                        }
+
                         $item->update([
                             'status' => 'approved',
                             'approved_value' => $itemData['approved_value'],
+                            'medical_specialty_id' => $itemData['medical_specialty_id'] ?? $item->medical_specialty_id,
                             'responded_at' => now()
                         ]);
                     }
@@ -820,9 +832,19 @@ class NegotiationController extends Controller
             'status' => 'required|in:approved,rejected',
             'approved_value' => 'required_if:status,approved|nullable|numeric|min:0',
             'notes' => 'nullable|string',
+            'medical_specialty_id' => 'required_if:tuss_code,10101012|exists:medical_specialties,id',
         ]);
         
         $negotiation = $item->negotiation;
+        
+        // Verificar se precisa de especialidade médica
+        $tuss = $item->tuss;
+        if ($tuss && $tuss->code === '10101012' && empty($validated['medical_specialty_id'])) {
+            return response()->json([
+                'message' => 'Especialidade médica é obrigatória para o procedimento 10101012',
+                'errors' => ['medical_specialty_id' => ['Este campo é obrigatório para o procedimento selecionado']]
+            ], 422);
+        }
         
         // Can only respond if negotiation is submitted (to entity)
         if ($negotiation->status !== self::STATUS_SUBMITTED) {
@@ -942,9 +964,19 @@ class NegotiationController extends Controller
         $validated = $request->validate([
             'counter_value' => 'required|numeric|min:0',
             'notes' => 'nullable|string',
+            'medical_specialty_id' => 'required_if:tuss_code,10101012|exists:medical_specialties,id',
         ]);
         
         $negotiation = $item->negotiation;
+        
+        // Verificar se precisa de especialidade médica
+        $tuss = $item->tuss;
+        if ($tuss && $tuss->code === '10101012' && empty($validated['medical_specialty_id'])) {
+            return response()->json([
+                'message' => 'Especialidade médica é obrigatória para o procedimento 10101012',
+                'errors' => ['medical_specialty_id' => ['Este campo é obrigatório para o procedimento selecionado']]
+            ], 422);
+        }
         
         if ($negotiation->status !== 'submitted') {
             return response()->json(['message' => 'Can only propose values for items in a submitted negotiation'], 403);
@@ -1017,6 +1049,7 @@ class NegotiationController extends Controller
             'items.*.item_id' => 'required|integer|exists:negotiation_items,id',
             'items.*.counter_value' => 'required|numeric|min:0',
             'items.*.notes' => 'nullable|string',
+            'items.*.medical_specialty_id' => 'required_if:items.*.tuss_code,10101012|exists:medical_specialties,id',
         ]);
         
         if ($negotiation->status !== 'submitted') {
