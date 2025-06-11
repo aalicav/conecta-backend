@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class NegotiationItemResource extends JsonResource
@@ -9,19 +10,26 @@ class NegotiationItemResource extends JsonResource
     /**
      * Transform the resource into an array.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return array
+     * @return array<string, mixed>
      */
-    public function toArray($request)
+    public function toArray(Request $request): array
     {
         return [
             'id' => $this->id,
             'negotiation_id' => $this->negotiation_id,
-            'tuss' => [
+            'tuss' => $this->tuss ? [
                 'id' => $this->tuss->id,
                 'code' => $this->tuss->code,
+                'name' => $this->tuss->name,
                 'description' => $this->tuss->description,
-            ],
+            ] : null,
+            'medical_specialty' => $this->whenLoaded('medicalSpecialty', function() {
+                return [
+                    'id' => $this->medicalSpecialty->id,
+                    'name' => $this->medicalSpecialty->name,
+                    'default_price' => $this->medicalSpecialty->default_price,
+                ];
+            }),
             'proposed_value' => $this->proposed_value,
             'approved_value' => $this->approved_value,
             'status' => $this->status,

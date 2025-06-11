@@ -28,6 +28,7 @@ class NegotiationItem extends Model
     protected $fillable = [
         'negotiation_id',
         'tuss_id',
+        'medical_specialty_id',
         'proposed_value',
         'approved_value',
         'notes',
@@ -72,6 +73,14 @@ class NegotiationItem extends Model
     public function tuss(): BelongsTo
     {
         return $this->belongsTo(Tuss::class);
+    }
+
+    /**
+     * Get the medical specialty.
+     */
+    public function medicalSpecialty(): BelongsTo
+    {
+        return $this->belongsTo(MedicalSpecialty::class);
     }
 
     /**

@@ -61,7 +61,12 @@ class NegotiationController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Negotiation::with(['negotiable', 'creator', 'items.tuss']);
+        $query = Negotiation::with([
+            'negotiable', 
+            'creator', 
+            'items.tuss',
+            'items.medicalSpecialty'
+        ]);
         
         // Filtering options
         if ($request->filled('status')) {
@@ -257,7 +262,12 @@ class NegotiationController extends Controller
 
             return response()->json([
                 'message' => 'Negotiation created successfully',
-                'data' => new NegotiationResource($negotiation->load(['negotiable', 'creator', 'items.tuss'])),
+                'data' => new NegotiationResource($negotiation->load([
+                    'negotiable', 
+                    'creator', 
+                    'items.tuss',
+                    'items.medicalSpecialty'
+                ])),
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -274,7 +284,12 @@ class NegotiationController extends Controller
     public function show(Negotiation $negotiation)
     {
         try {
-            $negotiation->load(['negotiable', 'creator', 'items.tuss']);
+            $negotiation->load([
+                'negotiable', 
+                'creator', 
+                'items.tuss',
+                'items.medicalSpecialty'
+            ]);
             return new NegotiationResource($negotiation);
         } catch (\Exception $e) {
             return response()->json([
@@ -397,7 +412,12 @@ class NegotiationController extends Controller
             
             return response()->json([
                 'message' => 'Negotiation updated successfully',
-                'data' => new NegotiationResource($negotiation->fresh(['negotiable', 'creator', 'items.tuss'])),
+                'data' => new NegotiationResource($negotiation->fresh([
+                    'negotiable', 
+                    'creator', 
+                    'items.tuss',
+                    'items.medicalSpecialty'
+                ])),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
