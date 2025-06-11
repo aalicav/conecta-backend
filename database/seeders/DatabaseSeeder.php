@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
             SystemSettingSeeder::class,
             HealthPlanDocumentTypesSeeder::class,
             EntityDocumentTypesSeeder::class, // Tipos de documentos para profissionais e clínicas
+            MedicalSpecialtySeeder::class, // Especialidades médicas
             // TussProcedureSeeder::class,
             // ContractTemplateSeeder::class,
             // NegotiationExampleSeeder::class,
