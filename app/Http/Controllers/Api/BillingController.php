@@ -464,50 +464,40 @@ class BillingController extends Controller
             return $appointment->procedure_price;
         }
 
-        // Busca o preço específico para o profissional
-        $professionalPrice = SpecialtyPrice::where([
-            'medical_specialty_id' => $appointment->professional->medical_specialty_id,
-            'entity_type' => 'professional',
-            'entity_id' => $appointment->professional_id
-        ])
-        ->active()
-        ->latest('start_date')
-        ->first();
-
-        if ($professionalPrice) {
-            return $professionalPrice->price;
+        // Verifica se o profissional tem especialidade definida
+        if (!$appointment->professional->medical_specialty_id) {
+            return $appointment->procedure_price;
         }
 
-        // Busca o preço específico para a clínica
-        $clinicPrice = SpecialtyPrice::where([
-            'medical_specialty_id' => $appointment->professional->medical_specialty_id,
-            'entity_type' => 'clinic',
-            'entity_id' => $appointment->clinic_id
-        ])
-        ->active()
-        ->latest('start_date')
-        ->first();
-
-        if ($clinicPrice) {
-            return $clinicPrice->price;
-        }
-
-        // Busca o preço específico para o plano de saúde
-        $healthPlanPrice = SpecialtyPrice::where([
-            'medical_specialty_id' => $appointment->professional->medical_specialty_id,
-            'entity_type' => 'health_plan',
-            'entity_id' => $appointment->health_plan_id
-        ])
-        ->active()
-        ->latest('start_date')
-        ->first();
-
-        if ($healthPlanPrice) {
-            return $healthPlanPrice->price;
-        }
-
-        // Retorna o preço padrão da especialidade
         $specialty = MedicalSpecialty::find($appointment->professional->medical_specialty_id);
-        return $specialty ? $specialty->default_price : $appointment->procedure_price;
+        if (!$specialty) {
+            return $appointment->procedure_price;
+        }
+
+        // Tenta obter o preço na seguinte ordem:
+        // 1. Preço específico do profissional
+        $price = $specialty->getPriceForEntity('professional', $appointment->professional_id);
+        if ($price) {
+            return $price;
+        }
+
+        // 2. Preço específico da clínica
+        if ($appointment->clinic_id) {
+            $price = $specialty->getPriceForEntity('clinic', $appointment->clinic_id);
+            if ($price) {
+                return $price;
+            }
+        }
+
+        // 3. Preço específico do plano de saúde
+        if ($appointment->health_plan_id) {
+            $price = $specialty->getPriceForEntity('health_plan', $appointment->health_plan_id);
+            if ($price) {
+                return $price;
+            }
+        }
+
+        // 4. Preço padrão da especialidade
+        return $specialty->default_price ?? $appointment->procedure_price;
     }
 } 

@@ -15,12 +15,14 @@ class MedicalSpecialty extends Model
         'tuss_code',
         'tuss_description',
         'negotiable',
-        'active'
+        'active',
+        'default_price'
     ];
 
     protected $casts = [
         'negotiable' => 'boolean',
-        'active' => 'boolean'
+        'active' => 'boolean',
+        'default_price' => 'decimal:2'
     ];
 
     /**
@@ -32,6 +34,20 @@ class MedicalSpecialty extends Model
     }
 
     /**
+     * Get active prices for this specialty
+     */
+    public function activePrices(): HasMany
+    {
+        return $this->hasMany(SpecialtyPrice::class)
+            ->where('active', true)
+            ->whereDate('start_date', '<=', now())
+            ->where(function ($query) {
+                $query->whereNull('end_date')
+                    ->orWhereDate('end_date', '>=', now());
+            });
+    }
+
+    /**
      * Get active negotiations for this specialty
      */
     public function activeNegotiations()
@@ -39,6 +55,20 @@ class MedicalSpecialty extends Model
         return $this->hasMany(SpecialtyPrice::class)
             ->where('status', 'pending')
             ->with('negotiation');
+    }
+
+    /**
+     * Get the price for a specific entity
+     */
+    public function getPriceForEntity(string $entityType, int $entityId): ?float
+    {
+        $price = $this->activePrices()
+            ->where('entity_type', $entityType)
+            ->where('entity_id', $entityId)
+            ->latest('start_date')
+            ->first();
+
+        return $price ? $price->price : $this->default_price;
     }
 
     /**

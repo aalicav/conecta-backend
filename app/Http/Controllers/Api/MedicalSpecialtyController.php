@@ -27,6 +27,15 @@ class MedicalSpecialtyController extends Controller
             $query->where('active', true);
         }
 
+        if ($request->with_prices) {
+            $query->with(['activePrices' => function($q) use ($request) {
+                if ($request->entity_type && $request->entity_id) {
+                    $q->where('entity_type', $request->entity_type)
+                      ->where('entity_id', $request->entity_id);
+                }
+            }]);
+        }
+
         return response()->json($query->paginate($request->per_page ?? 15));
     }
 
@@ -39,6 +48,7 @@ class MedicalSpecialtyController extends Controller
             'name' => 'required|string|max:255|unique:medical_specialties',
             'tuss_code' => 'required|string|max:20|unique:medical_specialties',
             'tuss_description' => 'required|string',
+            'default_price' => 'required|numeric|min:0',
             'negotiable' => 'boolean',
             'active' => 'boolean'
         ]);
@@ -70,6 +80,7 @@ class MedicalSpecialtyController extends Controller
             'name' => 'string|max:255|unique:medical_specialties,name,' . $specialty->id,
             'tuss_code' => 'string|max:20|unique:medical_specialties,tuss_code,' . $specialty->id,
             'tuss_description' => 'string',
+            'default_price' => 'numeric|min:0',
             'negotiable' => 'boolean',
             'active' => 'boolean'
         ]);
@@ -113,13 +124,19 @@ class MedicalSpecialtyController extends Controller
         try {
             DB::beginTransaction();
 
-            // Desativa preços anteriores para esta entidade e especialidade
+            // Desativa preços anteriores que se sobrepõem ao período
             SpecialtyPrice::where([
                 'medical_specialty_id' => $specialty->id,
                 'entity_type' => $request->entity_type,
                 'entity_id' => $request->entity_id,
                 'active' => true
-            ])->update(['active' => false]);
+            ])
+            ->where(function ($query) use ($request) {
+                $query->whereBetween('start_date', [$request->start_date, $request->end_date ?? '9999-12-31'])
+                    ->orWhereBetween('end_date', [$request->start_date, $request->end_date ?? '9999-12-31'])
+                    ->orWhereNull('end_date');
+            })
+            ->update(['active' => false]);
 
             // Cria o novo preço
             $price = SpecialtyPrice::create([
@@ -130,7 +147,8 @@ class MedicalSpecialtyController extends Controller
                 'start_date' => $request->start_date,
                 'end_date' => $request->end_date,
                 'negotiation_id' => $request->negotiation_id,
-                'active' => true
+                'active' => true,
+                'created_by' => Auth::id()
             ]);
 
             DB::commit();
@@ -156,23 +174,12 @@ class MedicalSpecialtyController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $price = SpecialtyPrice::where([
-            'medical_specialty_id' => $specialty->id,
-            'entity_type' => $request->entity_type,
-            'entity_id' => $request->entity_id
-        ])
-        ->active()
-        ->latest('start_date')
-        ->first();
+        $price = $specialty->getPriceForEntity($request->entity_type, $request->entity_id);
 
-        if (!$price) {
-            return response()->json([
-                'price' => $specialty->default_price,
-                'is_default' => true
-            ]);
-        }
-
-        return response()->json($price);
+        return response()->json([
+            'price' => $price,
+            'is_default' => $price === $specialty->default_price
+        ]);
     }
 
     /**
@@ -217,7 +224,7 @@ class MedicalSpecialtyController extends Controller
 
             $price->update([
                 'status' => 'approved',
-                'approved_value' => $request->approved_value,
+                'price' => $request->approved_value,
                 'approved_at' => now(),
                 'approved_by' => Auth::id()
             ]);
