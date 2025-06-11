@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Carbon\Carbon;
 use App\Models\User;
+use App\Models\SpecialtyPrice;
+use App\Models\MedicalSpecialty;
 
 class BillingController extends Controller
 {
@@ -85,20 +87,24 @@ class BillingController extends Controller
                 'reference_period_start' => $request->reference_period_start,
                 'reference_period_end' => $request->reference_period_end,
                 'billing_date' => now(),
-                'due_date' => now()->addDays(30), // Configurável pela regra de faturamento
+                'due_date' => now()->addDays(30),
                 'status' => 'pending',
                 'created_by' => auth()->id()
             ]);
 
+            $totalAmount = 0;
+
             // Cria os itens do lote
             foreach ($appointments as $appointment) {
+                $procedurePrice = $this->getProcedurePrice($appointment);
+                
                 BillingItem::create([
                     'billing_batch_id' => $batch->id,
                     'item_type' => 'appointment',
                     'item_id' => $appointment->id,
                     'description' => "Atendimento {$appointment->professional->specialty} - {$appointment->date}",
-                    'unit_price' => $appointment->procedure_price,
-                    'total_amount' => $appointment->procedure_price,
+                    'unit_price' => $procedurePrice,
+                    'total_amount' => $procedurePrice,
                     'tuss_code' => $appointment->procedure_code,
                     'tuss_description' => $appointment->procedure_description,
                     'professional_name' => $appointment->professional->name,
@@ -116,12 +122,13 @@ class BillingController extends Controller
                 ]);
 
                 $appointment->update(['billing_batch_id' => $batch->id]);
+                $totalAmount += $procedurePrice;
             }
 
             // Atualiza totais do lote
             $batch->update([
                 'items_count' => $appointments->count(),
-                'total_amount' => $appointments->sum('procedure_price')
+                'total_amount' => $totalAmount
             ]);
 
             // Notifica sobre a criação do lote
@@ -445,5 +452,62 @@ class BillingController extends Controller
                $appointment->professional_confirmed &&
                $appointment->patient_attended === true &&
                $appointment->guide_status === 'approved';
+    }
+
+    /**
+     * Obtém o preço do procedimento considerando a especialidade
+     */
+    private function getProcedurePrice($appointment)
+    {
+        // Se não for consulta (10101012), retorna o preço padrão do procedimento
+        if ($appointment->procedure_code !== '10101012') {
+            return $appointment->procedure_price;
+        }
+
+        // Busca o preço específico para o profissional
+        $professionalPrice = SpecialtyPrice::where([
+            'medical_specialty_id' => $appointment->professional->medical_specialty_id,
+            'entity_type' => 'professional',
+            'entity_id' => $appointment->professional_id
+        ])
+        ->active()
+        ->latest('start_date')
+        ->first();
+
+        if ($professionalPrice) {
+            return $professionalPrice->price;
+        }
+
+        // Busca o preço específico para a clínica
+        $clinicPrice = SpecialtyPrice::where([
+            'medical_specialty_id' => $appointment->professional->medical_specialty_id,
+            'entity_type' => 'clinic',
+            'entity_id' => $appointment->clinic_id
+        ])
+        ->active()
+        ->latest('start_date')
+        ->first();
+
+        if ($clinicPrice) {
+            return $clinicPrice->price;
+        }
+
+        // Busca o preço específico para o plano de saúde
+        $healthPlanPrice = SpecialtyPrice::where([
+            'medical_specialty_id' => $appointment->professional->medical_specialty_id,
+            'entity_type' => 'health_plan',
+            'entity_id' => $appointment->health_plan_id
+        ])
+        ->active()
+        ->latest('start_date')
+        ->first();
+
+        if ($healthPlanPrice) {
+            return $healthPlanPrice->price;
+        }
+
+        // Retorna o preço padrão da especialidade
+        $specialty = MedicalSpecialty::find($appointment->professional->medical_specialty_id);
+        return $specialty ? $specialty->default_price : $appointment->procedure_price;
     }
 } 

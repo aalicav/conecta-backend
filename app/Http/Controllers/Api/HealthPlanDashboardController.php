@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
 
 class HealthPlanDashboardController extends Controller
 {
@@ -67,10 +68,12 @@ class HealthPlanDashboardController extends Controller
                     ], 404);
                 }
                 
-                $totalProcedures = DB::table('health_plan_procedures')
-                    ->where('health_plan_id', $healthPlanId)
-                    ->where('is_active', true)
-                    ->count();
+                // Count unique procedures from appointments
+                $totalProcedures = DB::table('appointments as a')
+                    ->join('solicitations as s', 'a.solicitation_id', '=', 's.id')
+                    ->where('s.health_plan_id', $healthPlanId)
+                    ->distinct('s.procedure_id')
+                    ->count('s.procedure_id');
                 
                 $totalSolicitations = DB::table('solicitations')
                     ->where('health_plan_id', $healthPlanId)
@@ -123,9 +126,12 @@ class HealthPlanDashboardController extends Controller
                 $plansWithContract = HealthPlan::where('has_signed_contract', true)->count();
                 $plansWithoutContract = HealthPlan::where('has_signed_contract', false)->orWhereNull('has_signed_contract')->count();
                 
-                $totalProcedures = DB::table('health_plan_procedures')
-                    ->where('is_active', true)
-                    ->count();
+                // Count unique procedures from appointments
+                $totalProcedures = DB::table('appointments as a')
+                    ->join('solicitations as s', 'a.solicitation_id', '=', 's.id')
+                    ->whereNotNull('s.health_plan_id')
+                    ->distinct('s.procedure_id')
+                    ->count('s.procedure_id');
                 
                 $totalSolicitations = DB::table('solicitations')
                     ->whereNotNull('health_plan_id')
@@ -190,14 +196,15 @@ class HealthPlanDashboardController extends Controller
             $isHealthPlanUser = Auth::user()->hasRole('health_plan') || Auth::user()->hasRole('plan_admin');
             $healthPlanId = $isHealthPlanUser ? Auth::user()->entity_id : null;
             
-            // Build query
-            $query = DB::table('health_plan_procedures as hpp')
-                ->join('tuss_procedures as tp', 'hpp.tuss_procedure_id', '=', 'tp.id')
-                ->where('hpp.is_active', true);
+            // Build query to get procedure statistics from appointments
+            $query = DB::table('appointments as a')
+                ->join('solicitations as s', 'a.solicitation_id', '=', 's.id')
+                ->join('tuss_procedures as tp', 's.procedure_id', '=', 'tp.id')
+                ->whereNotNull('s.health_plan_id');
                 
             // Filter by health plan ID for health plan users
             if ($isHealthPlanUser) {
-                $query->where('hpp.health_plan_id', $healthPlanId);
+                $query->where('s.health_plan_id', $healthPlanId);
             }
             
             // Get procedures statistics
@@ -205,13 +212,11 @@ class HealthPlanDashboardController extends Controller
                     'tp.id as procedure_id',
                     'tp.name as procedure_name',
                     'tp.code as procedure_code',
-                    DB::raw('AVG(hpp.price) as avg_price'),
-                    DB::raw('MIN(hpp.price) as min_price'),
-                    DB::raw('MAX(hpp.price) as max_price'),
-                    DB::raw('COUNT(DISTINCT hpp.health_plan_id) as plans_count')
+                    DB::raw('COUNT(DISTINCT s.health_plan_id) as plans_count'),
+                    DB::raw('COUNT(*) as usage_count')
                 )
                 ->groupBy('tp.id', 'tp.name', 'tp.code')
-                ->orderByDesc('plans_count')
+                ->orderByDesc('usage_count')
                 ->limit(10)
                 ->get();
             
@@ -269,15 +274,6 @@ class HealthPlanDashboardController extends Controller
                     $interval = 'day';
             }
 
-            // Agrupar por intervalo usando SQL específico do banco
-            $dateFormat = '%Y-%m-%d'; // Formato padrão para diário
-            
-            if ($interval === 'week') {
-                $dateFormat = '%Y-%u'; // Ano-Semana
-            } elseif ($interval === 'month') {
-                $dateFormat = '%Y-%m'; // Ano-Mês
-            }
-            
             // Build query
             $query = DB::table('payments')
                 ->where('status', 'paid')
@@ -289,41 +285,31 @@ class HealthPlanDashboardController extends Controller
                 $query->where('entity_id', $healthPlanId);
             }
             
-            // Get grouped financial data
-            $financialData = $query->select(
-                    DB::raw("DATE_FORMAT(created_at, '$dateFormat') as period"),
-                    DB::raw("SUM(amount) as revenue"),
-                    DB::raw("COUNT(*) as payments")
+            // Group by interval
+            $dateFormat = match($interval) {
+                'day' => '%Y-%m-%d',
+                'week' => '%Y-%u',
+                'month' => '%Y-%m',
+                default => '%Y-%m-%d'
+            };
+            
+            $data = $query->select(
+                    DB::raw("DATE_FORMAT(created_at, '{$dateFormat}') as period"),
+                    DB::raw('SUM(amount) as revenue'),
+                    DB::raw('COUNT(*) as payments')
                 )
                 ->groupBy('period')
                 ->orderBy('period')
                 ->get();
             
-            // Format for frontend display
-            $formattedData = $financialData->map(function ($item) use ($interval) {
-                $periodLabel = $item->period;
-                
-                if ($interval === 'day') {
-                    // Já está no formato correto YYYY-MM-DD
-                } elseif ($interval === 'week') {
-                    // Converter YYYY-WW para uma descrição da semana
-                    $parts = explode('-', $item->period);
-                    $year = $parts[0];
-                    $week = $parts[1];
-                    $periodLabel = "Semana $week, $year";
-                } elseif ($interval === 'month') {
-                    // Converter YYYY-MM para nome do mês
-                    $parts = explode('-', $item->period);
-                    $year = $parts[0];
-                    $month = $parts[1];
-                    $monthNames = [
-                        '01' => 'Janeiro', '02' => 'Fevereiro', '03' => 'Março',
-                        '04' => 'Abril', '05' => 'Maio', '06' => 'Junho',
-                        '07' => 'Julho', '08' => 'Agosto', '09' => 'Setembro',
-                        '10' => 'Outubro', '11' => 'Novembro', '12' => 'Dezembro'
-                    ];
-                    $periodLabel = $monthNames[$month] . " $year";
-                }
+            // Format data for response
+            $formattedData = $data->map(function ($item) use ($interval) {
+                $periodLabel = match($interval) {
+                    'day' => Carbon::createFromFormat('Y-m-d', $item->period)->format('d/m/Y'),
+                    'week' => "Semana {$item->period}",
+                    'month' => Carbon::createFromFormat('Y-m', $item->period)->format('M/Y'),
+                    default => $item->period
+                };
                 
                 return [
                     'period' => $item->period,
@@ -370,7 +356,7 @@ class HealthPlanDashboardController extends Controller
                     'health_plans.name',
                     'health_plans.status',
                     'health_plans.created_at',
-                    DB::raw('(SELECT COUNT(*) FROM health_plan_procedures WHERE health_plan_procedures.health_plan_id = health_plans.id AND health_plan_procedures.is_active = 1) as procedures_count')
+                    DB::raw('(SELECT COUNT(DISTINCT s.procedure_id) FROM solicitations s WHERE s.health_plan_id = health_plans.id) as procedures_count')
                 );
                 
             // Filter by health plan ID for health plan users

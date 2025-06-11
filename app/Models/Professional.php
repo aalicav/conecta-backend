@@ -127,19 +127,19 @@ class Professional extends Model
     }
 
     /**
-     * Get pricing contracts for procedures.
-     */
-    public function pricingContracts(): MorphMany
-    {
-        return $this->morphMany(PricingContract::class, 'contractable');
-    }
-
-    /**
      * Get appointments assigned to this professional.
      */
     public function appointments(): MorphMany
     {
         return $this->morphMany(Appointment::class, 'provider');
+    }
+
+    /**
+     * Get pricing contracts for procedures.
+     */
+    public function pricingContracts(): MorphMany
+    {
+        return $this->morphMany(PricingContract::class, 'contractable');
     }
 
     /**
