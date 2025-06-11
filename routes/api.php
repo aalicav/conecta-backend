@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\SchedulingExceptionController;
 use App\Http\Controllers\Api\EntityDocumentTypeController;
 use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\HealthPlanBillingController;
+use App\Http\Controllers\Api\MedicalSpecialtyController;
 
 /*
 |--------------------------------------------------------------------------
@@ -573,4 +574,28 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/health-plans/{healthPlanId}/billing', [HealthPlanBillingController::class, 'index']);
     Route::get('/health-plans/{healthPlanId}/billing/export', [HealthPlanBillingController::class, 'exportCsv']);
     Route::get('/health-plans/{healthPlanId}/billing/overview', [HealthPlanBillingController::class, 'overview']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Rotas de Especialidades Médicas
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::prefix('medical-specialties')->group(function () {
+        // Rotas públicas (apenas autenticação necessária)
+        Route::get('/', [MedicalSpecialtyController::class, 'index']);
+        
+        // Rotas que requerem permissões específicas
+        Route::middleware('permission:manage medical specialties')->group(function () {
+            Route::post('/', [MedicalSpecialtyController::class, 'store']);
+            Route::put('/{specialty}', [MedicalSpecialtyController::class, 'update']);
+        });
+
+        // Rotas relacionadas a negociações
+        Route::middleware('permission:manage negotiations')->group(function () {
+            Route::get('/{specialty}/negotiations', [MedicalSpecialtyController::class, 'getActiveNegotiations']);
+            Route::post('/prices/{price}/approve', [MedicalSpecialtyController::class, 'approvePrice']);
+        });
+    });
 }); 
