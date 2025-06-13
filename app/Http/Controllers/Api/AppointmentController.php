@@ -1802,4 +1802,135 @@ class AppointmentController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Store a newly created appointment.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function store(Request $request): JsonResponse
+    {
+        try {
+            // Validate request
+            $validator = Validator::make($request->all(), [
+                'solicitation_id' => 'required|exists:solicitations,id',
+                'provider_type' => 'required|in:App\\Models\\Clinic,App\\Models\\Professional',
+                'provider_id' => 'required|integer',
+                'scheduled_date' => 'required|date|after:now',
+                'notes' => 'nullable|string',
+                'location' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Get the solicitation
+            $solicitation = Solicitation::findOrFail($request->solicitation_id);
+            
+            // Check if solicitation is a Collection and extract the first item if needed
+            if ($solicitation instanceof \Illuminate\Database\Eloquent\Collection) {
+                $solicitation = $solicitation->first();
+            }
+
+            // Check if user has permission to create appointment for this solicitation
+            if (!$this->canAccessSolicitation($solicitation)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to create appointment for this solicitation'
+                ], 403);
+            }
+
+            // Check if solicitation is in a valid state for scheduling
+            if (!$solicitation->isPending() && !$solicitation->isFailed()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Solicitation is not in a valid state for scheduling'
+                ], 422);
+            }
+
+            // Verify that the provider exists
+            $providerClass = $request->provider_type;
+            $provider = $providerClass::findOrFail($request->provider_id);
+
+            // For clinics, check if they offer the required procedure
+            if ($providerClass === Clinic::class) {
+                $procedureOffered = $provider->procedures()
+                    ->where('tuss_procedure_id', $solicitation->tuss_id)
+                    ->exists();
+
+                if (!$procedureOffered) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The selected clinic does not offer the required procedure'
+                    ], 422);
+                }
+            }
+
+            // For professionals, check if they offer the required procedure
+            if ($providerClass === Professional::class) {
+                $procedureOffered = $provider->procedures()
+                    ->where('tuss_procedure_id', $solicitation->tuss_id)
+                    ->exists();
+
+                if (!$procedureOffered) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The selected professional does not offer the required procedure'
+                    ], 422);
+                }
+            }
+
+            DB::beginTransaction();
+
+            // Create the appointment
+            $appointment = new Appointment([
+                'solicitation_id' => $solicitation->id,
+                'provider_type' => $request->provider_type,
+                'provider_id' => $request->provider_id,
+                'scheduled_date' => $request->scheduled_date,
+                'notes' => $request->notes,
+                'status' => Appointment::STATUS_SCHEDULED,
+                'created_by' => Auth::id(),
+            ]);
+
+            $appointment->save();
+
+            // Update solicitation status to scheduled
+            $solicitation->status = 'scheduled';
+            $solicitation->save();
+
+            // Send notification
+            $this->notificationService->notifyAppointmentScheduled($appointment);
+
+            DB::commit();
+
+            // Reload relationships
+            $appointment->load([
+                'solicitation.healthPlan',
+                'solicitation.patient',
+                'solicitation.tuss',
+                'provider'
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Appointment created successfully',
+                'data' => new AppointmentResource($appointment)
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error creating appointment: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create appointment',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 

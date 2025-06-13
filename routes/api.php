@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\HealthPlanBillingController;
 use App\Http\Controllers\Api\MedicalSpecialtyController;
 use App\Http\Controllers\Api\ProfessionalAvailabilityController;
+use App\Http\Controllers\Api\SolicitationInviteController;
 
 /*
 |--------------------------------------------------------------------------
@@ -509,18 +510,16 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::delete('/entity-document-types/{documentType}', [EntityDocumentTypeController::class, 'destroy']);
 });
 
-// Appointment routing
-Route::prefix('appointments')->group(function () {
-    Route::get('/', 'App\Http\Controllers\Api\AppointmentController@index');
-    Route::get('/pending-confirmation', 'App\Http\Controllers\Api\AppointmentController@pendingConfirmation');
-    Route::get('/{id}', 'App\Http\Controllers\Api\AppointmentController@getAppointmentDetails');
-    Route::post('/schedule', 'App\Http\Controllers\Api\AppointmentController@scheduleAutomatically');
-    Route::post('/exception', 'App\Http\Controllers\Api\AppointmentController@requestException');
-    Route::put('/{id}/confirm', 'App\Http\Controllers\Api\AppointmentController@confirm');
-    Route::get('/{id}/guide', 'App\Http\Controllers\Api\AppointmentController@generateGuide');
-    Route::get('/{id}/guide/download', 'App\Http\Controllers\Api\AppointmentController@downloadGuide');
-    Route::post('/{id}/attendance', 'App\Http\Controllers\Api\AppointmentController@confirmAttendance');
-    Route::post('/{id}/cancel', 'App\Http\Controllers\Api\AppointmentController@cancel');
+// Appointment routes
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::post('/appointments', [AppointmentController::class, 'store']);
+    Route::get('/appointments', [AppointmentController::class, 'index']);
+    Route::get('/appointments/{appointment}', [AppointmentController::class, 'show']);
+    Route::put('/appointments/{appointment}', [AppointmentController::class, 'update']);
+    Route::post('/appointments/{appointment}/confirm', [AppointmentController::class, 'confirmPresence']);
+    Route::post('/appointments/{appointment}/complete', [AppointmentController::class, 'completeAppointment']);
+    Route::post('/appointments/{appointment}/cancel', [AppointmentController::class, 'cancelAppointment']);
+    Route::post('/appointments/{appointment}/missed', [AppointmentController::class, 'markAsMissed']);
 });
 
 // Scheduling exceptions routing
@@ -606,8 +605,14 @@ Route::post('/appointments/professional-response', [AppointmentController::class
     ->middleware(['auth:sanctum', 'role:professional']);
 
 // Professional Availability Routes
-Route::middleware(['auth:sanctum', 'role:professional'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:professional,clinic'])->group(function () {
     Route::post('/availabilities', [ProfessionalAvailabilityController::class, 'submitAvailability']);
+    Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
+    
+    // Solicitation Invites Routes
+    Route::get('/invites', [SolicitationInviteController::class, 'index']);
+    Route::post('/invites/{inviteId}/accept', [SolicitationInviteController::class, 'accept']);
+    Route::post('/invites/{inviteId}/reject', [SolicitationInviteController::class, 'reject']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {

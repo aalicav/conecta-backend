@@ -75,6 +75,17 @@ class SolicitationController extends Controller
             $query->where('tuss_id', $request->tuss_id);
         }
         
+        // Filter solicitations requested for the current professional or clinic
+        if ($request->has('requested_for_me') && $request->requested_for_me === 'true') {
+            if (Auth::user()->hasRole('professional') || Auth::user()->hasRole('clinic')) {
+                $query->whereHas('invites', function ($q) {
+                    $q->where('provider_type', Auth::user()->hasRole('professional') ? 'professional' : 'clinic')
+                      ->where('provider_id', Auth::user()->entity_id)
+                      ->where('status', 'accepted');
+                });
+            }
+        }
+        
         // Restrict health plan users to only see their own solicitations
         if (Auth::user()->hasRole('plan_admin')) {
             $query->whereHas('healthPlan', function ($q) {

@@ -116,6 +116,14 @@ class Solicitation extends Model
     }
 
     /**
+     * Get the invites for the solicitation.
+     */
+    public function invites()
+    {
+        return $this->hasMany(SolicitationInvite::class);
+    }
+
+    /**
      * Scope a query to only include pending solicitations.
      */
     public function scopePending($query)

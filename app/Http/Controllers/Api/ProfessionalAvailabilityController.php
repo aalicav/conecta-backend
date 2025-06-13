@@ -8,6 +8,8 @@ use App\Models\Solicitation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon;
 
 class ProfessionalAvailabilityController extends Controller
 {
@@ -16,40 +18,77 @@ class ProfessionalAvailabilityController extends Controller
      */
     public function submitAvailability(Request $request)
     {
+        // Ensure user is a professional or clinic
+        if (!Auth::user()->hasRole('professional') && !Auth::user()->hasRole('clinic')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Apenas profissionais e clínicas podem registrar disponibilidade'
+            ], 403);
+        }
+
         $request->validate([
             'solicitation_id' => 'required|exists:solicitations,id',
             'available_date' => 'required|date|after_or_equal:today',
             'available_time' => 'required|date_format:H:i',
             'notes' => 'nullable|string',
-            'professional_id' => 'required_without:clinic_id|exists:professionals,id',
-            'clinic_id' => 'required_without:professional_id|exists:clinics,id',
         ]);
 
         try {
             DB::beginTransaction();
 
+            // Get the solicitation
             $solicitation = Solicitation::findOrFail($request->solicitation_id);
-            
-            // Check if solicitation is in the correct state
-            if ($solicitation->status !== 'waiting_professional_response') {
+
+            // Verify that the user was invited to this solicitation
+            $invite = $solicitation->invites()
+                ->where('provider_type', Auth::user()->hasRole('professional') ? 'professional' : 'clinic')
+                ->where('provider_id', Auth::user()->entity_id)
+                ->where('status', 'accepted')
+                ->first();
+
+            if (!$invite) {
                 return response()->json([
-                    'message' => 'Esta solicitação não está mais aguardando disponibilidade'
-                ], 400);
+                    'success' => false,
+                    'message' => 'Você não foi convidado para esta solicitação'
+                ], 403);
             }
 
-            // Check if the date is within the preferred date range
-            if ($request->available_date < $solicitation->preferred_date_start || 
-                $request->available_date > $solicitation->preferred_date_end) {
+            // Verify that the professional/clinic has the required specialty for this solicitation
+            $hasSpecialty = $solicitation->tuss->specialties()
+                ->where(function ($query) {
+                    if (Auth::user()->hasRole('professional')) {
+                        $query->whereHas('professionals', function ($q) {
+                            $q->where('professionals.id', Auth::user()->entity_id);
+                        });
+                    } else {
+                        $query->whereHas('clinics', function ($q) {
+                            $q->where('clinics.id', Auth::user()->entity_id);
+                        });
+                    }
+                })
+                ->exists();
+
+            if (!$hasSpecialty) {
                 return response()->json([
-                    'message' => 'A data selecionada está fora do período preferido pelo paciente'
-                ], 400);
+                    'success' => false,
+                    'message' => 'Você não possui a especialidade necessária para esta solicitação'
+                ], 403);
             }
 
-            // Create availability record
+            // Verify that the availability date is within the solicitation's preferred date range
+            $availableDate = Carbon::parse($request->available_date);
+            if ($availableDate < $solicitation->preferred_date_start || $availableDate > $solicitation->preferred_date_end) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A data de disponibilidade deve estar dentro do período preferencial da solicitação'
+                ], 422);
+            }
+
+            // Create the availability record
             $availability = ProfessionalAvailability::create([
-                'professional_id' => $request->professional_id,
-                'clinic_id' => $request->clinic_id,
-                'solicitation_id' => $request->solicitation_id,
+                'solicitation_id' => $solicitation->id,
+                'provider_type' => Auth::user()->hasRole('professional') ? 'professional' : 'clinic',
+                'provider_id' => Auth::user()->entity_id,
                 'available_date' => $request->available_date,
                 'available_time' => $request->available_time,
                 'notes' => $request->notes,
@@ -59,38 +98,49 @@ class ProfessionalAvailabilityController extends Controller
             DB::commit();
 
             return response()->json([
+                'success' => true,
                 'message' => 'Disponibilidade registrada com sucesso',
                 'data' => $availability
-            ], 201);
+            ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error submitting availability: ' . $e->getMessage());
             
             return response()->json([
-                'message' => 'Erro ao registrar disponibilidade'
+                'success' => false,
+                'message' => 'Erro ao registrar disponibilidade',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
 
     /**
-     * Get availabilities for a solicitation (admin only)
+     * Get availabilities for a solicitation
      */
-    public function getSolicitationAvailabilities($solicitationId)
+    public function getSolicitationAvailabilities(Request $request, $solicitationId)
     {
         try {
-            $availabilities = ProfessionalAvailability::with(['professional', 'clinic', 'selectedBy'])
-                ->where('solicitation_id', $solicitationId)
+            // Get the solicitation
+            $solicitation = Solicitation::findOrFail($solicitationId);
+
+            // Get availabilities for this solicitation
+            $availabilities = ProfessionalAvailability::where('solicitation_id', $solicitationId)
+                ->with(['professional.user', 'professional.specialties', 'clinic'])
                 ->get();
 
             return response()->json([
+                'success' => true,
                 'data' => $availabilities
             ]);
 
         } catch (\Exception $e) {
             Log::error('Error fetching availabilities: ' . $e->getMessage());
+            
             return response()->json([
-                'message' => 'Erro ao buscar disponibilidades'
+                'success' => false,
+                'message' => 'Erro ao buscar disponibilidades',
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -131,8 +181,8 @@ class ProfessionalAvailabilityController extends Controller
 
             // Create appointment
             $appointment = $solicitation->appointments()->create([
-                'professional_id' => $availability->professional_id,
-                'clinic_id' => $availability->clinic_id,
+                'provider_type' => $availability->provider_type,
+                'provider_id' => $availability->provider_id,
                 'patient_id' => $solicitation->patient_id,
                 'health_plan_id' => $solicitation->health_plan_id,
                 'tuss_id' => $solicitation->tuss_id,
