@@ -29,6 +29,9 @@ class BillingRule extends Model
         'document_format',
         'guide_template_id',
         'is_active',
+        'generate_nfe',
+        'nfe_series',
+        'nfe_environment',
     ];
 
     /**
@@ -43,6 +46,9 @@ class BillingRule extends Model
         'batch_size' => 'integer',
         'payment_days' => 'integer',
         'guide_template_id' => 'integer',
+        'generate_nfe' => 'boolean',
+        'nfe_series' => 'integer',
+        'nfe_environment' => 'integer',
     ];
 
     /**
@@ -123,5 +129,40 @@ class BillingRule extends Model
             ->active()
             ->orderBy('priority', 'desc')
             ->get();
+    }
+
+    public function getFrequencyTextAttribute()
+    {
+        return [
+            'daily' => 'Diário',
+            'weekly' => 'Semanal',
+            'monthly' => 'Mensal'
+        ][$this->frequency] ?? 'Desconhecido';
+    }
+
+    public function getNotificationFrequencyTextAttribute()
+    {
+        return [
+            'immediate' => 'Imediato',
+            'daily' => 'Diário',
+            'weekly' => 'Semanal'
+        ][$this->notification_frequency] ?? 'Desconhecido';
+    }
+
+    public function getDocumentFormatTextAttribute()
+    {
+        return [
+            'pdf' => 'PDF',
+            'xml' => 'XML',
+            'both' => 'PDF e XML'
+        ][$this->document_format] ?? 'Desconhecido';
+    }
+
+    public function getNFeEnvironmentTextAttribute()
+    {
+        return [
+            1 => 'Produção',
+            2 => 'Homologação'
+        ][$this->nfe_environment] ?? 'Desconhecido';
     }
 } 

@@ -28,7 +28,16 @@ class BillingBatch extends Model
         'total_amount',
         'status',
         'items_count',
-        'created_by'
+        'created_by',
+        'billing_rule_id',
+        'health_plan_id',
+        'contract_id',
+        'nfe_number',
+        'nfe_key',
+        'nfe_xml',
+        'nfe_status',
+        'nfe_protocol',
+        'nfe_authorization_date',
     ];
 
     /**
@@ -40,9 +49,10 @@ class BillingBatch extends Model
         'reference_period_start' => 'date',
         'reference_period_end' => 'date',
         'billing_date' => 'date',
-        'due_date' => 'date',
+        'due_date' => 'datetime',
         'total_amount' => 'decimal:2',
-        'items_count' => 'integer'
+        'items_count' => 'integer',
+        'nfe_authorization_date' => 'datetime',
     ];
 
     /**
@@ -94,6 +104,22 @@ class BillingBatch extends Model
     }
 
     /**
+     * Get the health plan for this batch.
+     */
+    public function healthPlan()
+    {
+        return $this->belongsTo(HealthPlan::class);
+    }
+
+    /**
+     * Get the contract for this batch.
+     */
+    public function contract()
+    {
+        return $this->belongsTo(Contract::class);
+    }
+
+    /**
      * Scope a query to only include pending batches.
      */
     public function scopePending($query)
@@ -123,5 +149,19 @@ class BillingBatch extends Model
     public function scopeFailed($query)
     {
         return $query->where('status', 'failed');
+    }
+
+    /**
+     * Get the NFe status text for this batch.
+     */
+    public function getNFeStatusTextAttribute()
+    {
+        return [
+            'pending' => 'Pendente',
+            'issued' => 'Emitida',
+            'authorized' => 'Autorizada',
+            'cancelled' => 'Cancelada',
+            'error' => 'Erro'
+        ][$this->nfe_status] ?? 'Desconhecido';
     }
 } 

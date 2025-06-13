@@ -8,6 +8,7 @@ use App\Models\Appointment;
 use App\Models\Notification;
 use App\Services\WhatsAppService;
 use App\Services\EmailService;
+use App\Services\NFeService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -16,11 +17,16 @@ class BillingRuleService
 {
     protected $whatsappService;
     protected $emailService;
+    protected $nfeService;
 
-    public function __construct(WhatsAppService $whatsappService, EmailService $emailService)
-    {
+    public function __construct(
+        WhatsAppService $whatsappService,
+        EmailService $emailService,
+        NFeService $nfeService
+    ) {
         $this->whatsappService = $whatsappService;
         $this->emailService = $emailService;
+        $this->nfeService = $nfeService;
     }
 
     /**
@@ -88,6 +94,11 @@ class BillingRuleService
             $appointments->each(function ($appointment) {
                 $appointment->update(['billing_status' => 'billed']);
             });
+
+            // Generate NFe if required by the rule
+            if ($rule->generate_nfe) {
+                $this->nfeService->generateNFe($batch);
+            }
 
             DB::commit();
 
@@ -171,16 +182,24 @@ class BillingRuleService
         $healthPlan = $batch->healthPlan;
         $contract = $batch->contract;
 
+        $message = "Foi gerada uma nova cobrança para o contrato {$contract->number} do plano {$healthPlan->name} no valor de R$ " . number_format($batch->total_amount, 2, ',', '.');
+
+        if ($batch->nfe_number) {
+            $message .= "\nNFe: {$batch->nfe_number}";
+        }
+
         Notification::create([
             'type' => 'billing_batch_created',
             'title' => 'Nova Cobrança Gerada',
-            'message' => "Foi gerada uma nova cobrança para o contrato {$contract->number} do plano {$healthPlan->name} no valor de R$ " . number_format($batch->total_amount, 2, ',', '.'),
+            'message' => $message,
             'data' => [
                 'batch_id' => $batch->id,
                 'health_plan_id' => $healthPlan->id,
                 'contract_id' => $contract->id,
                 'total_amount' => $batch->total_amount,
                 'due_date' => $batch->due_date->format('Y-m-d'),
+                'nfe_number' => $batch->nfe_number,
+                'nfe_key' => $batch->nfe_key,
             ],
             'recipient_type' => 'role',
             'recipient_id' => 'plan_admin',
@@ -220,8 +239,13 @@ class BillingRuleService
             "Plano: {$healthPlan->name}\n" .
             "Contrato: {$contract->number}\n" .
             "Valor: R$ " . number_format($batch->total_amount, 2, ',', '.') . "\n" .
-            "Vencimento: " . $batch->due_date->format('d/m/Y') . "\n\n" .
-            "Acesse o sistema para mais detalhes.";
+            "Vencimento: " . $batch->due_date->format('d/m/Y');
+
+        if ($batch->nfe_number) {
+            $message .= "\nNFe: {$batch->nfe_number}";
+        }
+
+        $message .= "\n\nAcesse o sistema para mais detalhes.";
 
         // Send to all notification recipients
         foreach ($batch->billingRule->notification_recipients as $email) {

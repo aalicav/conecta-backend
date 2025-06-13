@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\HealthPlanBillingController;
 use App\Http\Controllers\Api\MedicalSpecialtyController;
 use App\Http\Controllers\Api\ProfessionalAvailabilityController;
 use App\Http\Controllers\Api\SolicitationInviteController;
+use App\Http\Controllers\Api\NFeController;
 
 /*
 |--------------------------------------------------------------------------
@@ -617,4 +618,12 @@ Route::middleware(['auth:sanctum', 'role:professional,clinic'])->group(function 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
     Route::post('/availabilities/{availabilityId}/select', [ProfessionalAvailabilityController::class, 'selectAvailability']);
+});
+
+// Rotas de Notas Fiscais
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/billing/nfe', [NFeController::class, 'index']);
+    Route::get('/billing/nfe/{id}', [NFeController::class, 'show']);
+    Route::get('/billing/nfe/{id}/xml', [NFeController::class, 'downloadXML']);
+    Route::post('/billing/nfe/{id}/cancel', [NFeController::class, 'cancel']);
 }); 
