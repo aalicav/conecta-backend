@@ -13,18 +13,21 @@ return new class extends Migration
     {
         Schema::create('professional_availabilities', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('professional_id')->constrained()->onDelete('cascade');
-            $table->foreignId('solicitation_id')->constrained()->onDelete('cascade');
+            $table->foreignId('professional_id')->constrained('professionals')->onDelete('cascade');
+            $table->foreignId('solicitation_id')->constrained('solicitations')->onDelete('cascade');
             $table->date('available_date');
             $table->time('available_time');
             $table->text('notes')->nullable();
-            $table->string('status')->default('pending'); // pending, accepted, rejected
+            $table->enum('status', ['pending', 'accepted', 'rejected'])->default('pending');
             $table->foreignId('selected_by')->nullable()->constrained('users')->onDelete('set null');
             $table->timestamp('selected_at')->nullable();
             $table->timestamps();
 
-            // Add unique constraint to prevent duplicate availabilities
-            $table->unique(['professional_id', 'solicitation_id', 'available_date', 'available_time']);
+            // Using a shorter name for the unique constraint
+            $table->unique(
+                ['professional_id', 'solicitation_id', 'available_date', 'available_time'],
+                'prof_avail_unique'
+            );
         });
     }
 
