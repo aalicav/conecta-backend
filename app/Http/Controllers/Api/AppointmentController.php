@@ -1720,4 +1720,86 @@ class AppointmentController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Handle professional response to scheduling request.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function handleProfessionalResponse(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'solicitation_id' => 'required|exists:solicitations,id',
+            'professional_id' => 'required|exists:professionals,id',
+            'available_date' => 'required|date|after:now',
+            'available_time' => 'required|date_format:H:i',
+            'notes' => 'nullable|string',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            $solicitation = Solicitation::findOrFail($request->solicitation_id);
+            
+            // Check if solicitation is waiting for professional response
+            if ($solicitation->status !== 'waiting_professional_response') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Solicitation is not waiting for professional response'
+                ], 422);
+            }
+            
+            // Create the appointment
+            $scheduledDate = Carbon::parse($request->available_date)->setTimeFromTimeString($request->available_time);
+            
+            $appointment = new Appointment([
+                'solicitation_id' => $solicitation->id,
+                'provider_type' => 'App\\Models\\Professional',
+                'provider_id' => $request->professional_id,
+                'scheduled_date' => $scheduledDate,
+                'status' => Appointment::STATUS_SCHEDULED,
+                'notes' => $request->notes ?? 'Agendado conforme disponibilidade informada pelo profissional',
+                'created_by' => Auth::id()
+            ]);
+            
+            $appointment->save();
+            
+            // Mark solicitation as scheduled
+            $solicitation->markAsScheduled(true);
+            
+            // Send notifications
+            $this->notificationService->notifyAppointmentScheduled($appointment);
+            
+            DB::commit();
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Appointment scheduled successfully',
+                'data' => $appointment->load(['solicitation.patient', 'solicitation.healthPlan', 'solicitation.tuss', 'provider'])
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error handling professional response: ' . $e->getMessage(), [
+                'exception' => $e,
+                'solicitation_id' => $request->solicitation_id,
+                'professional_id' => $request->professional_id
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to handle professional response',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 

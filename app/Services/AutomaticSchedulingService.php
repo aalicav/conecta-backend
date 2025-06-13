@@ -12,6 +12,7 @@ use App\Models\NegotiationItem;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 use Carbon\Carbon;
+use App\Notifications\ProfessionalSchedulingRequest;
 
 class AutomaticSchedulingService
 {
@@ -59,40 +60,28 @@ class AutomaticSchedulingService
                 return null;
             }
             
-            // 2. Find available time slots
-            $bestProviderWithSlot = $this->findBestProviderWithTimeSlot($providers, $solicitation);
-            
-            if (!$bestProviderWithSlot) {
-                Log::warning('No available time slots found for solicitation #' . $solicitation->id);
-                $solicitation->markAsFailed();
-                return null;
+            // 2. Send WhatsApp notifications to all eligible professionals
+            foreach ($providers as $provider) {
+                if ($provider instanceof Professional) {
+                    try {
+                        $provider->notify(new ProfessionalSchedulingRequest($solicitation));
+                        Log::info("Sent scheduling request to professional #{$provider->id} for solicitation #{$solicitation->id}");
+                    } catch (\Exception $e) {
+                        Log::error("Failed to send scheduling request to professional #{$provider->id}: " . $e->getMessage());
+                    }
+                }
             }
             
-            // 3. Create the appointment
-            $appointment = $this->createAppointment($solicitation, $bestProviderWithSlot);
+            // 3. Mark solicitation as waiting for professional response
+            $solicitation->status = 'waiting_professional_response';
+            $solicitation->save();
             
-            if (!$appointment) {
-                Log::error('Failed to create appointment for solicitation #' . $solicitation->id);
-                $solicitation->markAsFailed();
-                return null;
-            }
+            Log::info('Successfully sent scheduling requests for solicitation #' . $solicitation->id);
             
-            // 4. Mark solicitation as scheduled
-            $solicitation->markAsScheduled(true);
-            
-            // 5. Send notifications
-            $this->notificationService->notifyAppointmentScheduled($appointment);
-            
-            Log::info('Successfully scheduled appointment #' . $appointment->id . ' for solicitation #' . $solicitation->id);
-            
-            return $appointment;
+            return null;
             
         } catch (\Exception $e) {
-            Log::error('Error during automatic scheduling: ' . $e->getMessage(), [
-                'solicitation_id' => $solicitation->id,
-                'exception' => $e
-            ]);
-            
+            Log::error('Error in automatic scheduling: ' . $e->getMessage());
             $solicitation->markAsFailed();
             return null;
         }

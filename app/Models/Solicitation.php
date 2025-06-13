@@ -34,6 +34,8 @@ class Solicitation extends Model
         'cancel_reason',
         'state',
         'city',
+        'preferred_date_start',
+        'preferred_date_end',
     ];
 
     /**
@@ -45,6 +47,8 @@ class Solicitation extends Model
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'scheduled_automatically' => 'boolean',
+        'preferred_date_start' => 'date',
+        'preferred_date_end' => 'date',
     ];
 
     /**

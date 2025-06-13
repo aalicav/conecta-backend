@@ -598,4 +598,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/prices/{price}/approve', [MedicalSpecialtyController::class, 'approvePrice']);
         });
     });
-}); 
+});
+
+// Professional scheduling response
+Route::post('/appointments/professional-response', [AppointmentController::class, 'handleProfessionalResponse'])
+    ->middleware(['auth:sanctum', 'role:professional']); 

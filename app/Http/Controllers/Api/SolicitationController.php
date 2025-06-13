@@ -93,6 +93,19 @@ class SolicitationController extends Controller
         return SolicitationResource::collection($query->paginate($perPage));
     }
 
+    protected function validateSolicitation(Request $request)
+    {
+        return $request->validate([
+            'health_plan_id' => 'required|exists:health_plans,id',
+            'patient_id' => 'required|exists:patients,id',
+            'tuss_id' => 'required|exists:tuss_procedures,id',
+            'state' => 'nullable|string|size:2',
+            'city' => 'nullable|string',
+            'preferred_date_start' => 'nullable|date|after_or_equal:today',
+            'preferred_date_end' => 'nullable|date|after_or_equal:preferred_date_start',
+        ]);
+    }
+
     /**
      * Store a newly created solicitation in storage.
      *
@@ -102,25 +115,20 @@ class SolicitationController extends Controller
     public function store(Request $request): JsonResponse
     {
         try {
-            // Validate request
-            $validator = Validator::make($request->all(), [
-                'health_plan_id' => 'required|exists:health_plans,id',
-                'patient_id' => 'required|exists:patients,id',
-                'tuss_id' => 'required|exists:tuss_procedures,id',
-                'state' => 'nullable|string|size:2',
-                'city' => 'nullable|string',
-            ]);
+            DB::beginTransaction();
 
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Erro de validação',
-                    'errors' => $validator->errors()
-                ], 422);
+            $validated = $this->validateSolicitation($request);
+
+            // If preferred dates are not provided, set default range (next 14 days)
+            if (!isset($validated['preferred_date_start'])) {
+                $validated['preferred_date_start'] = now()->addDay();
+            }
+            if (!isset($validated['preferred_date_end'])) {
+                $validated['preferred_date_end'] = now()->addDays(14);
             }
 
             // Get health plan
-            $healthPlan = HealthPlan::findOrFail($request->health_plan_id);
+            $healthPlan = HealthPlan::findOrFail($validated['health_plan_id']);
 
             // Check if health plan is approved
             if (!$healthPlan->approved_at) {
@@ -147,28 +155,16 @@ class SolicitationController extends Controller
             }
 
             // Verify that the patient belongs to the health plan
-            $patient = Patient::findOrFail($request->patient_id);
-            if ($patient->health_plan_id != $request->health_plan_id) {
+            $patient = Patient::findOrFail($validated['patient_id']);
+            if ($patient->health_plan_id != $validated['health_plan_id']) {
                 return response()->json([
                     'success' => false,
                     'message' => 'O paciente não pertence ao plano de saúde especificado'
                 ], 422);
             }
 
-            DB::beginTransaction();
-
             // Create the solicitation
-            $solicitation = Solicitation::create([
-                'health_plan_id' => $request->health_plan_id,
-                'patient_id' => $request->patient_id,
-                'tuss_id' => $request->tuss_id,
-                'status' => Solicitation::STATUS_PENDING,
-                'priority' => $request->priority ?? 'normal',
-                'description' => $request->description,
-                'requested_by' => Auth::id(),
-                'state' => $request->state,
-                'city' => $request->city,
-            ]);
+            $solicitation = Solicitation::create($validated);
 
             // Load relationships for the resource
             $solicitation->load(['healthPlan', 'patient', 'tuss', 'requestedBy']);
@@ -261,23 +257,17 @@ class SolicitationController extends Controller
                 ], 422);
             }
 
-            // Validate request
-            $validator = Validator::make($request->all(), [
-                'priority' => 'sometimes|in:low,normal,high',
-                'description' => 'sometimes|required|string',
-                'state' => 'nullable|string|size:2',
-                'city' => 'nullable|string',
-            ]);
-
-            if ($validator->fails()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation error',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
-
             DB::beginTransaction();
+
+            $validated = $this->validateSolicitation($request);
+
+            // Only update preferred dates if they are provided
+            if (isset($validated['preferred_date_start'])) {
+                $solicitation->preferred_date_start = $validated['preferred_date_start'];
+            }
+            if (isset($validated['preferred_date_end'])) {
+                $solicitation->preferred_date_end = $validated['preferred_date_end'];
+            }
 
             // Track changes for notification
             $changes = [];
