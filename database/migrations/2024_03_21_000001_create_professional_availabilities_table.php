@@ -30,10 +30,10 @@ return new class extends Migration
                 ['professional_id', 'clinic_id', 'solicitation_id', 'available_date', 'available_time'],
                 'prof_avail_unique'
             );
-
-            // Add check constraint to ensure at least one of professional_id or clinic_id is provided
-            DB::statement('ALTER TABLE professional_availabilities ADD CONSTRAINT check_professional_or_clinic CHECK (professional_id IS NOT NULL OR clinic_id IS NOT NULL)');
         });
+
+        // Add check constraint after table creation
+        DB::statement('ALTER TABLE professional_availabilities ADD CONSTRAINT check_professional_or_clinic CHECK (professional_id IS NOT NULL OR clinic_id IS NOT NULL)');
     }
 
     /**
