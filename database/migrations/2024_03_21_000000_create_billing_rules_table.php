@@ -22,7 +22,6 @@ return new class extends Migration
             $table->json('notification_recipients')->nullable(); // Array of email addresses
             $table->string('notification_frequency')->default('daily'); // daily, weekly, monthly
             $table->string('document_format')->default('pdf'); // pdf, xml, json
-            $table->foreignId('guide_template_id')->nullable()->constrained('document_templates')->nullOnDelete();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->softDeletes();
