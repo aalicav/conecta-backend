@@ -18,9 +18,11 @@ class ProfessionalAvailabilityController extends Controller
     {
         $request->validate([
             'solicitation_id' => 'required|exists:solicitations,id',
-            'available_date' => 'required|date|after:today',
+            'available_date' => 'required|date|after_or_equal:today',
             'available_time' => 'required|date_format:H:i',
-            'notes' => 'nullable|string|max:500'
+            'notes' => 'nullable|string',
+            'professional_id' => 'required_without:clinic_id|exists:professionals,id',
+            'clinic_id' => 'required_without:professional_id|exists:clinics,id',
         ]);
 
         try {
@@ -31,14 +33,23 @@ class ProfessionalAvailabilityController extends Controller
             // Check if solicitation is in the correct state
             if ($solicitation->status !== 'waiting_professional_response') {
                 return response()->json([
-                    'message' => 'Solicitation is not in the correct state for availability submission'
+                    'message' => 'Esta solicitação não está mais aguardando disponibilidade'
+                ], 400);
+            }
+
+            // Check if the date is within the preferred date range
+            if ($request->available_date < $solicitation->preferred_date_start || 
+                $request->available_date > $solicitation->preferred_date_end) {
+                return response()->json([
+                    'message' => 'A data selecionada está fora do período preferido pelo paciente'
                 ], 400);
             }
 
             // Create availability record
             $availability = ProfessionalAvailability::create([
-                'professional_id' => auth()->user()->professional->id,
-                'solicitation_id' => $solicitation->id,
+                'professional_id' => $request->professional_id,
+                'clinic_id' => $request->clinic_id,
+                'solicitation_id' => $request->solicitation_id,
                 'available_date' => $request->available_date,
                 'available_time' => $request->available_time,
                 'notes' => $request->notes,
@@ -48,16 +59,16 @@ class ProfessionalAvailabilityController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Availability submitted successfully',
+                'message' => 'Disponibilidade registrada com sucesso',
                 'data' => $availability
-            ]);
+            ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error submitting availability: ' . $e->getMessage());
             
             return response()->json([
-                'message' => 'Error submitting availability'
+                'message' => 'Erro ao registrar disponibilidade'
             ], 500);
         }
     }
@@ -67,15 +78,21 @@ class ProfessionalAvailabilityController extends Controller
      */
     public function getSolicitationAvailabilities($solicitationId)
     {
-        $availabilities = ProfessionalAvailability::with(['professional', 'selectedBy'])
-            ->where('solicitation_id', $solicitationId)
-            ->orderBy('available_date')
-            ->orderBy('available_time')
-            ->get();
+        try {
+            $availabilities = ProfessionalAvailability::with(['professional', 'clinic', 'selectedBy'])
+                ->where('solicitation_id', $solicitationId)
+                ->get();
 
-        return response()->json([
-            'data' => $availabilities
-        ]);
+            return response()->json([
+                'data' => $availabilities
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching availabilities: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Erro ao buscar disponibilidades'
+            ], 500);
+        }
     }
 
     /**
@@ -84,7 +101,7 @@ class ProfessionalAvailabilityController extends Controller
     public function selectAvailability(Request $request, $availabilityId)
     {
         $request->validate([
-            'notes' => 'nullable|string|max:500'
+            'notes' => 'nullable|string'
         ]);
 
         try {
@@ -95,7 +112,7 @@ class ProfessionalAvailabilityController extends Controller
             // Check if availability is still pending
             if ($availability->status !== 'pending') {
                 return response()->json([
-                    'message' => 'This availability has already been processed'
+                    'message' => 'Esta disponibilidade não está mais pendente'
                 ], 400);
             }
 
@@ -115,10 +132,13 @@ class ProfessionalAvailabilityController extends Controller
             // Create appointment
             $appointment = $solicitation->appointments()->create([
                 'professional_id' => $availability->professional_id,
-                'scheduled_date' => $availability->available_date,
-                'scheduled_time' => $availability->available_time,
-                'notes' => $request->notes,
-                'status' => 'scheduled'
+                'clinic_id' => $availability->clinic_id,
+                'patient_id' => $solicitation->patient_id,
+                'health_plan_id' => $solicitation->health_plan_id,
+                'tuss_id' => $solicitation->tuss_id,
+                'status' => 'pending',
+                'scheduled_for' => $availability->available_date . ' ' . $availability->available_time,
+                'notes' => $request->notes
             ]);
 
             // Reject other availabilities
@@ -131,7 +151,7 @@ class ProfessionalAvailabilityController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Availability selected successfully',
+                'message' => 'Disponibilidade selecionada com sucesso',
                 'data' => [
                     'availability' => $availability,
                     'appointment' => $appointment
@@ -143,7 +163,7 @@ class ProfessionalAvailabilityController extends Controller
             Log::error('Error selecting availability: ' . $e->getMessage());
             
             return response()->json([
-                'message' => 'Error selecting availability'
+                'message' => 'Erro ao selecionar disponibilidade'
             ], 500);
         }
     }

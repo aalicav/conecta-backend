@@ -12,6 +12,7 @@ class ProfessionalAvailability extends Model
 
     protected $fillable = [
         'professional_id',
+        'clinic_id',
         'solicitation_id',
         'available_date',
         'available_time',
@@ -33,6 +34,14 @@ class ProfessionalAvailability extends Model
     public function professional(): BelongsTo
     {
         return $this->belongsTo(Professional::class);
+    }
+
+    /**
+     * Get the clinic that this availability is for.
+     */
+    public function clinic(): BelongsTo
+    {
+        return $this->belongsTo(Clinic::class);
     }
 
     /**

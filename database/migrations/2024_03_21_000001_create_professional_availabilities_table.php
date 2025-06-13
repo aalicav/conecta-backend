@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -13,7 +14,8 @@ return new class extends Migration
     {
         Schema::create('professional_availabilities', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('professional_id')->constrained('professionals')->onDelete('cascade');
+            $table->foreignId('professional_id')->nullable()->constrained('professionals')->onDelete('cascade');
+            $table->foreignId('clinic_id')->nullable()->constrained('clinics')->onDelete('cascade');
             $table->foreignId('solicitation_id')->constrained('solicitations')->onDelete('cascade');
             $table->date('available_date');
             $table->time('available_time');
@@ -25,9 +27,12 @@ return new class extends Migration
 
             // Using a shorter name for the unique constraint
             $table->unique(
-                ['professional_id', 'solicitation_id', 'available_date', 'available_time'],
+                ['professional_id', 'clinic_id', 'solicitation_id', 'available_date', 'available_time'],
                 'prof_avail_unique'
             );
+
+            // Add check constraint to ensure at least one of professional_id or clinic_id is provided
+            DB::statement('ALTER TABLE professional_availabilities ADD CONSTRAINT check_professional_or_clinic CHECK (professional_id IS NOT NULL OR clinic_id IS NOT NULL)');
         });
     }
 
