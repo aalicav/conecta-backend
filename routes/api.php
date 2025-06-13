@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\EntityDocumentTypeController;
 use App\Http\Controllers\Api\BillingController;
 use App\Http\Controllers\Api\HealthPlanBillingController;
 use App\Http\Controllers\Api\MedicalSpecialtyController;
+use App\Http\Controllers\Api\ProfessionalAvailabilityController;
 
 /*
 |--------------------------------------------------------------------------
@@ -602,4 +603,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 // Professional scheduling response
 Route::post('/appointments/professional-response', [AppointmentController::class, 'handleProfessionalResponse'])
-    ->middleware(['auth:sanctum', 'role:professional']); 
+    ->middleware(['auth:sanctum', 'role:professional']);
+
+// Professional Availability Routes
+Route::middleware(['auth:sanctum', 'role:professional'])->group(function () {
+    Route::post('/availabilities', [ProfessionalAvailabilityController::class, 'submitAvailability']);
+});
+
+Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
+    Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
+    Route::post('/availabilities/{availabilityId}/select', [ProfessionalAvailabilityController::class, 'selectAvailability']);
+}); 
