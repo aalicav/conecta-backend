@@ -402,15 +402,14 @@ Route::middleware(['auth:sanctum'])->prefix('privacy')->group(function () {
 });
 
 // Billing Rules
-Route::middleware(['auth:sanctum'])->prefix('billing-rules')->group(function () {
-    Route::get('/', [BillingRuleController::class, 'index']);
-    Route::post('/', [BillingRuleController::class, 'store'])->middleware('permission:manage financials');
-    Route::get('/{id}', [BillingRuleController::class, 'show']);
-    Route::put('/{id}', [BillingRuleController::class, 'update'])->middleware('permission:manage financials');
-    Route::delete('/{id}', [BillingRuleController::class, 'destroy'])->middleware('permission:manage financials');
-    Route::patch('/{id}/toggle-active', [BillingRuleController::class, 'toggleActive'])->middleware('permission:manage financials');
-    Route::post('/applicable', [BillingRuleController::class, 'getApplicableRules']);
-    Route::post('/simulate', [BillingRuleController::class, 'simulateBilling']);
+Route::middleware(['auth:sanctum', 'role:plan_admin'])->group(function () {
+    Route::get('/billing-rules', [BillingRuleController::class, 'index']);
+    Route::post('/billing-rules', [BillingRuleController::class, 'store']);
+    Route::get('/billing-rules/{billingRule}', [BillingRuleController::class, 'show']);
+    Route::put('/billing-rules/{billingRule}', [BillingRuleController::class, 'update']);
+    Route::delete('/billing-rules/{billingRule}', [BillingRuleController::class, 'destroy']);
+    Route::get('/billing-rules/health-plans', [BillingRuleController::class, 'getHealthPlans']);
+    Route::get('/billing-rules/contracts', [BillingRuleController::class, 'getContracts']);
 });
 
 // Dashboard routes

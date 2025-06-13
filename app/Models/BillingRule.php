@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BillingRule extends Model
 {
@@ -16,22 +18,17 @@ class BillingRule extends Model
      * @var array
      */
     protected $fillable = [
-        'name',
-        'description',
-        'entity_type',
-        'entity_id',
-        'rule_type',
-        'billing_cycle',
-        'billing_day',
-        'payment_term_days',
-        'invoice_generation_days_before',
-        'payment_method',
-        'conditions',
-        'discounts',
-        'tax_rules',
+        'health_plan_id',
+        'contract_id',
+        'frequency',
+        'monthly_day',
+        'batch_size',
+        'payment_days',
+        'notification_recipients',
+        'notification_frequency',
+        'document_format',
+        'guide_template_id',
         'is_active',
-        'priority',
-        'created_by',
     ];
 
     /**
@@ -40,11 +37,45 @@ class BillingRule extends Model
      * @var array
      */
     protected $casts = [
-        'conditions' => 'array',
-        'discounts' => 'array',
-        'tax_rules' => 'array',
+        'notification_recipients' => 'array',
         'is_active' => 'boolean',
+        'monthly_day' => 'integer',
+        'batch_size' => 'integer',
+        'payment_days' => 'integer',
+        'guide_template_id' => 'integer',
     ];
+
+    /**
+     * Get the health plan that owns the billing rule.
+     */
+    public function healthPlan(): BelongsTo
+    {
+        return $this->belongsTo(HealthPlan::class);
+    }
+
+    /**
+     * Get the contract that owns the billing rule.
+     */
+    public function contract(): BelongsTo
+    {
+        return $this->belongsTo(Contract::class);
+    }
+
+    /**
+     * Get the guide template for the billing rule.
+     */
+    public function guideTemplate(): BelongsTo
+    {
+        return $this->belongsTo(DocumentTemplate::class, 'guide_template_id');
+    }
+
+    /**
+     * Get the billing batches for the rule.
+     */
+    public function billingBatches(): HasMany
+    {
+        return $this->hasMany(BillingBatch::class);
+    }
 
     /**
      * Get the entity that this rule applies to.
@@ -60,14 +91,6 @@ class BillingRule extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
-    }
-
-    /**
-     * Get the billing batches that use this rule.
-     */
-    public function billingBatches()
-    {
-        return $this->hasMany(BillingBatch::class);
     }
 
     /**

@@ -43,6 +43,13 @@ class Kernel extends ConsoleKernel
         $schedule->command('billing:check-overdue')
             ->dailyAt('08:00')
             ->appendOutputTo(storage_path('logs/billing-overdue.log'));
+
+        // Process billing rules daily at midnight
+        $schedule->command('billing:process-rules')
+            ->daily()
+            ->at('00:00')
+            ->withoutOverlapping()
+            ->runInBackground();
     }
 
     /**
