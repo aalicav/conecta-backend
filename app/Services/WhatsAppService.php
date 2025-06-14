@@ -1523,4 +1523,201 @@ class WhatsAppService
             return null;
         }
     }
+
+    /**
+     * Send account created notification
+     *
+     * @param string $userName
+     * @param string $to
+     * @return void
+     */
+    public function sendAccountCreatedNotification(string $userName, string $to): void
+    {
+        $variables = $this->templateBuilder->buildAccountCreated($userName);
+        $this->sendTemplateMessage($to, 'account_created', $variables);
+    }
+
+    /**
+     * Send negotiation internal approval required notification
+     *
+     * @param string $approverName
+     * @param string $negotiationName
+     * @param string $entityName
+     * @param int $itemCount
+     * @param string $approvalLevel
+     * @param string $negotiationId
+     * @param string $to
+     * @return void
+     */
+    public function sendNegotiationInternalApprovalRequired(
+        string $approverName,
+        string $negotiationName,
+        string $entityName,
+        int $itemCount,
+        string $approvalLevel,
+        string $negotiationId,
+        string $to
+    ): void {
+        $variables = $this->templateBuilder->buildNegotiationInternalApprovalRequired(
+            $approverName,
+            $negotiationName,
+            $entityName,
+            $itemCount,
+            $approvalLevel,
+            $negotiationId
+        );
+        $this->sendTemplateMessage($to, 'negotiation_internal_approval_required', $variables);
+    }
+
+    /**
+     * Send negotiation counter offer received notification
+     *
+     * @param string $userName
+     * @param string $amount
+     * @param string $itemName
+     * @param string $negotiationName
+     * @param string $negotiationId
+     * @param string $to
+     * @return void
+     */
+    public function sendNegotiationCounterOfferReceived(
+        string $userName,
+        string $amount,
+        string $itemName,
+        string $negotiationName,
+        string $negotiationId,
+        string $to
+    ): void {
+        $variables = $this->templateBuilder->buildNegotiationCounterOfferReceived(
+            $userName,
+            $amount,
+            $itemName,
+            $negotiationName,
+            $negotiationId
+        );
+        $this->sendTemplateMessage($to, 'negotiation_counter_offer_received', $variables);
+    }
+
+    /**
+     * Send negotiation item response notification
+     *
+     * @param string $userName
+     * @param string $itemName
+     * @param string $amount
+     * @param string $negotiationName
+     * @param string $status
+     * @param string $negotiationId
+     * @param string $to
+     * @return void
+     */
+    public function sendNegotiationItemResponse(
+        string $userName,
+        string $itemName,
+        string $amount,
+        string $negotiationName,
+        string $status,
+        string $negotiationId,
+        string $to
+    ): void {
+        $variables = $this->templateBuilder->buildNegotiationItemResponse(
+            $userName,
+            $itemName,
+            $amount,
+            $negotiationName,
+            $status,
+            $negotiationId
+        );
+        $this->sendTemplateMessage($to, 'copy_negotiation_item_response_3', $variables);
+    }
+
+    /**
+     * Send negotiation submitted to entity notification
+     *
+     * @param string $entityName
+     * @param string $negotiationName
+     * @param string $negotiationId
+     * @param string $to
+     * @return void
+     */
+    public function sendNegotiationSubmittedToEntity(
+        string $entityName,
+        string $negotiationName,
+        string $negotiationId,
+        string $to
+    ): void {
+        $variables = $this->templateBuilder->buildNegotiationSubmittedToEntity(
+            $entityName,
+            $negotiationName,
+            $negotiationId
+        );
+        $this->sendTemplateMessage($to, 'negotiation_submitted_to_entity', $variables);
+    }
+
+    /**
+     * Send NPS survey to patient
+     *
+     * @param string $patientName
+     * @param string $appointmentDate
+     * @param string $professionalName
+     * @param string $specialty
+     * @param string $appointmentId
+     * @param string $to
+     * @return void
+     */
+    public function sendNpsSurvey(
+        string $patientName,
+        string $appointmentDate,
+        string $professionalName,
+        string $specialty,
+        string $appointmentId,
+        string $to
+    ): void {
+        $variables = $this->templateBuilder->buildNpsSurvey(
+            $patientName,
+            $appointmentDate,
+            $professionalName,
+            $specialty,
+            $appointmentId
+        );
+        $this->sendTemplateMessage($to, 'nps_survey', $variables);
+    }
+
+    /**
+     * Send NPS provider survey to patient
+     *
+     * @param string $patientName
+     * @param string $professionalName
+     * @param string $appointmentDate
+     * @param string $appointmentId
+     * @param string $to
+     * @return void
+     */
+    public function sendNpsProviderSurvey(
+        string $patientName,
+        string $professionalName,
+        string $appointmentDate,
+        string $appointmentId,
+        string $to
+    ): void {
+        $variables = $this->templateBuilder->buildNpsProviderSurvey(
+            $patientName,
+            $professionalName,
+            $appointmentDate,
+            $appointmentId
+        );
+        $this->sendTemplateMessage($to, 'nps_survey_prestador', $variables);
+    }
+
+    /**
+     * Send NPS question to patient
+     *
+     * @param string $appointmentId
+     * @param string $to
+     * @return void
+     */
+    public function sendNpsQuestion(string $appointmentId, string $to): void
+    {
+        $variables = $this->templateBuilder->buildNpsQuestion($appointmentId);
+        $this->sendTemplateMessage($to, 'nps_pergunta', $variables);
+    }
 }

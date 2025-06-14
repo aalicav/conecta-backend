@@ -486,4 +486,121 @@ class WhatsAppTemplateBuilder
         
         return jwt_encode($payload, config('app.key'));
     }
+
+    /**
+     * Build the account created template data
+     *
+     * @param string $userName
+     * @return array
+     */
+    public function buildAccountCreated(string $userName): array
+    {
+        return [
+            '1' => $userName
+        ];
+    }
+
+    /**
+     * Build the negotiation internal approval required template data
+     *
+     * @param string $approverName
+     * @param string $negotiationName
+     * @param string $entityName
+     * @param int $itemCount
+     * @param string $approvalLevel
+     * @param string $negotiationId
+     * @return array
+     */
+    public function buildNegotiationInternalApprovalRequired(
+        string $approverName,
+        string $negotiationName,
+        string $entityName,
+        int $itemCount,
+        string $approvalLevel,
+        string $negotiationId
+    ): array {
+        return [
+            '1' => $approverName,
+            '2' => $negotiationName,
+            '3' => $entityName,
+            '4' => (string)$itemCount,
+            '5' => $approvalLevel,
+            '6' => $negotiationId
+        ];
+    }
+
+    /**
+     * Build the negotiation counter offer received template data
+     *
+     * @param string $userName
+     * @param string $amount
+     * @param string $itemName
+     * @param string $negotiationName
+     * @param string $negotiationId
+     * @return array
+     */
+    public function buildNegotiationCounterOfferReceived(
+        string $userName,
+        string $amount,
+        string $itemName,
+        string $negotiationName,
+        string $negotiationId
+    ): array {
+        return [
+            '1' => $userName,
+            '2' => $amount,
+            '3' => $itemName,
+            '4' => $negotiationName,
+            '5' => $negotiationId
+        ];
+    }
+
+    /**
+     * Build the negotiation item response template data
+     *
+     * @param string $userName
+     * @param string $itemName
+     * @param string $amount
+     * @param string $negotiationName
+     * @param string $status
+     * @param string $negotiationId
+     * @return array
+     */
+    public function buildNegotiationItemResponse(
+        string $userName,
+        string $itemName,
+        string $amount,
+        string $negotiationName,
+        string $status,
+        string $negotiationId
+    ): array {
+        return [
+            '1' => $userName,
+            '2' => $itemName,
+            '3' => $amount,
+            '4' => $negotiationName,
+            '5' => $status,
+            '6' => $negotiationId
+        ];
+    }
+
+    /**
+     * Build the negotiation submitted to entity template data
+     *
+     * @param string $entityName
+     * @param string $negotiationName
+     * @param string $negotiationId
+     * @return array
+     */
+    public function buildNegotiationSubmittedToEntity(
+        string $entityName,
+        string $negotiationName,
+        string $negotiationId
+    ): array {
+        return [
+            '1' => $entityName,
+            '2' => $negotiationName,
+            '3' => $negotiationId
+        ];
+    }
 } 

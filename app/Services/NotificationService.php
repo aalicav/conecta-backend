@@ -1304,6 +1304,20 @@ class NotificationService
                     'negotiation_id' => $negotiation->id
                 ]);
             }
+
+            // Enviar notificação via WhatsApp
+            $phone = $creator->phones()->first();
+            if ($phone) {
+                $this->whatsAppService->sendNegotiationItemResponse(
+                    $creator->name,
+                    $tussName,
+                    number_format($item->amount, 2, ',', '.'),
+                    $negotiation->name,
+                    $statusText,
+                    $negotiation->id,
+                    $phone->number
+                );
+            }
         } catch (\Exception $e) {
             Log::error('Error sending item response notification', [
                 'error' => $e->getMessage(),
@@ -2939,6 +2953,160 @@ class NotificationService
                 'previous_status' => $previousStatus,
                 'new_status' => $newStatus
             ]);
+        }
+    }
+
+    /**
+     * Notify when a new account is created
+     *
+     * @param User $user
+     * @return void
+     */
+    public function notifyAccountCreated(User $user): void
+    {
+        $phone = $user->phones()->first();
+        if ($phone) {
+            $this->whatsAppService->sendAccountCreatedNotification(
+                $user->name,
+                $phone->number
+            );
+        }
+    }
+
+    /**
+     * Notify when negotiation requires internal approval
+     *
+     * @param Negotiation $negotiation
+     * @param string $approvalLevel
+     * @return void
+     */
+    public function notifyNegotiationInternalApprovalRequired(Negotiation $negotiation, string $approvalLevel): void
+    {
+        $approvers = $this->getUsersToNotifyForNegotiation($negotiation, $approvalLevel);
+        foreach ($approvers as $approver) {
+            $phone = $approver->phones()->first();
+            if ($phone) {
+                $this->whatsAppService->sendNegotiationInternalApprovalRequired(
+                    $approver->name,
+                    $negotiation->name,
+                    $negotiation->entity->name,
+                    $negotiation->items()->count(),
+                    $approvalLevel,
+                    $negotiation->id,
+                    $phone->number
+                );
+            }
+        }
+    }
+
+    /**
+     * Notify when a counter offer is received
+     *
+     * @param NegotiationItem $item
+     * @return void
+     */
+    public function notifyCounterOfferReceived(NegotiationItem $item): void
+    {
+        $negotiation = $item->negotiation;
+        $user = $negotiation->user;
+        $phone = $user->phones()->first();
+        
+        if ($phone) {
+            $this->whatsAppService->sendNegotiationCounterOfferReceived(
+                $user->name,
+                number_format($item->counter_offer_amount, 2, ',', '.'),
+                $item->name,
+                $negotiation->name,
+                $negotiation->id,
+                $phone->number
+            );
+        }
+    }
+
+    /**
+     * Notify when a negotiation is submitted to an entity
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function notifyNegotiationSubmittedToEntity(Negotiation $negotiation): void
+    {
+        $entity = $negotiation->entity;
+        $contact = $entity->contacts()->first();
+        
+        if ($contact && $contact->phone) {
+            $this->whatsAppService->sendNegotiationSubmittedToEntity(
+                $entity->name,
+                $negotiation->name,
+                $negotiation->id,
+                $contact->phone
+            );
+        }
+    }
+
+    /**
+     * Send NPS survey to patient
+     *
+     * @param Appointment $appointment
+     * @return void
+     */
+    public function sendNpsSurvey(Appointment $appointment): void
+    {
+        $patient = $appointment->patient;
+        $professional = $appointment->professional;
+        $phone = $patient->phones()->first();
+        
+        if ($phone) {
+            $this->whatsAppService->sendNpsSurvey(
+                $patient->name,
+                $appointment->scheduled_date->format('d/m/Y'),
+                $professional->name,
+                $professional->specialty,
+                $appointment->id,
+                $phone->number
+            );
+        }
+    }
+
+    /**
+     * Send NPS provider survey to patient
+     *
+     * @param Appointment $appointment
+     * @return void
+     */
+    public function sendNpsProviderSurvey(Appointment $appointment): void
+    {
+        $patient = $appointment->patient;
+        $professional = $appointment->professional;
+        $phone = $patient->phones()->first();
+        
+        if ($phone) {
+            $this->whatsAppService->sendNpsProviderSurvey(
+                $patient->name,
+                $professional->name,
+                $appointment->scheduled_date->format('d/m/Y'),
+                $appointment->id,
+                $phone->number
+            );
+        }
+    }
+
+    /**
+     * Send NPS question to patient
+     *
+     * @param Appointment $appointment
+     * @return void
+     */
+    public function sendNpsQuestion(Appointment $appointment): void
+    {
+        $patient = $appointment->patient;
+        $phone = $patient->phones()->first();
+        
+        if ($phone) {
+            $this->whatsAppService->sendNpsQuestion(
+                $appointment->id,
+                $phone->number
+            );
         }
     }
 }

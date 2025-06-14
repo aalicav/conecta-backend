@@ -605,7 +605,7 @@ Route::post('/appointments/professional-response', [AppointmentController::class
     ->middleware(['auth:sanctum', 'role:professional']);
 
 // Professional Availability Routes
-Route::middleware(['auth:sanctum', 'role:professional,clinic'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:professional,clinic,super_admin,network_manager'])->group(function () {
     Route::post('/availabilities', [ProfessionalAvailabilityController::class, 'submitAvailability']);
     Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
     
@@ -615,7 +615,7 @@ Route::middleware(['auth:sanctum', 'role:professional,clinic'])->group(function 
     Route::post('/invites/{inviteId}/reject', [SolicitationInviteController::class, 'reject']);
 });
 
-Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:professional,clinic,super_admin,network_manager'])->group(function () {
     Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
     Route::post('/availabilities/{availabilityId}/select', [ProfessionalAvailabilityController::class, 'selectAvailability']);
 });
