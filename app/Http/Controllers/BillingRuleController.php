@@ -16,7 +16,7 @@ class BillingRuleController extends Controller
      */
     public function index(Request $request)
     {
-        $query = BillingRule::with(['healthPlan', 'contract', 'guideTemplate']);
+        $query = BillingRule::with(['healthPlan', 'contract']);
 
         // Filter by health plan
         if ($request->has('health_plan_id')) {
@@ -54,7 +54,6 @@ class BillingRuleController extends Controller
             'notification_recipients.*' => ['email'],
             'notification_frequency' => ['required', 'in:daily,weekly,monthly'],
             'document_format' => ['required', 'in:pdf,xml,json'],
-            'guide_template_id' => ['nullable', 'exists:document_templates,id'],
             'is_active' => ['boolean'],
         ]);
 
@@ -83,7 +82,7 @@ class BillingRuleController extends Controller
      */
     public function show(BillingRule $billingRule)
     {
-        return response()->json($billingRule->load(['healthPlan', 'contract', 'guideTemplate']));
+        return response()->json($billingRule->load(['healthPlan', 'contract']));
     }
 
     /**
@@ -100,7 +99,6 @@ class BillingRuleController extends Controller
             'notification_recipients.*' => ['email'],
             'notification_frequency' => ['sometimes', 'in:daily,weekly,monthly'],
             'document_format' => ['sometimes', 'in:pdf,xml,json'],
-            'guide_template_id' => ['nullable', 'exists:document_templates,id'],
             'is_active' => ['boolean'],
         ]);
 
@@ -110,7 +108,7 @@ class BillingRuleController extends Controller
 
         $billingRule->update($request->all());
 
-        return response()->json($billingRule->fresh(['healthPlan', 'contract', 'guideTemplate']));
+        return response()->json($billingRule->fresh(['healthPlan', 'contract']));
     }
 
     /**

@@ -27,7 +27,6 @@ class BillingRule extends Model
         'notification_recipients',
         'notification_frequency',
         'document_format',
-        'guide_template_id',
         'is_active',
         'generate_nfe',
         'nfe_series',
@@ -45,7 +44,6 @@ class BillingRule extends Model
         'monthly_day' => 'integer',
         'batch_size' => 'integer',
         'payment_days' => 'integer',
-        'guide_template_id' => 'integer',
         'generate_nfe' => 'boolean',
         'nfe_series' => 'integer',
         'nfe_environment' => 'integer',
@@ -65,14 +63,6 @@ class BillingRule extends Model
     public function contract(): BelongsTo
     {
         return $this->belongsTo(Contract::class);
-    }
-
-    /**
-     * Get the guide template for the billing rule.
-     */
-    public function guideTemplate(): BelongsTo
-    {
-        return $this->belongsTo(DocumentTemplate::class, 'guide_template_id');
     }
 
     /**
