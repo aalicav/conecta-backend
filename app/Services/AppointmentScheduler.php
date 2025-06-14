@@ -592,7 +592,7 @@ class AppointmentScheduler
             // Add the user who requested the reprocessing if they are not a health plan
             if ($solicitation->reprocessed_by) {
                 $requestingUser = User::find($solicitation->reprocessed_by);
-                if ($requestingUser && !$requestingUser->hasRole('health_plan')) {
+                if ($requestingUser && !$requestingUser->hasRole('plan_admin')) {
                     $users->push($requestingUser);
                 }
             }
