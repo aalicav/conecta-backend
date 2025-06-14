@@ -638,10 +638,10 @@ class AppointmentScheduler
      * Get clinics that offer the specified procedure
      *
      * @param Solicitation $solicitation
-     * @param TussProcedure $procedure
+     * @param Tuss|TussProcedure $procedure
      * @return array Formatted clinic providers with location and price
      */
-    protected function getClinicsForProcedure(Solicitation $solicitation, TussProcedure $procedure): array
+    protected function getClinicsForProcedure(Solicitation $solicitation, $procedure): array
     {
         $query = Clinic::active()
             ->whereHas('pricingContracts', function($query) use ($procedure) {
@@ -665,10 +665,10 @@ class AppointmentScheduler
      * Get professionals that offer the specified procedure
      *
      * @param Solicitation $solicitation
-     * @param TussProcedure $procedure
+     * @param Tuss|TussProcedure $procedure
      * @return array Formatted professional providers with location and price
      */
-    protected function getProfessionalsForProcedure(Solicitation $solicitation, TussProcedure $procedure): array
+    protected function getProfessionalsForProcedure(Solicitation $solicitation, $procedure): array
     {
         $query = Professional::active()
             ->whereHas('pricingContracts', function($query) use ($procedure) {
