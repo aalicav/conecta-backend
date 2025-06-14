@@ -589,10 +589,10 @@ class AppointmentScheduler
                 $query->whereIn('name', ['super_admin', 'network_manager']);
             })->get();
 
-            // Add the user who requested the reprocessing
-            if ($solicitation->requested_by) {
-                $requestingUser = User::find($solicitation->requested_by);
-                if ($requestingUser) {
+            // Add the user who requested the reprocessing if they are not a health plan
+            if ($solicitation->reprocessed_by) {
+                $requestingUser = User::find($solicitation->reprocessed_by);
+                if ($requestingUser && !$requestingUser->hasRole('health_plan')) {
                     $users->push($requestingUser);
                 }
             }
