@@ -615,7 +615,7 @@ Route::middleware(['auth:sanctum', 'role:professional,clinic,super_admin,network
     Route::post('/invites/{inviteId}/reject', [SolicitationInviteController::class, 'reject']);
 });
 
-Route::middleware(['auth:sanctum', 'role:professional,clinic,super_admin,network_manager'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:,super_admin,network_manager'])->group(function () {
     Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
     Route::post('/availabilities/{availabilityId}/select', [ProfessionalAvailabilityController::class, 'selectAvailability']);
 });
