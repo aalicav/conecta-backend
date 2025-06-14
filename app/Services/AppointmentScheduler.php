@@ -589,6 +589,14 @@ class AppointmentScheduler
                 $query->whereIn('name', ['super_admin', 'network_manager']);
             })->get();
 
+            // Add the user who requested the reprocessing
+            if ($solicitation->requested_by) {
+                $requestingUser = User::find($solicitation->requested_by);
+                if ($requestingUser) {
+                    $users->push($requestingUser);
+                }
+            }
+
             // Send notification
             Notification::send($users, new SchedulingFailed(
                 $solicitation,
