@@ -158,6 +158,14 @@ class Clinic extends Model
     }
 
     /**
+     * Get the negotiations associated with this clinic.
+     */
+    public function negotiations(): MorphMany
+    {
+        return $this->morphMany(Negotiation::class, 'negotiable');
+    }
+
+    /**
      * Scope a query to only include pending clinics.
      */
     public function scopePending($query)
