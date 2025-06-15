@@ -74,17 +74,30 @@ class SchedulingFailed extends Notification implements ShouldQueue
         $healthPlan = $this->solicitation->healthPlan;
         $requestedBy = $this->solicitation->requestedBy;
 
-        return (new MailMessage)
+        $message = (new MailMessage)
             ->subject('[URGENTE] Falha no Agendamento Automático - Solicitação #' . $this->solicitation->id)
             ->greeting('Olá ' . $notifiable->name . '!')
             ->line('Houve uma falha no processo de agendamento automático que requer sua atenção.')
             ->line('**Detalhes da Solicitação:**')
-            ->line("- **Número da Solicitação:** #{$this->solicitation->id}")
-            ->line("- **Paciente:** {$patient->name}")
-            ->line("- **Plano de Saúde:** {$healthPlan->name}")
-            ->line("- **Especialidade/Procedimento:** {$tuss->code} - {$tuss->description}")
-            ->line("- **Solicitado por:** {$requestedBy->name}")
-            ->line("- **Data da Solicitação:** " . $this->solicitation->created_at->format('d/m/Y H:i'))
+            ->line("- **Número da Solicitação:** #{$this->solicitation->id}");
+
+        if ($patient) {
+            $message->line("- **Paciente:** {$patient->name}");
+        }
+
+        if ($healthPlan) {
+            $message->line("- **Plano de Saúde:** {$healthPlan->name}");
+        }
+
+        if ($tuss) {
+            $message->line("- **Especialidade/Procedimento:** {$tuss->code} - {$tuss->description}");
+        }
+
+        if ($requestedBy) {
+            $message->line("- **Solicitado por:** {$requestedBy->name}");
+        }
+
+        $message->line("- **Data da Solicitação:** " . $this->solicitation->created_at->format('d/m/Y H:i'))
             ->line("\n**Motivo da Falha:**")
             ->line($this->reason)
             ->line("\n**Ações Necessárias:**")
@@ -93,6 +106,8 @@ class SchedulingFailed extends Notification implements ShouldQueue
             ->line('3. Tentar o agendamento automático novamente')
             ->action('Ver Solicitação', url("/solicitations/{$this->solicitation->id}"))
             ->line('Por favor, tome as providências necessárias para garantir o atendimento do paciente.');
+
+        return $message;
     }
 
     /**
@@ -103,14 +118,25 @@ class SchedulingFailed extends Notification implements ShouldQueue
      */
     public function toArray($notifiable)
     {
-        return [
+        $data = [
             'solicitation_id' => $this->solicitation->id,
-            'patient_name' => $this->solicitation->patient->name,
-            'health_plan_name' => $this->solicitation->healthPlan->name,
-            'tuss_code' => $this->solicitation->tuss->code,
-            'tuss_description' => $this->solicitation->tuss->description,
             'failure_reason' => $this->reason,
             'type' => 'scheduling_failed'
         ];
+
+        if ($this->solicitation->patient) {
+            $data['patient_name'] = $this->solicitation->patient->name;
+        }
+
+        if ($this->solicitation->healthPlan) {
+            $data['health_plan_name'] = $this->solicitation->healthPlan->name;
+        }
+
+        if ($this->solicitation->tuss) {
+            $data['tuss_code'] = $this->solicitation->tuss->code;
+            $data['tuss_description'] = $this->solicitation->tuss->description;
+        }
+
+        return $data;
     }
 } 
