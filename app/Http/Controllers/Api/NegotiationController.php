@@ -753,6 +753,7 @@ class NegotiationController extends Controller
             DB::commit();
 
             return response()->json([
+                'success' => true,
                 'message' => 'External approval processed successfully.',
                 'data' => new NegotiationResource($negotiation)
             ]);

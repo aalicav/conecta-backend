@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PricingContract extends Model
 {
@@ -71,6 +72,14 @@ class PricingContract extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Get the pricing items for this contract.
+     */
+    public function pricingItems(): HasMany
+    {
+        return $this->hasMany(PricingItem::class);
     }
 
     /**
