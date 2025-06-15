@@ -57,6 +57,8 @@ class WhatsAppService
     const TEMPLATE_APROVACAO_PENDENTE = 'SID_A_SER_INSERIDO_APROVACAO_PENDENTE';
     const TEMPLATE_PACIENTE_AUSENTE = 'SID_A_SER_INSERIDO_PACIENTE_AUSENTE';
     const TEMPLATE_PREPARO_EXAME = 'SID_A_SER_INSERIDO_PREPARO_EXAME';
+
+    const TEMPLATE_SOLICITATION_INVITE = '';
     
     /**
      * The template builder instance.
@@ -570,7 +572,8 @@ class WhatsAppService
                 'tarefa_critica' => self::TEMPLATE_TAREFA_CRITICA,
                 'aprovacao_pendente' => self::TEMPLATE_APROVACAO_PENDENTE,
                 'paciente_ausente' => self::TEMPLATE_PACIENTE_AUSENTE,
-                'preparo_exame' => self::TEMPLATE_PREPARO_EXAME
+                'preparo_exame' => self::TEMPLATE_PREPARO_EXAME,
+                'solicitation_invite' => self::TEMPLATE_SOLICITATION_INVITE,
             ];
             
             $templateSid = $templateMap[$payload['template']] ?? null;

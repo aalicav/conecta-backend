@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Solicitation;
 use App\Models\SolicitationInvite;
 use App\Services\AppointmentScheduler;
+use App\Services\NotificationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -38,6 +39,13 @@ class ProcessAutomaticScheduling implements ShouldQueue
     protected $solicitation;
 
     /**
+     * The notification service instance.
+     *
+     * @var \App\Services\NotificationService
+     */
+    protected $notificationService;
+
+    /**
      * Create a new job instance.
      *
      * @param  \App\Models\Solicitation  $solicitation
@@ -46,6 +54,7 @@ class ProcessAutomaticScheduling implements ShouldQueue
     public function __construct(Solicitation $solicitation)
     {
         $this->solicitation = $solicitation;
+        $this->notificationService = app(NotificationService::class);
     }
 
     /**
@@ -64,13 +73,23 @@ class ProcessAutomaticScheduling implements ShouldQueue
             if (!empty($providers)) {
                 foreach ($providers as $provider) {
                     // Create invite for each provider
-                    SolicitationInvite::create([
+                    $invite = SolicitationInvite::create([
                         'solicitation_id' => $this->solicitation->id,
                         'provider_type' => $provider['provider_type'],
                         'provider_id' => $provider['provider_id'],
                         'status' => 'pending',
                         'created_by' => $this->solicitation->requested_by
                     ]);
+
+                    // Get the provider's user
+                    $providerUser = $provider['provider_type']::find($provider['provider_id'])->user;
+                    
+                    // Send notification using NotificationService
+                    $this->notificationService->sendSolicitationInviteNotification(
+                        $this->solicitation,
+                        $invite,
+                        $providerUser
+                    );
                 }
                 
                 Log::info("Convites criados com sucesso para solicitação #{$this->solicitation->id}");

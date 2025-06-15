@@ -603,4 +603,30 @@ class WhatsAppTemplateBuilder
             '3' => $negotiationId
         ];
     }
+
+    /**
+     * Build the solicitation invite template data
+     *
+     * @param string $providerName
+     * @param string $procedureName
+     * @param string $patientName
+     * @param string $preferredDate
+     * @param string $solicitationId
+     * @return array
+     */
+    public function buildSolicitationInvite(
+        string $providerName,
+        string $procedureName,
+        string $patientName,
+        string $preferredDate,
+        string $solicitationId
+    ): array {
+        return [
+                '1' => $providerName,
+                '2' => $procedureName,
+                '3' => $patientName,
+                '4' => $preferredDate,
+                '5' => $solicitationId
+        ];
+    }
 } 

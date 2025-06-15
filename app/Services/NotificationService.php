@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Appointment;
 use App\Models\Solicitation;
+use App\Models\SolicitationInvite;
 use App\Models\User;
 use App\Models\Patient;
 use App\Models\Professional;
@@ -26,6 +27,7 @@ use App\Notifications\SolicitationUpdated;
 use App\Notifications\ProfessionalRegistrationSubmitted;
 use App\Notifications\ProfessionalRegistrationReviewed;
 use App\Notifications\ProfessionalContractLinked;
+use App\Notifications\SolicitationInviteCreated;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Auth;
@@ -43,14 +45,23 @@ class NotificationService
     protected $whatsAppService;
 
     /**
+     * The WhatsApp template builder instance.
+     *
+     * @var \App\Services\WhatsAppTemplateBuilder
+     */
+    protected $whatsAppTemplateBuilder;
+
+    /**
      * Create a new service instance.
      *
      * @param  \App\Services\WhatsAppService  $whatsAppService
+     * @param  \App\Services\WhatsAppTemplateBuilder  $whatsAppTemplateBuilder
      * @return void
      */
-    public function __construct()
+    public function __construct(WhatsAppService $whatsAppService, WhatsAppTemplateBuilder $whatsAppTemplateBuilder)
     {
-        $this->whatsAppService = new WhatsAppService();
+        $this->whatsAppService = $whatsAppService;
+        $this->whatsAppTemplateBuilder = $whatsAppTemplateBuilder;
     }
 
     /**
@@ -3118,5 +3129,37 @@ class NotificationService
             'action_link' => "/negotiations/{$negotiation->id}",
             'priority' => 'high'
         ]);
+    }
+
+    /**
+     * Send solicitation invite notification to a provider.
+     *
+     * @param  \App\Models\Solicitation  $solicitation
+     * @param  \App\Models\SolicitationInvite  $invite
+     * @param  \App\Models\User  $provider
+     * @return void
+     */
+    public function sendSolicitationInviteNotification(Solicitation $solicitation, SolicitationInvite $invite, User $provider)
+    {
+        try {
+            // Create and send the notification
+            $provider->notify(new SolicitationInviteCreated($solicitation, $invite));
+
+            Log::info('Solicitation invite notification sent successfully', [
+                'solicitation_id' => $solicitation->id,
+                'invite_id' => $invite->id,
+                'provider_id' => $provider->id,
+                'provider_name' => $provider->name
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send solicitation invite notification', [
+                'solicitation_id' => $solicitation->id,
+                'invite_id' => $invite->id,
+                'provider_id' => $provider->id,
+                'error' => $e->getMessage()
+            ]);
+
+            throw $e;
+        }
     }
 }
