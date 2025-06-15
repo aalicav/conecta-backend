@@ -195,7 +195,7 @@ class AppointmentScheduler
         $clinics = Clinic::active()
             ->whereHas('pricingContracts', function($query) use ($tussId) {
                 $query->whereHas('pricingItems', function($query) use ($tussId) {
-                    $query->where('tuss_id', $tussId);
+                    $query->where('tuss_procedure_id', $tussId);
                 });
             })
             ->get();
@@ -203,7 +203,7 @@ class AppointmentScheduler
         $professionals = Professional::active()
             ->whereHas('pricingContracts', function($query) use ($tussId) {
                 $query->whereHas('pricingItems', function($query) use ($tussId) {
-                    $query->where('tuss_id', $tussId);
+                    $query->where('tuss_procedure_id', $tussId);
                 });
             })
             ->get();
@@ -515,7 +515,7 @@ class AppointmentScheduler
             $clinics = Clinic::active()
                 ->whereHas('pricingContracts', function($query) use ($tussId) {
                     $query->whereHas('pricingItems', function($query) use ($tussId) {
-                        $query->where('tuss_id', $tussId);
+                        $query->where('tuss_procedure_id', $tussId);
                     });
                 })
                 ->get();
@@ -532,7 +532,7 @@ class AppointmentScheduler
             $professionals = Professional::active()
                 ->whereHas('pricingContracts', function($query) use ($tussId) {
                     $query->whereHas('pricingItems', function($query) use ($tussId) {
-                        $query->where('tuss_id', $tussId);
+                        $query->where('tuss_procedure_id', $tussId);
                     });
                 });
 
@@ -660,7 +660,7 @@ class AppointmentScheduler
         $query = Clinic::active()
             ->whereHas('pricingContracts', function($query) use ($procedure) {
                 $query->whereHas('pricingItems', function($query) use ($procedure) {
-                    $query->where('tuss_id', $procedure->id);
+                    $query->where('tuss_procedure_id', $procedure->id);
                 });
             });
 
@@ -687,7 +687,7 @@ class AppointmentScheduler
         $query = Professional::active()
             ->whereHas('pricingContracts', function($query) use ($procedure) {
                 $query->whereHas('pricingItems', function($query) use ($procedure) {
-                    $query->where('tuss_id', $procedure->id);
+                    $query->where('tuss_procedure_id', $procedure->id);
                 });
             });
 
