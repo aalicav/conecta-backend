@@ -521,16 +521,12 @@ class AppointmentScheduler
             $patientLat = $solicitation->preferred_location_lat;
             $patientLng = $solicitation->preferred_location_lng;
 
-            // Get clinics that offer this procedure and have approved negotiations
+            // Get clinics that offer this procedure and have active pricing contracts
             $clinics = Clinic::active()
-                ->whereHas('negotiations', function($query) use ($tussId, $healthPlanId) {
-                    $query->whereHas('items', function($q) use ($tussId) {
-                        $q->where('tuss_id', $tussId)
-                          ->where('status', 'approved');
-                    })
-                    ->where('negotiable_type', 'App\\Models\\HealthPlan')
-                    ->where('negotiable_id', $healthPlanId)
-                    ->where('status', 'complete');
+                ->whereHas('pricingContracts', function($query) use ($tussId, $healthPlanId) {
+                    $query->where('tuss_id', $tussId)
+                          ->where('is_active', true)
+                          ->where('health_plan_id', $healthPlanId);
                 })
                 ->get();
 
@@ -551,8 +547,8 @@ class AppointmentScheduler
                     }
                 }
 
-                // Get price from negotiations
-                $price = $this->getPriceFromNegotiations($clinic->negotiations, $tussId);
+                // Get price from active pricing contract
+                $price = $this->getPriceFromPricingContract($clinic->pricingContracts, $tussId);
 
                 $providers[] = [
                     'provider_type' => 'clinic',
@@ -562,16 +558,12 @@ class AppointmentScheduler
                 ];
             }
 
-            // Get professionals that offer this procedure and have approved negotiations
+            // Get professionals that offer this procedure and have active pricing contracts
             $professionals = Professional::active()
-                ->whereHas('negotiations', function($query) use ($tussId, $healthPlanId) {
-                    $query->whereHas('items', function($q) use ($tussId) {
-                        $q->where('tuss_id', $tussId)
-                          ->where('status', 'approved');
-                    })
-                    ->where('negotiable_type', 'App\\Models\\HealthPlan')
-                    ->where('negotiable_id', $healthPlanId)
-                    ->where('status', 'complete');
+                ->whereHas('pricingContracts', function($query) use ($tussId, $healthPlanId) {
+                    $query->where('tuss_id', $tussId)
+                          ->where('is_active', true)
+                          ->where('health_plan_id', $healthPlanId);
                 });
 
             // If TUSS is 10101012, require medical specialty
@@ -600,8 +592,8 @@ class AppointmentScheduler
                     }
                 }
 
-                // Get price from negotiations
-                $price = $this->getPriceFromNegotiations($professional->negotiations, $tussId);
+                // Get price from active pricing contract
+                $price = $this->getPriceFromPricingContract($professional->pricingContracts, $tussId);
 
                 $providers[] = [
                     'provider_type' => 'professional',
@@ -616,7 +608,7 @@ class AppointmentScheduler
                 $this->notifyNoProvidersFound($solicitation);
                 return [
                     'success' => false,
-                    'message' => 'No providers found within 100km with approved procedures'
+                    'message' => 'No providers found within 100km with active pricing contracts'
                 ];
             }
 
@@ -648,22 +640,17 @@ class AppointmentScheduler
     }
 
     /**
-     * Get price from negotiations
+     * Get price from active pricing contract
      *
-     * @param Collection $negotiations
+     * @param Collection $pricingContracts
      * @param int $tussId
      * @return float|null
      */
-    protected function getPriceFromNegotiations($negotiations, $tussId)
+    protected function getPriceFromPricingContract($pricingContracts, $tussId)
     {
-        foreach ($negotiations as $negotiation) {
-            $item = $negotiation->items()
-                ->where('tuss_id', $tussId)
-                ->where('status', 'approved')
-                ->first();
-            
-            if ($item) {
-                return $item->approved_value;
+        foreach ($pricingContracts as $contract) {
+            if ($contract->tuss_id === $tussId && $contract->is_active) {
+                return $contract->price;
             }
         }
         

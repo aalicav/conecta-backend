@@ -104,29 +104,21 @@ class AutomaticSchedulingService
         $patientLng = $solicitation->preferred_location_lng;
         $maxDistance = $solicitation->max_distance_km ?: self::MAX_DISTANCE_KM;
         
-        // 1. Find eligible professionals with negotiated prices for this procedure
-        $professionals = Professional::with(['negotiations' => function ($query) use ($tussId, $healthPlanId) {
-                $query->whereHas('items', function ($q) use ($tussId) {
-                    $q->where('tuss_id', $tussId)
-                      ->where('status', 'approved');
-                })
-                ->where('negotiable_type', 'App\\Models\\HealthPlan')
-                ->where('negotiable_id', $healthPlanId)
-                ->where('status', 'complete');
+        // 1. Find eligible professionals with active pricing contracts for this procedure
+        $professionals = Professional::with(['pricingContracts' => function ($query) use ($tussId, $healthPlanId) {
+                $query->where('tuss_id', $tussId)
+                      ->where('is_active', true)
+                      ->where('health_plan_id', $healthPlanId);
             }])
             ->where('is_active', true)
             ->where('status', 'approved')
             ->get();
         
-        // 2. Find eligible clinics with negotiated prices
-        $clinics = Clinic::with(['negotiations' => function ($query) use ($tussId, $healthPlanId) {
-                $query->whereHas('items', function ($q) use ($tussId) {
-                    $q->where('tuss_id', $tussId)
-                      ->where('status', 'approved');
-                })
-                ->where('negotiable_type', 'App\\Models\\HealthPlan')
-                ->where('negotiable_id', $healthPlanId)
-                ->where('status', 'complete');
+        // 2. Find eligible clinics with active pricing contracts
+        $clinics = Clinic::with(['pricingContracts' => function ($query) use ($tussId, $healthPlanId) {
+                $query->where('tuss_id', $tussId)
+                      ->where('is_active', true)
+                      ->where('health_plan_id', $healthPlanId);
             }])
             ->where('is_active', true)
             ->where('status', 'approved')
@@ -134,8 +126,8 @@ class AutomaticSchedulingService
         
         // 3. Process professionals
         foreach ($professionals as $professional) {
-            // Skip if no negotiations found
-            if ($professional->negotiations->isEmpty()) {
+            // Skip if no active pricing contracts found
+            if ($professional->pricingContracts->isEmpty()) {
                 continue;
             }
             
@@ -155,8 +147,8 @@ class AutomaticSchedulingService
                 }
             }
             
-            // Get the price from negotiation items
-            $price = $this->getPriceFromNegotiations($professional->negotiations, $tussId);
+            // Get the price from active pricing contract
+            $price = $this->getPriceFromPricingContract($professional->pricingContracts, $tussId);
             
             $providers->push([
                 'type' => 'App\\Models\\Professional',
@@ -169,8 +161,8 @@ class AutomaticSchedulingService
         
         // 4. Process clinics
         foreach ($clinics as $clinic) {
-            // Skip if no negotiations found
-            if ($clinic->negotiations->isEmpty()) {
+            // Skip if no active pricing contracts found
+            if ($clinic->pricingContracts->isEmpty()) {
                 continue;
             }
             
@@ -190,8 +182,8 @@ class AutomaticSchedulingService
                 }
             }
             
-            // Get the price from negotiation items
-            $price = $this->getPriceFromNegotiations($clinic->negotiations, $tussId);
+            // Get the price from active pricing contract
+            $price = $this->getPriceFromPricingContract($clinic->pricingContracts, $tussId);
             
             $providers->push([
                 'type' => 'App\\Models\\Clinic',
@@ -366,22 +358,17 @@ class AutomaticSchedulingService
     }
 
     /**
-     * Get price from negotiations
+     * Get price from active pricing contract
      *
-     * @param Collection $negotiations
+     * @param Collection $pricingContracts
      * @param int $tussId
      * @return float|null
      */
-    protected function getPriceFromNegotiations($negotiations, $tussId)
+    protected function getPriceFromPricingContract($pricingContracts, $tussId)
     {
-        foreach ($negotiations as $negotiation) {
-            $item = $negotiation->items()
-                ->where('tuss_id', $tussId)
-                ->where('status', 'approved')
-                ->first();
-            
-            if ($item) {
-                return $item->approved_value;
+        foreach ($pricingContracts as $contract) {
+            if ($contract->tuss_id === $tussId && $contract->is_active) {
+                return $contract->price;
             }
         }
         
