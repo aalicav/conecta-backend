@@ -19,6 +19,7 @@ use App\Services\MapboxService;
 use App\Models\User;
 use App\Notifications\SchedulingFailed;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Database\Eloquent\Collection;
 
 class AppointmentScheduler
 {
@@ -132,7 +133,10 @@ class AppointmentScheduler
 
             if ($patientLat && $patientLng) {
                 // If we have location data, find the nearest and most affordable provider
-                $provider = $this->findBestProvider($solicitation);
+                $result = $this->findBestProvider($solicitation);
+                if ($result['success']) {
+                    $provider = $result['data'][0] ?? null;
+                }
             } else {
                 // Fallback: just find the most affordable provider
                 $provider = $this->findMostAffordableProvider($solicitation, $procedure);
@@ -509,31 +513,65 @@ class AppointmentScheduler
     {
         try {
             $tussId = $solicitation->tuss_id;
+            $healthPlanId = $solicitation->health_plan_id;
             $providers = [];
+            $maxDistance = 100; // 100km maximum distance
 
-            // Get clinics that offer this procedure
+            // Get patient location
+            $patientLat = $solicitation->preferred_location_lat;
+            $patientLng = $solicitation->preferred_location_lng;
+
+            // Get clinics that offer this procedure and have approved negotiations
             $clinics = Clinic::active()
-                ->whereHas('pricingContracts', function($query) use ($tussId) {
-                    $query->whereHas('pricingItems', function($query) use ($tussId) {
-                        $query->where('tuss_procedure_id', $tussId);
-                    });
+                ->whereHas('negotiations', function($query) use ($tussId, $healthPlanId) {
+                    $query->whereHas('items', function($q) use ($tussId) {
+                        $q->where('tuss_procedure_id', $tussId)
+                          ->where('status', 'approved');
+                    })
+                    ->where('negotiable_type', 'App\\Models\\HealthPlan')
+                    ->where('negotiable_id', $healthPlanId)
+                    ->where('status', 'complete');
                 })
                 ->get();
 
             foreach ($clinics as $clinic) {
+                // Calculate distance if coordinates available
+                $distance = null;
+                if ($patientLat && $patientLng && $clinic->latitude && $clinic->longitude) {
+                    $distance = $this->calculateDistance(
+                        $patientLat,
+                        $patientLng,
+                        $clinic->latitude,
+                        $clinic->longitude
+                    );
+
+                    // Skip if too far
+                    if ($distance > $maxDistance) {
+                        continue;
+                    }
+                }
+
+                // Get price from negotiations
+                $price = $this->getPriceFromNegotiations($clinic->negotiations, $tussId);
+
                 $providers[] = [
                     'provider_type' => 'clinic',
                     'provider_id' => $clinic->id,
-                    'price' => $this->getPriceForTuss($clinic, $tussId)
+                    'price' => $price,
+                    'distance' => $distance
                 ];
             }
 
-            // Get professionals that offer this procedure
+            // Get professionals that offer this procedure and have approved negotiations
             $professionals = Professional::active()
-                ->whereHas('pricingContracts', function($query) use ($tussId) {
-                    $query->whereHas('pricingItems', function($query) use ($tussId) {
-                        $query->where('tuss_procedure_id', $tussId);
-                    });
+                ->whereHas('negotiations', function($query) use ($tussId, $healthPlanId) {
+                    $query->whereHas('items', function($q) use ($tussId) {
+                        $q->where('tuss_procedure_id', $tussId)
+                          ->where('status', 'approved');
+                    })
+                    ->where('negotiable_type', 'App\\Models\\HealthPlan')
+                    ->where('negotiable_id', $healthPlanId)
+                    ->where('status', 'complete');
                 });
 
             // If TUSS is 10101012, require medical specialty
@@ -546,30 +584,90 @@ class AppointmentScheduler
             $professionals = $professionals->get();
 
             foreach ($professionals as $professional) {
+                // Calculate distance if coordinates available
+                $distance = null;
+                if ($patientLat && $patientLng && $professional->latitude && $professional->longitude) {
+                    $distance = $this->calculateDistance(
+                        $patientLat,
+                        $patientLng,
+                        $professional->latitude,
+                        $professional->longitude
+                    );
+
+                    // Skip if too far
+                    if ($distance > $maxDistance) {
+                        continue;
+                    }
+                }
+
+                // Get price from negotiations
+                $price = $this->getPriceFromNegotiations($professional->negotiations, $tussId);
+
                 $providers[] = [
                     'provider_type' => 'professional',
                     'provider_id' => $professional->id,
-                    'price' => $this->getPriceForTuss($professional, $tussId)
+                    'price' => $price,
+                    'distance' => $distance
                 ];
             }
 
             if (empty($providers)) {
                 Log::warning("No providers found for solicitation #{$solicitation->id}");
                 $this->notifyNoProvidersFound($solicitation);
-                return [];
+                return [
+                    'success' => false,
+                    'message' => 'No providers found within 100km with approved procedures'
+                ];
             }
 
-            // Sort by price (lowest first)
+            // Sort by distance first, then by price
             usort($providers, function ($a, $b) {
+                // If both have distance, sort by distance
+                if ($a['distance'] !== null && $b['distance'] !== null) {
+                    $distanceCompare = $a['distance'] <=> $b['distance'];
+                    if ($distanceCompare !== 0) {
+                        return $distanceCompare;
+                    }
+                }
+                // If distances are equal or one is null, sort by price
                 return $a['price'] <=> $b['price'];
             });
 
-            return $providers;
+            return [
+                'success' => true,
+                'data' => $providers
+            ];
 
         } catch (\Exception $e) {
             Log::error("Error finding providers for solicitation #{$solicitation->id}: " . $e->getMessage());
-            return [];
+            return [
+                'success' => false,
+                'message' => 'Error finding providers: ' . $e->getMessage()
+            ];
         }
+    }
+
+    /**
+     * Get price from negotiations
+     *
+     * @param Collection $negotiations
+     * @param int $tussId
+     * @return float|null
+     */
+    protected function getPriceFromNegotiations($negotiations, $tussId)
+    {
+        foreach ($negotiations as $negotiation) {
+            $item = $negotiation->items()
+                ->where('tuss_procedure_id', $tussId)
+                ->where('status', 'approved')
+                ->first();
+            
+            if ($item) {
+                return $item->approved_value;
+            }
+        }
+        
+        return null;
     }
 
     /**
@@ -636,7 +734,10 @@ class AppointmentScheduler
         $allProviders = array_merge($clinicProviders, $professionalProviders);
 
         if (empty($allProviders)) {
-            return null;
+            return [
+                'success' => false,
+                'message' => 'No providers found for this procedure'
+            ];
         }
 
         // Sort by price (lowest first)
@@ -645,7 +746,10 @@ class AppointmentScheduler
         });
 
         // Return the most affordable provider
-        return $allProviders[0];
+        return [
+            'success' => true,
+            'data' => $allProviders[0]
+        ];
     }
 
     /**
