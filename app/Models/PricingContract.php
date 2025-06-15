@@ -26,6 +26,7 @@ class PricingContract extends Model
         'is_active',
         'notes',
         'created_by',
+        'medical_specialty_id',
     ];
 
     /**
@@ -46,6 +47,14 @@ class PricingContract extends Model
     public function procedure(): BelongsTo
     {
         return $this->belongsTo(TussProcedure::class, 'tuss_procedure_id');
+    }
+
+    /**
+     * Get the medical specialty associated with this pricing contract.
+     */
+    public function medicalSpecialty(): BelongsTo
+    {
+        return $this->belongsTo(MedicalSpecialty::class, 'medical_specialty_id');
     }
 
     /**
