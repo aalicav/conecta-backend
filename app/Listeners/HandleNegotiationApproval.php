@@ -46,7 +46,12 @@ class HandleNegotiationApproval implements ShouldQueue
         ]);
 
         // Record in approval history
-        $negotiation->recordApprovalHistory('approve', $negotiation->approved_by, 'Negotiation approved');
+        $negotiation->recordApprovalHistory(
+            'commercial',
+            'approved',
+            $negotiation->approved_by,
+            'Negotiation approved'
+        );
 
         // Dispatch the formalization job
         ProcessNegotiationFormalization::dispatch($negotiation)

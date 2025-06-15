@@ -247,15 +247,17 @@ class Negotiation extends Model implements AuditableContract
     /**
      * Record an approval history entry.
      *
-     * @param string $action
+     * @param string $level
+     * @param string $status
      * @param int $userId
      * @param string|null $notes
      * @return NegotiationApprovalHistory
      */
-    public function recordApprovalHistory(string $action, int $userId, ?string $notes = null): NegotiationApprovalHistory
+    public function recordApprovalHistory(string $level, string $status, int $userId, ?string $notes = null): NegotiationApprovalHistory
     {
         return $this->approvalHistory()->create([
-            'action' => $action,
+            'level' => $level,
+            'status' => $status,
             'user_id' => $userId,
             'notes' => $notes,
         ]);

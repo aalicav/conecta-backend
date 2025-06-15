@@ -14,11 +14,10 @@ class NegotiationApprovalHistory extends Model
      */
     protected $fillable = [
         'negotiation_id',
-        'action',
-        'user_id',
-        'notes',
         'level',
-        'status'
+        'status',
+        'user_id',
+        'notes'
     ];
 
     /**
