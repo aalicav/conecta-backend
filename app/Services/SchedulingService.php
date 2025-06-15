@@ -117,7 +117,7 @@ class SchedulingService
 
         $professionals = Professional::where('is_active', true)
             ->whereHas('contracts', function ($query) use ($solicitation) {
-                $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                $query->where('tuss_id', $solicitation->tuss_id)
                     ->where('is_active', true);
             })
             ->whereHas('availabilities', function ($query) use ($solicitation) {
@@ -128,7 +128,7 @@ class SchedulingService
             
         $clinics = Clinic::where('is_active', true)
             ->whereHas('contracts', function ($query) use ($solicitation) {
-                $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                $query->where('tuss_id', $solicitation->tuss_id)
                     ->where('is_active', true);
             })
             ->get();

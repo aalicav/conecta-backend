@@ -525,7 +525,7 @@ class AppointmentScheduler
             $clinics = Clinic::active()
                 ->whereHas('negotiations', function($query) use ($tussId, $healthPlanId) {
                     $query->whereHas('items', function($q) use ($tussId) {
-                        $q->where('tuss_procedure_id', $tussId)
+                        $q->where('tuss_id', $tussId)
                           ->where('status', 'approved');
                     })
                     ->where('negotiable_type', 'App\\Models\\HealthPlan')
@@ -566,7 +566,7 @@ class AppointmentScheduler
             $professionals = Professional::active()
                 ->whereHas('negotiations', function($query) use ($tussId, $healthPlanId) {
                     $query->whereHas('items', function($q) use ($tussId) {
-                        $q->where('tuss_procedure_id', $tussId)
+                        $q->where('tuss_id', $tussId)
                           ->where('status', 'approved');
                     })
                     ->where('negotiable_type', 'App\\Models\\HealthPlan')
@@ -658,7 +658,7 @@ class AppointmentScheduler
     {
         foreach ($negotiations as $negotiation) {
             $item = $negotiation->items()
-                ->where('tuss_procedure_id', $tussId)
+                ->where('tuss_id', $tussId)
                 ->where('status', 'approved')
                 ->first();
             

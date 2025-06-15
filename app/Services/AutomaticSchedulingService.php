@@ -107,7 +107,7 @@ class AutomaticSchedulingService
         // 1. Find eligible professionals with negotiated prices for this procedure
         $professionals = Professional::with(['negotiations' => function ($query) use ($tussId, $healthPlanId) {
                 $query->whereHas('items', function ($q) use ($tussId) {
-                    $q->where('tuss_procedure_id', $tussId)
+                    $q->where('tuss_id', $tussId)
                       ->where('status', 'approved');
                 })
                 ->where('negotiable_type', 'App\\Models\\HealthPlan')
@@ -121,7 +121,7 @@ class AutomaticSchedulingService
         // 2. Find eligible clinics with negotiated prices
         $clinics = Clinic::with(['negotiations' => function ($query) use ($tussId, $healthPlanId) {
                 $query->whereHas('items', function ($q) use ($tussId) {
-                    $q->where('tuss_procedure_id', $tussId)
+                    $q->where('tuss_id', $tussId)
                       ->where('status', 'approved');
                 })
                 ->where('negotiable_type', 'App\\Models\\HealthPlan')
@@ -376,7 +376,7 @@ class AutomaticSchedulingService
     {
         foreach ($negotiations as $negotiation) {
             $item = $negotiation->items()
-                ->where('tuss_procedure_id', $tussId)
+                ->where('tuss_id', $tussId)
                 ->where('status', 'approved')
                 ->first();
             
