@@ -144,6 +144,14 @@ class Professional extends Model
     }
 
     /**
+     * Get the negotiations for this professional.
+     */
+    public function negotiations(): MorphMany
+    {
+        return $this->morphMany(Negotiation::class, 'negotiable');
+    }
+
+    /**
      * Scope a query to only include pending professionals.
      */
     public function scopePending($query)
