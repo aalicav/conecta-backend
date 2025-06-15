@@ -937,7 +937,7 @@ class NotificationService
                 ->get();
             
             // Buscar administradores do sistema
-            $admins = User::role(['super_admin', 'director', 'commercial', 'financial', 'legal'])
+            $admins = User::role(['super_admin', 'director', 'commercial_manager', 'financial_manager', 'legal'])
                 
                 ->get();
             
@@ -957,11 +957,11 @@ class NotificationService
             
             foreach ($recipients as $recipient) {
                 // Enviar somente para usuários com os papéis relevantes
-                if ($entityType === HealthPlan::class && !$recipient->hasRole(['plan_admin', 'health_plan_portal', 'super_admin', 'director', 'commercial'])) {
+                if ($entityType === HealthPlan::class && !$recipient->hasRole(['plan_admin', 'health_plan_portal', 'super_admin', 'director', 'commercial_manager'])) {
                     continue;
-                } elseif ($entityType === Professional::class && !$recipient->hasRole(['professional', 'provider_portal', 'super_admin', 'director', 'commercial'])) {
+                } elseif ($entityType === Professional::class && !$recipient->hasRole(['professional', 'provider_portal', 'super_admin', 'director', 'commercial_manager'])) {
                     continue;
-                } elseif ($entityType === Clinic::class && !$recipient->hasRole(['clinic_admin', 'provider_portal', 'super_admin', 'director', 'commercial'])) {
+                } elseif ($entityType === Clinic::class && !$recipient->hasRole(['clinic_admin', 'provider_portal', 'super_admin', 'director', 'commercial_manager'])) {
                     continue;
                 }
                 
@@ -1050,7 +1050,7 @@ class NotificationService
                 ->get();
             
             // Buscar aprovadores do sistema
-            $approvers = User::role(['super_admin', 'director', 'commercial', 'financial', 'legal'])
+            $approvers = User::role(['super_admin', 'director', 'commercial_manager', 'financial_manager', 'legal'])
                 
                 ->get();
                 
@@ -1070,11 +1070,11 @@ class NotificationService
             
             foreach ($recipients as $recipient) {
                 // Enviar somente para usuários com os papéis relevantes
-                if ($entityType === HealthPlan::class && !$recipient->hasRole(['plan_admin', 'health_plan_portal', 'super_admin', 'director', 'commercial'])) {
+                if ($entityType === HealthPlan::class && !$recipient->hasRole(['plan_admin', 'health_plan_portal', 'super_admin', 'director', 'commercial_manager'])) {
                     continue;
-                } elseif ($entityType === Professional::class && !$recipient->hasRole(['professional', 'provider_portal', 'super_admin', 'director', 'commercial'])) {
+                } elseif ($entityType === Professional::class && !$recipient->hasRole(['professional', 'provider_portal', 'super_admin', 'director', 'commercial_manager'])) {
                     continue;
-                } elseif ($entityType === Clinic::class && !$recipient->hasRole(['clinic_admin', 'provider_portal', 'super_admin', 'director', 'commercial'])) {
+                } elseif ($entityType === Clinic::class && !$recipient->hasRole(['clinic_admin', 'provider_portal', 'super_admin', 'director', 'commercial_manager'])) {
                     continue;
                 }
                 
@@ -1535,7 +1535,7 @@ class NotificationService
             }
             
             // Incluir administradores relevantes
-            $admins = User::role(['super_admin', 'commercial', 'financial'])
+            $admins = User::role(['super_admin', 'commercial_manager', 'financial_manager'])
                 
                 ->get();
                 
@@ -1650,7 +1650,7 @@ class NotificationService
             }
             
             // Incluir administradores relevantes
-            $admins = User::role(['super_admin', 'commercial', 'financial'])
+            $admins = User::role(['super_admin', 'commercial_manager', 'financial_manager'])
                 
                 ->get();
                 
@@ -1860,7 +1860,7 @@ class NotificationService
             }
             
             // Adicionar administradores e usuários com permissão para bifurcar
-            $admins = User::role(['super_admin', 'commercial', 'legal'])
+            $admins = User::role(['super_admin', 'commercial_manager', 'legal'])
                 
                 ->where('id', '!=', Auth::id()) // Não notificar quem fez a bifurcação
                 ->get();
@@ -1974,7 +1974,7 @@ class NotificationService
     {
         try {
             // Get finance department users
-            $financeUsers = User::role(['financial', 'finance_admin'])
+            $financeUsers = User::role(['financial_manager', 'finance_admin'])
                 
                 ->get();
             
@@ -2100,7 +2100,7 @@ class NotificationService
     {
         try {
             // Get finance department users
-            $financeUsers = User::role(['financial', 'finance_admin'])
+            $financeUsers = User::role(['financial_manager', 'finance_admin'])
                 
                 ->get();
             
@@ -2423,13 +2423,13 @@ class NotificationService
                     $roles[] = 'legal';
                     break;
                 case 'commercial_review':
-                    $roles[] = 'commercial';
+                    $roles[] = 'commercial_manager';
                     break;
                 case 'pending_director_approval':
                     $roles[] = 'director';
                     break;
                 case 'approved':
-                    $roles = ['legal', 'commercial', 'director'];
+                    $roles = ['legal', 'commercial_manager', 'director'];
                     break;
             }
             
@@ -2635,7 +2635,7 @@ class NotificationService
             switch ($level) {
                 case 'team':
                     // Notify all team members who can approve
-                    $usersToNotify = User::role(['commercial', 'financial', 'legal'])
+                    $usersToNotify = User::role(['commercial_manager', 'financial_manager', 'legal'])
                         
                         ->get();
                     break;
@@ -2649,7 +2649,7 @@ class NotificationService
                     
                 default:
                     // Default approval level - notify commercial and financial teams
-                    $usersToNotify = User::role(['commercial', 'financial', 'super_admin'])
+                    $usersToNotify = User::role(['commercial_manager', 'financial_manager', 'super_admin'])
                         
                         ->get();
             }
@@ -2901,7 +2901,7 @@ class NotificationService
             }
             
             // Add relevant administrators
-            $admins = User::role(['super_admin', 'commercial', 'financial', 'legal'])
+            $admins = User::role(['super_admin', 'commercial_manager', 'financial_manager', 'legal'])
                 
                 ->where('id', '!=', $currentUserId)
                 ->get();

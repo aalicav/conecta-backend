@@ -56,7 +56,7 @@ class WhatsAppChannel
             $this->whatsAppService->sendTemplateMessage(
                 $message->recipientPhone,
                 $message->templateName,
-                $message->parameters
+                $message->variables
             );
             Log::info('WhatsApp notification sent via WhatsAppChannel', [
                 'notification' => get_class($notification),
