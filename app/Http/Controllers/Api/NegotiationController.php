@@ -1268,9 +1268,7 @@ class NegotiationController extends Controller
                 ->update([
                     'is_active' => false,
                     'end_date' => now(),
-                    'deactivated_at' => now(),
-                    'deactivated_by' => Auth::id(),
-                    'deactivation_reason' => 'Replaced by new negotiation #' . $negotiation->id
+                    'notes' => 'Deactivated by negotiation #' . $negotiation->id
                 ]);
 
             // Create pricing contracts for all items
