@@ -106,9 +106,10 @@ class AutomaticSchedulingService
         
         // 1. Find eligible professionals with active pricing contracts for this procedure
         $professionals = Professional::with(['pricingContracts' => function ($query) use ($tussId, $healthPlanId) {
-                $query->where('tuss_id', $tussId)
+                $query->where('tuss_procedure_id', $tussId)
                       ->where('is_active', true)
-                      ->where('health_plan_id', $healthPlanId);
+                      ->where('contractable_type', 'App\\Models\\HealthPlan')
+                      ->where('contractable_id', $healthPlanId);
             }])
             ->where('is_active', true)
             ->where('status', 'approved')
@@ -116,9 +117,10 @@ class AutomaticSchedulingService
         
         // 2. Find eligible clinics with active pricing contracts
         $clinics = Clinic::with(['pricingContracts' => function ($query) use ($tussId, $healthPlanId) {
-                $query->where('tuss_id', $tussId)
+                $query->where('tuss_procedure_id', $tussId)
                       ->where('is_active', true)
-                      ->where('health_plan_id', $healthPlanId);
+                      ->where('contractable_type', 'App\\Models\\HealthPlan')
+                      ->where('contractable_id', $healthPlanId);
             }])
             ->where('is_active', true)
             ->where('status', 'approved')

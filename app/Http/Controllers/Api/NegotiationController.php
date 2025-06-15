@@ -1261,9 +1261,9 @@ class NegotiationController extends Controller
 
             // Deactivate previous pricing contracts for the same entity and TUSS codes
             $tussIds = $negotiation->items->pluck('tuss_id')->toArray();
-            \App\Models\PricingContract::where('provider_type', $negotiation->negotiable_type)
-                ->where('provider_id', $negotiation->negotiable_id)
-                ->whereIn('tuss_id', $tussIds)
+            \App\Models\PricingContract::where('contractable_type', $negotiation->negotiable_type)
+                ->where('contractable_id', $negotiation->negotiable_id)
+                ->whereIn('tuss_procedure_id', $tussIds)
                 ->where('is_active', true)
                 ->update([
                     'is_active' => false,
@@ -1277,9 +1277,9 @@ class NegotiationController extends Controller
             foreach ($negotiation->items as $item) {
                 // Create pricing contract
                 $pricingContract = new \App\Models\PricingContract([
-                    'provider_type' => $negotiation->negotiable_type,
-                    'provider_id' => $negotiation->negotiable_id,
-                    'tuss_id' => $item->tuss_id,
+                    'contractable_type' => $negotiation->negotiable_type,
+                    'contractable_id' => $negotiation->negotiable_id,
+                    'tuss_procedure_id' => $item->tuss_id,
                     'price' => $item->approved_value,
                     'is_active' => true,
                     'start_date' => $negotiation->start_date,

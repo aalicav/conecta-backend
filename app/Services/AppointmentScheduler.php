@@ -524,9 +524,10 @@ class AppointmentScheduler
             // Get clinics that offer this procedure and have active pricing contracts
             $clinics = Clinic::active()
                 ->whereHas('pricingContracts', function($query) use ($tussId, $healthPlanId) {
-                    $query->where('tuss_id', $tussId)
+                    $query->where('tuss_procedure_id', $tussId)
                           ->where('is_active', true)
-                          ->where('health_plan_id', $healthPlanId);
+                          ->where('contractable_type', 'App\\Models\\HealthPlan')
+                          ->where('contractable_id', $healthPlanId);
                 })
                 ->get();
 
@@ -561,9 +562,10 @@ class AppointmentScheduler
             // Get professionals that offer this procedure and have active pricing contracts
             $professionals = Professional::active()
                 ->whereHas('pricingContracts', function($query) use ($tussId, $healthPlanId) {
-                    $query->where('tuss_id', $tussId)
+                    $query->where('tuss_procedure_id', $tussId)
                           ->where('is_active', true)
-                          ->where('health_plan_id', $healthPlanId);
+                          ->where('contractable_type', 'App\\Models\\HealthPlan')
+                          ->where('contractable_id', $healthPlanId);
                 });
 
             // If TUSS is 10101012, require medical specialty
