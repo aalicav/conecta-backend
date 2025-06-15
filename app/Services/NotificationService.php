@@ -58,10 +58,10 @@ class NotificationService
      * @param  \App\Services\WhatsAppTemplateBuilder  $whatsAppTemplateBuilder
      * @return void
      */
-    public function __construct(WhatsAppService $whatsAppService, WhatsAppTemplateBuilder $whatsAppTemplateBuilder)
+    public function __construct()
     {
-        $this->whatsAppService = $whatsAppService;
-        $this->whatsAppTemplateBuilder = $whatsAppTemplateBuilder;
+        $this->whatsAppService = new WhatsAppService(new WhatsAppTemplateBuilder());
+        $this->whatsAppTemplateBuilder = new WhatsAppTemplateBuilder();
     }
 
     /**
