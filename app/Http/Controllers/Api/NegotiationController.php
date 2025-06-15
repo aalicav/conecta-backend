@@ -1224,6 +1224,7 @@ class NegotiationController extends Controller
     /**
      * Mark a negotiation as complete after external approval.
      *
+     * @param Request $request
      * @param Negotiation $negotiation
      * @return \Illuminate\Http\JsonResponse
      */
@@ -1239,6 +1240,12 @@ class NegotiationController extends Controller
         try {
             DB::beginTransaction();
             
+            // Mark all items as complete
+            $negotiation->items()->update([
+                'status' => 'completed',
+                'responded_at' => now()
+            ]);
+            
             // Mark as complete
             $negotiation->status = self::STATUS_COMPLETE;
             $negotiation->completed_at = now();
@@ -1251,6 +1258,39 @@ class NegotiationController extends Controller
                 'user_id' => Auth::id(),
                 'notes' => $request->notes ?? 'Approved by external entity'
             ]);
+
+            // Deactivate previous pricing contracts for the same entity and TUSS codes
+            $tussIds = $negotiation->items->pluck('tuss_id')->toArray();
+            \App\Models\PricingContract::where('entity_type', $negotiation->negotiable_type)
+                ->where('entity_id', $negotiation->negotiable_id)
+                ->whereIn('tuss_id', $tussIds)
+                ->where('is_active', true)
+                ->update([
+                    'is_active' => false,
+                    'end_date' => now(),
+                    'deactivated_at' => now(),
+                    'deactivated_by' => Auth::id(),
+                    'deactivation_reason' => 'Replaced by new negotiation #' . $negotiation->id
+                ]);
+
+            // Create pricing contracts for all items
+            foreach ($negotiation->items as $item) {
+                // Create pricing contract
+                $pricingContract = new \App\Models\PricingContract([
+                    'entity_type' => $negotiation->negotiable_type,
+                    'entity_id' => $negotiation->negotiable_id,
+                    'tuss_id' => $item->tuss_id,
+                    'price' => $item->approved_value,
+                    'is_active' => true,
+                    'start_date' => $negotiation->start_date,
+                    'end_date' => $negotiation->end_date,
+                    'created_by' => Auth::id(),
+                    'negotiation_id' => $negotiation->id,
+                    'medical_specialty_id' => $item->medical_specialty_id
+                ]);
+
+                $pricingContract->save();
+            }
             
             // Notify about completion
             $this->notificationService->notifyNegotiationCompleted($negotiation);
