@@ -1273,6 +1273,12 @@ class NegotiationController extends Controller
 
             // Create pricing contracts for all items
             foreach ($negotiation->items as $item) {
+                // Skip if item doesn't have an approved value
+                if (!$item->approved_value) {
+                    Log::warning("Skipping pricing contract creation for item #{$item->id} - no approved value");
+                    continue;
+                }
+
                 // Create pricing contract
                 $pricingContract = new \App\Models\PricingContract([
                     'tuss_procedure_id' => $item->tuss_id,
