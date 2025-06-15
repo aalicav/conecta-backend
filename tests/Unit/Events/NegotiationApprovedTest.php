@@ -83,7 +83,8 @@ class NegotiationApprovedTest extends TestCase
 
         // Assert the history entry was created correctly
         $this->assertNotNull($history);
-        $this->assertEquals('approve', $history->action);
+        $this->assertEquals('commercial', $history->level);
+        $this->assertEquals('approved', $history->status);
         $this->assertEquals($this->negotiation->approved_by, $history->user_id);
         $this->assertEquals('Negotiation approved', $history->notes);
     }

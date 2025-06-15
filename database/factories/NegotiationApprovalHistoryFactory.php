@@ -25,7 +25,8 @@ class NegotiationApprovalHistoryFactory extends Factory
     {
         return [
             'negotiation_id' => Negotiation::factory(),
-            'action' => $this->faker->randomElement(['submit_for_approval', 'approve', 'reject']),
+            'level' => $this->faker->randomElement(['commercial', 'financial', 'management', 'legal', 'direction']),
+            'status' => $this->faker->randomElement(['pending', 'approved', 'rejected']),
             'user_id' => User::factory(),
             'notes' => $this->faker->sentence(),
         ];
@@ -40,7 +41,8 @@ class NegotiationApprovalHistoryFactory extends Factory
     {
         return $this->state(function (array $attributes) {
             return [
-                'action' => 'submit_for_approval',
+                'level' => 'commercial',
+                'status' => 'pending',
                 'notes' => 'Submitted for approval',
             ];
         });
@@ -55,7 +57,8 @@ class NegotiationApprovalHistoryFactory extends Factory
     {
         return $this->state(function (array $attributes) {
             return [
-                'action' => 'approve',
+                'level' => 'commercial',
+                'status' => 'approved',
                 'notes' => 'Approved by approver',
             ];
         });
@@ -70,7 +73,8 @@ class NegotiationApprovalHistoryFactory extends Factory
     {
         return $this->state(function (array $attributes) {
             return [
-                'action' => 'reject',
+                'level' => 'commercial',
+                'status' => 'rejected',
                 'notes' => 'Rejected by approver',
             ];
         });

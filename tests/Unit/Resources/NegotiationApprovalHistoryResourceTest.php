@@ -33,7 +33,8 @@ class NegotiationApprovalHistoryResourceTest extends TestCase
         // Create an approval history entry
         $this->history = NegotiationApprovalHistory::create([
             'negotiation_id' => $this->negotiation->id,
-            'action' => 'approve',
+            'level' => 'commercial',
+            'status' => 'approved',
             'user_id' => $this->user->id,
             'notes' => 'Approved by user',
             'created_at' => now(),
