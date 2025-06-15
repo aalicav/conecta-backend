@@ -1277,16 +1277,16 @@ class NegotiationController extends Controller
             foreach ($negotiation->items as $item) {
                 // Create pricing contract
                 $pricingContract = new \App\Models\PricingContract([
+                    'tuss_procedure_id' => $item->tuss_id,
+                    'medical_specialty_id' => $item->medical_specialty_id,
                     'contractable_type' => $negotiation->negotiable_type,
                     'contractable_id' => $negotiation->negotiable_id,
-                    'tuss_procedure_id' => $item->tuss_id,
                     'price' => $item->approved_value,
-                    'is_active' => true,
                     'start_date' => $negotiation->start_date,
                     'end_date' => $negotiation->end_date,
-                    'created_by' => Auth::id(),
-                    'negotiation_id' => $negotiation->id,
-                    'medical_specialty_id' => $item->medical_specialty_id
+                    'is_active' => true,
+                    'notes' => 'Created from negotiation #' . $negotiation->id,
+                    'created_by' => Auth::id()
                 ]);
 
                 $pricingContract->save();
