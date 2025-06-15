@@ -508,25 +508,50 @@ class AppointmentScheduler
     public function findBestProvider(Solicitation $solicitation): array
     {
         try {
-            // Get providers that offer this procedure
-            $clinics = $this->getClinicsForProcedure($solicitation, $solicitation->tuss);
-            $professionals = $this->getProfessionalsForProcedure($solicitation, $solicitation->tuss);
+            $tussId = $solicitation->tuss_id;
+            $providers = [];
 
-            // Filter providers by state and city if provided
-            if ($solicitation->state) {
-                $clinics = $clinics->filter(function ($clinic) use ($solicitation) {
-                    return $clinic->state === $solicitation->state &&
-                           (!$solicitation->city || $clinic->city === $solicitation->city);
+            // Get clinics that offer this procedure
+            $clinics = Clinic::active()
+                ->whereHas('pricingContracts', function($query) use ($tussId) {
+                    $query->whereHas('pricingItems', function($query) use ($tussId) {
+                        $query->where('tuss_id', $tussId);
+                    });
+                })
+                ->get();
+
+            foreach ($clinics as $clinic) {
+                $providers[] = [
+                    'provider_type' => 'clinic',
+                    'provider_id' => $clinic->id,
+                    'price' => $this->getPriceForTuss($clinic, $tussId)
+                ];
+            }
+
+            // Get professionals that offer this procedure
+            $professionals = Professional::active()
+                ->whereHas('pricingContracts', function($query) use ($tussId) {
+                    $query->whereHas('pricingItems', function($query) use ($tussId) {
+                        $query->where('tuss_id', $tussId);
+                    });
                 });
 
-                $professionals = $professionals->filter(function ($professional) use ($solicitation) {
-                    return $professional->state === $solicitation->state &&
-                           (!$solicitation->city || $professional->city === $solicitation->city);
+            // If TUSS is 10101012, require medical specialty
+            if ($tussId === 10101012) {
+                $professionals->whereHas('specialties', function($query) {
+                    $query->where('name', 'Médico');
                 });
             }
 
-            // Combine providers into a single array
-            $providers = $this->combineProviders($clinics, $professionals);
+            $professionals = $professionals->get();
+
+            foreach ($professionals as $professional) {
+                $providers[] = [
+                    'provider_type' => 'professional',
+                    'provider_id' => $professional->id,
+                    'price' => $this->getPriceForTuss($professional, $tussId)
+                ];
+            }
 
             if (empty($providers)) {
                 Log::warning("No providers found for solicitation #{$solicitation->id}");
@@ -534,34 +559,15 @@ class AppointmentScheduler
                 return [];
             }
 
-            // Get scheduling priority from settings
-            $priority = SchedulingConfigService::getSchedulingPriority();
+            // Sort by price (lowest first)
+            usort($providers, function ($a, $b) {
+                return $a['price'] <=> $b['price'];
+            });
 
-            // Rank providers based on priority
-            switch ($priority) {
-                case self::PRIORITY_COST:
-                    $providers = $this->rankByCost($providers, $solicitation->tuss_id);
-                    break;
-
-                case self::PRIORITY_DISTANCE:
-                    $providers = $this->rankByDistance($providers, $solicitation);
-                    break;
-
-                case self::PRIORITY_AVAILABILITY:
-                    $providers = $this->rankByAvailability($providers, $solicitation);
-                    break;
-
-                case self::PRIORITY_BALANCED:
-                default:
-                    $providers = $this->rankBalanced($providers, $solicitation, $solicitation->tuss_id);
-                    break;
-            }
-
-            // Return the best provider
-            return !empty($providers) ? $providers[0] : [];
+            return $providers;
 
         } catch (\Exception $e) {
-            Log::error("Error finding best provider for solicitation #{$solicitation->id}: " . $e->getMessage());
+            Log::error("Error finding providers for solicitation #{$solicitation->id}: " . $e->getMessage());
             return [];
         }
     }

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Solicitation;
+use App\Models\SolicitationInvite;
 use App\Services\AppointmentScheduler;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -55,34 +56,31 @@ class ProcessAutomaticScheduling implements ShouldQueue
     public function handle()
     {
         try {
-            Log::info("Iniciando agendamento automático para solicitação #{$this->solicitation->id}");
+            Log::info("Iniciando processamento automático para solicitação #{$this->solicitation->id}");
 
             $scheduler = new AppointmentScheduler();
-            $result = $scheduler->findBestProvider($this->solicitation);
+            $providers = $scheduler->findBestProvider($this->solicitation);
 
-            if ($result['success']) {
-                // Create appointment with the found provider
-                $appointment = new \App\Models\Appointment([
-                    'solicitation_id' => $this->solicitation->id,
-                    'provider_type' => $result['provider']['provider_type'],
-                    'provider_id' => $result['provider']['provider_id'],
-                    'status' => \App\Models\Appointment::STATUS_SCHEDULED,
-                    'created_by' => $this->solicitation->requested_by
-                ]);
-
-                $appointment->save();
+            if (!empty($providers)) {
+                foreach ($providers as $provider) {
+                    // Create invite for each provider
+                    SolicitationInvite::create([
+                        'solicitation_id' => $this->solicitation->id,
+                        'provider_type' => $provider['provider_type'],
+                        'provider_id' => $provider['provider_id'],
+                        'status' => 'pending',
+                        'created_by' => $this->solicitation->requested_by
+                    ]);
+                }
                 
-                // Mark solicitation as scheduled
-                $this->solicitation->markAsScheduled(true);
-                
-                Log::info("Agendamento automático concluído com sucesso para solicitação #{$this->solicitation->id}");
+                Log::info("Convites criados com sucesso para solicitação #{$this->solicitation->id}");
             } else {
-                // If no provider found, mark as pending
+                // If no providers found, mark as pending
                 $this->solicitation->markAsPending();
                 Log::warning("Nenhum profissional encontrado para solicitação #{$this->solicitation->id}");
             }
         } catch (\Exception $e) {
-            Log::error("Erro no agendamento automático da solicitação #{$this->solicitation->id}: " . $e->getMessage());
+            Log::error("Erro no processamento automático da solicitação #{$this->solicitation->id}: " . $e->getMessage());
             
             // Make sure to mark as pending if an error occurred
             $this->solicitation->markAsPending();

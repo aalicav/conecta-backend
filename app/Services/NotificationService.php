@@ -3109,4 +3109,14 @@ class NotificationService
             );
         }
     }
+
+    public function notifyNegotiationRejected(Negotiation $negotiation): void
+    {
+        $this->sendToUser($negotiation->creator_id, [
+            'title' => 'Negociação Rejeitada',
+            'body' => "A negociação #{$negotiation->id} foi rejeitada.",
+            'action_link' => "/negotiations/{$negotiation->id}",
+            'priority' => 'high'
+        ]);
+    }
 }

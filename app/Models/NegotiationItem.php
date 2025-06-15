@@ -16,6 +16,7 @@ class NegotiationItem extends Model
      * Status constants
      */
     public const STATUS_PENDING = 'pending';
+    public const STATUS_COMPLETED = 'completed';
     public const STATUS_APPROVED = 'approved';
     public const STATUS_REJECTED = 'rejected';
     public const STATUS_COUNTER_OFFERED = 'counter_offered';
@@ -56,6 +57,7 @@ class NegotiationItem extends Model
         'pending' => 'Pendente',
         'approved' => 'Aprovado',
         'rejected' => 'Rejeitado',
+        'completed' => 'Completo',
         'counter_offered' => 'Contra-proposta',
     ];
 

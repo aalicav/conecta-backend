@@ -662,7 +662,7 @@ class NegotiationController extends Controller
                     if ($item) {
 
                         $item->update([
-                            'status' => 'approved',
+                            'status' => 'completed',
                             'approved_value' => $itemData['approved_value'],
                             'responded_at' => now()
                         ]);
