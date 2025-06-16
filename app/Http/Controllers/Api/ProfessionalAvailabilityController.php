@@ -126,7 +126,7 @@ class ProfessionalAvailabilityController extends Controller
 
             // Get availabilities for this solicitation
             $availabilities = ProfessionalAvailability::where('solicitation_id', $solicitationId)
-                ->with(['professional.user', 'professional.specialties', 'clinic'])
+                ->with(['professional.user', 'clinic.user'])
                 ->get();
 
             return response()->json([
