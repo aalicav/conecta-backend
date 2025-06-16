@@ -19,9 +19,13 @@ class SolicitationInviteController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = SolicitationInvite::with(['solicitation.patient', 'solicitation.tuss', 'solicitation.healthPlan'])
-                ->where('provider_type', Auth::user()->hasRole('professional') ? 'professional' : 'clinic')
-                ->where('provider_id', Auth::user()->entity_id);
+            $query = SolicitationInvite::with(['solicitation.patient', 'solicitation.tuss', 'solicitation.healthPlan']);
+
+            // If user is not admin/manager/director, filter by their provider
+            if (!Auth::user()->hasAnyRole(['network_manager', 'super_admin', 'director'])) {
+                $query->where('provider_type', Auth::user()->hasRole('professional') ? 'professional' : 'clinic')
+                      ->where('provider_id', Auth::user()->entity_id);
+            }
 
             // Filter by status if provided
             if ($request->has('status')) {
