@@ -180,6 +180,21 @@ class ProfessionalAvailabilityController extends Controller
             ]);
 
             // Create appointment
+            $scheduledFor = Carbon::parse($availability->available_date)
+                ->setTimeFromTimeString($availability->available_time);
+
+            // Get the provider (professional or clinic)
+            $provider = $availability->professional_id 
+                ? \App\Models\Professional::with(['addresses' => function($query) {
+                    $query->where('is_primary', true);
+                }])->find($availability->professional_id)
+                : \App\Models\Clinic::with(['addresses' => function($query) {
+                    $query->where('is_primary', true);
+                }])->find($availability->clinic_id);
+
+            // Get the primary address
+            $primaryAddress = $provider->addresses->first();
+
             $appointment = $solicitation->appointments()->create([
                 'provider_type' => $availability->professional_id ? 'App\\Models\\Professional' : 'App\\Models\\Clinic',
                 'provider_id' => $availability->professional_id ?? $availability->clinic_id,
@@ -187,8 +202,9 @@ class ProfessionalAvailabilityController extends Controller
                 'health_plan_id' => $solicitation->health_plan_id,
                 'tuss_id' => $solicitation->tuss_id,
                 'status' => 'scheduled',
-                'scheduled_for' => $availability->available_date . ' ' . $availability->available_time,
-                'notes' => $request->notes
+                'scheduled_date' => $scheduledFor->format('Y-m-d H:i:s'),
+                'notes' => $request->notes,
+                'address_id' => $primaryAddress ? $primaryAddress->id : null
             ]);
 
             // Reject other availabilities

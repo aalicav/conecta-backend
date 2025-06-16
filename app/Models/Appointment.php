@@ -32,6 +32,7 @@ class Appointment extends Model
         'completed_by',
         'cancelled_by',
         'created_by',
+        'address_id',
     ];
 
     /**
@@ -186,6 +187,14 @@ class Appointment extends Model
     public function procedure()
     {
         return $this->solicitation->procedure;
+    }
+
+    /**
+     * Get the address for this appointment.
+     */
+    public function address(): BelongsTo
+    {
+        return $this->belongsTo(Address::class);
     }
 
     /**
