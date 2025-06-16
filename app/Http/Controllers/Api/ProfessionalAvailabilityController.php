@@ -186,7 +186,7 @@ class ProfessionalAvailabilityController extends Controller
                 'patient_id' => $solicitation->patient_id,
                 'health_plan_id' => $solicitation->health_plan_id,
                 'tuss_id' => $solicitation->tuss_id,
-                'status' => 'pending',
+                'status' => 'scheduled',
                 'scheduled_for' => $availability->available_date . ' ' . $availability->available_time,
                 'notes' => $request->notes
             ]);
