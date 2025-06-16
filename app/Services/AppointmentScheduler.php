@@ -57,6 +57,13 @@ class AppointmentScheduler
      */
     public function scheduleAppointment(Solicitation $solicitation): ?Appointment
     {
+        Log::info("Starting automatic scheduling for solicitation #{$solicitation->id}", [
+            'tuss_id' => $solicitation->tuss_id,
+            'health_plan_id' => $solicitation->health_plan_id,
+            'preferred_date_start' => $solicitation->preferred_date_start,
+            'preferred_date_end' => $solicitation->preferred_date_end
+        ]);
+
         try {
             // Check if scheduling is enabled
             if (!SchedulingConfigService::isAutomaticSchedulingEnabled()) {
@@ -93,9 +100,14 @@ class AppointmentScheduler
                 $procedure = $procedure->first();
             }
 
-            // Check if we have patient location data
+            // Get patient location
             $patientLat = $solicitation->preferred_location_lat;
             $patientLng = $solicitation->preferred_location_lng;
+
+            Log::info("Patient location for scheduling", [
+                'lat' => $patientLat,
+                'lng' => $patientLng
+            ]);
 
             // If no explicit location is provided, try to geocode patient's address
             if (!$patientLat || !$patientLng) {
@@ -136,10 +148,21 @@ class AppointmentScheduler
                 $result = $this->findBestProvider($solicitation);
                 if ($result['success']) {
                     $provider = $result['data'][0] ?? null;
+                    Log::info("Found provider with location data", [
+                        'provider_type' => $provider['provider_type'] ?? null,
+                        'provider_id' => $provider['provider_id'] ?? null,
+                        'price' => $provider['price'] ?? null,
+                        'distance' => $provider['distance'] ?? null
+                    ]);
                 }
             } else {
                 // Fallback: just find the most affordable provider
                 $provider = $this->findMostAffordableProvider($solicitation, $procedure);
+                Log::info("Found provider without location data", [
+                    'provider_type' => $provider['provider_type'] ?? null,
+                    'provider_id' => $provider['provider_id'] ?? null,
+                    'price' => $provider['price'] ?? null
+                ]);
             }
 
             if (!$provider) {
@@ -157,6 +180,12 @@ class AppointmentScheduler
                 return null;
             }
 
+            Log::info("Found available slot", [
+                'provider_type' => $provider['provider_type'],
+                'provider_id' => $provider['provider_id'],
+                'scheduled_date' => $scheduledDate
+            ]);
+
             // Create the appointment
             $appointment = new Appointment([
                 'solicitation_id' => $solicitation->id,
@@ -169,11 +198,20 @@ class AppointmentScheduler
 
             $appointment->save();
             
+            Log::info("Appointment created successfully", [
+                'appointment_id' => $appointment->id,
+                'provider_type' => $provider['provider_type'],
+                'provider_id' => $provider['provider_id'],
+                'scheduled_date' => $scheduledDate
+            ]);
+            
             // Update solicitation status
             $solicitation->status = Solicitation::STATUS_SCHEDULED;
             $solicitation->save();
             
-            Log::info("Successfully scheduled appointment #{$appointment->id} for solicitation #{$solicitation->id}");
+            Log::info("Solicitation status updated to scheduled", [
+                'solicitation_id' => $solicitation->id
+            ]);
             
             return $appointment;
         } catch (\Exception $e) {
@@ -517,9 +555,19 @@ class AppointmentScheduler
             $providers = [];
             $maxDistance = 100; // 100km maximum distance
 
+            Log::info("Starting provider search for solicitation #{$solicitation->id}", [
+                'tuss_id' => $tussId,
+                'health_plan_id' => $healthPlanId
+            ]);
+
             // Get patient location
             $patientLat = $solicitation->preferred_location_lat;
             $patientLng = $solicitation->preferred_location_lng;
+
+            Log::info("Patient location", [
+                'lat' => $patientLat,
+                'lng' => $patientLng
+            ]);
 
             // Get clinics that offer this procedure and have active pricing contracts
             $clinics = Clinic::active()
@@ -535,6 +583,10 @@ class AppointmentScheduler
                 })
                 ->get();
 
+            Log::info("Found clinics with active contracts", [
+                'count' => $clinics->count()
+            ]);
+
             foreach ($clinics as $clinic) {
                 // Calculate distance if coordinates available
                 $distance = null;
@@ -546,14 +598,30 @@ class AppointmentScheduler
                         $clinic->longitude
                     );
 
+                    Log::info("Calculated distance for clinic #{$clinic->id}", [
+                        'clinic_id' => $clinic->id,
+                        'distance' => $distance,
+                        'max_distance' => $maxDistance
+                    ]);
+
                     // Skip if too far
                     if ($distance > $maxDistance) {
+                        Log::info("Skipping clinic #{$clinic->id} - too far", [
+                            'distance' => $distance,
+                            'max_distance' => $maxDistance
+                        ]);
                         continue;
                     }
                 }
 
                 // Get price from active pricing contract
                 $price = $this->getPriceFromPricingContract($clinic->pricingContracts, $tussId);
+
+                Log::info("Added clinic to providers list", [
+                    'clinic_id' => $clinic->id,
+                    'price' => $price,
+                    'distance' => $distance
+                ]);
 
                 $providers[] = [
                     'provider_type' => 'clinic',
@@ -585,6 +653,11 @@ class AppointmentScheduler
 
             $professionals = $professionals->get();
 
+            Log::info("Found professionals with active contracts", [
+                'count' => $professionals->count(),
+                'requires_medical' => ($tussId === 10101012)
+            ]);
+
             foreach ($professionals as $professional) {
                 // Calculate distance if coordinates available
                 $distance = null;
@@ -596,14 +669,30 @@ class AppointmentScheduler
                         $professional->longitude
                     );
 
+                    Log::info("Calculated distance for professional #{$professional->id}", [
+                        'professional_id' => $professional->id,
+                        'distance' => $distance,
+                        'max_distance' => $maxDistance
+                    ]);
+
                     // Skip if too far
                     if ($distance > $maxDistance) {
+                        Log::info("Skipping professional #{$professional->id} - too far", [
+                            'distance' => $distance,
+                            'max_distance' => $maxDistance
+                        ]);
                         continue;
                     }
                 }
 
                 // Get price from active pricing contract
                 $price = $this->getPriceFromPricingContract($professional->pricingContracts, $tussId);
+
+                Log::info("Added professional to providers list", [
+                    'professional_id' => $professional->id,
+                    'price' => $price,
+                    'distance' => $distance
+                ]);
 
                 $providers[] = [
                     'provider_type' => 'professional',
@@ -613,27 +702,42 @@ class AppointmentScheduler
                 ];
             }
 
+            Log::info("Total providers found", [
+                'count' => count($providers)
+            ]);
+
             if (empty($providers)) {
                 Log::warning("No providers found for solicitation #{$solicitation->id}");
-                $this->notifyNoProvidersFound($solicitation);
                 return [
                     'success' => false,
-                    'message' => 'No providers found within 100km with active pricing contracts'
+                    'message' => 'No suitable providers found'
                 ];
             }
 
-            // Sort by distance first, then by price
-            usort($providers, function ($a, $b) {
-                // If both have distance, sort by distance
-                if ($a['distance'] !== null && $b['distance'] !== null) {
-                    $distanceCompare = $a['distance'] <=> $b['distance'];
-                    if ($distanceCompare !== 0) {
-                        return $distanceCompare;
-                    }
+            // Sort providers by price and distance
+            usort($providers, function($a, $b) {
+                // First compare by price
+                $priceCompare = $a['price'] <=> $b['price'];
+                if ($priceCompare !== 0) {
+                    return $priceCompare;
                 }
-                // If distances are equal or one is null, sort by price
-                return $a['price'] <=> $b['price'];
+                
+                // If prices are equal, compare by distance
+                if ($a['distance'] === null && $b['distance'] === null) {
+                    return 0;
+                }
+                if ($a['distance'] === null) {
+                    return 1;
+                }
+                if ($b['distance'] === null) {
+                    return -1;
+                }
+                return $a['distance'] <=> $b['distance'];
             });
+
+            Log::info("Providers sorted by price and distance", [
+                'providers' => $providers
+            ]);
 
             return [
                 'success' => true,
@@ -812,9 +916,20 @@ class AppointmentScheduler
      */
     protected function findAvailableSlot(array $provider, Solicitation $solicitation): ?Carbon
     {
+        Log::info("Starting slot search for provider", [
+            'provider_type' => $provider['provider_type'],
+            'provider_id' => $provider['provider_id'],
+            'solicitation_id' => $solicitation->id
+        ]);
+
         // Start looking from the preferred start date
         $startDate = Carbon::parse($solicitation->preferred_date_start);
         $endDate = Carbon::parse($solicitation->preferred_date_end);
+        
+        Log::info("Date range for slot search", [
+            'start_date' => $startDate,
+            'end_date' => $endDate
+        ]);
         
         // Make sure we start with a future date
         $startDate = max($startDate, Carbon::now()->addHours(1));
@@ -822,6 +937,9 @@ class AppointmentScheduler
         // Check if preferred end date is after start date
         if ($endDate->lt($startDate)) {
             $endDate = $startDate->copy()->addDays(7);
+            Log::info("Adjusted end date", [
+                'new_end_date' => $endDate
+            ]);
         }
         
         $providerType = $provider['provider_type'];
@@ -833,6 +951,13 @@ class AppointmentScheduler
         if (empty($schedule)) {
             // If no specific schedule, use default business hours
             $schedule = $this->getDefaultSchedule();
+            Log::info("Using default schedule", [
+                'schedule' => $schedule
+            ]);
+        } else {
+            Log::info("Using provider specific schedule", [
+                'schedule' => $schedule
+            ]);
         }
         
         // Get existing appointments for this provider within the date range
@@ -842,6 +967,14 @@ class AppointmentScheduler
             ->whereNotIn('status', [Appointment::STATUS_CANCELLED])
             ->orderBy('scheduled_date')
             ->get();
+
+        Log::info("Found existing appointments", [
+            'count' => $existingAppointments->count(),
+            'date_range' => [
+                'start' => $startDate->startOfDay(),
+                'end' => $endDate->endOfDay()
+            ]
+        ]);
         
         // Format appointments as timestamp => duration pairs
         $bookedSlots = [];
@@ -858,9 +991,19 @@ class AppointmentScheduler
             // Skip if not a business day
             $dayOfWeek = $currentDate->dayOfWeek;
             if (!isset($schedule[$dayOfWeek])) {
+                Log::info("Skipping non-business day", [
+                    'date' => $currentDate->toDateString(),
+                    'day_of_week' => $dayOfWeek
+                ]);
                 $currentDate->addDay();
                 continue;
             }
+            
+            Log::info("Checking slots for day", [
+                'date' => $currentDate->toDateString(),
+                'day_of_week' => $dayOfWeek,
+                'time_slots' => $schedule[$dayOfWeek]
+            ]);
             
             // Check each time slot for this day
             foreach ($schedule[$dayOfWeek] as $timeSlot) {
@@ -874,8 +1017,16 @@ class AppointmentScheduler
                     (int)substr($timeSlot['end'], 3, 2)
                 );
                 
+                Log::info("Checking time slot", [
+                    'slot_start' => $slotStart,
+                    'slot_end' => $slotEnd
+                ]);
+                
                 // Skip if slot is in the past
                 if ($slotStart->lt(Carbon::now())) {
+                    Log::info("Skipping past slot", [
+                        'slot_start' => $slotStart
+                    ]);
                     continue;
                 }
                 
@@ -899,12 +1050,20 @@ class AppointmentScheduler
                             (Carbon::createFromTimestamp($bookedStart)->between($testTime, $testEnd)) ||
                             ($bookedEnd->between($testTime, $testEnd))) {
                             $isBooked = true;
+                            Log::info("Slot is booked", [
+                                'test_time' => $testTime,
+                                'test_end' => $testEnd,
+                                'booked_start' => Carbon::createFromTimestamp($bookedStart),
+                                'booked_end' => $bookedEnd
+                            ]);
                             break;
                         }
                     }
                     
                     if (!$isBooked) {
-                        // Found an available slot
+                        Log::info("Found available slot", [
+                            'slot_time' => $testTime
+                        ]);
                         return $testTime;
                     }
                     
@@ -917,7 +1076,7 @@ class AppointmentScheduler
             $currentDate->addDay();
         }
         
-        // No available slots found
+        Log::info("No available slots found in date range");
         return null;
     }
     
