@@ -100,13 +100,22 @@ class AppointmentScheduler
                 $procedure = $procedure->first();
             }
 
+            Log::info("Patient details", [
+                'patient_id' => $patient->id,
+                'address' => $patient->address,
+                'city' => $patient->city,
+                'state' => $patient->state,
+                'postal_code' => $patient->postal_code
+            ]);
+
             // Get patient location
             $patientLat = $solicitation->preferred_location_lat;
             $patientLng = $solicitation->preferred_location_lng;
 
-            Log::info("Patient location for scheduling", [
+            Log::info("Initial patient location", [
                 'lat' => $patientLat,
-                'lng' => $patientLng
+                'lng' => $patientLng,
+                'has_location' => !is_null($patientLat) && !is_null($patientLng)
             ]);
 
             // If no explicit location is provided, try to geocode patient's address
@@ -119,8 +128,21 @@ class AppointmentScheduler
                 }
                 
                 $address = $this->buildFullAddress($patient);
+                
+                Log::info("Built full address for geocoding", [
+                    'address' => $address,
+                    'has_address' => !empty($address)
+                ]);
+
                 if ($address) {
                     $geocodeResult = $this->mapboxService->geocodeAddress($address);
+                    
+                    Log::info("Geocoding result", [
+                        'success' => $geocodeResult['success'] ?? false,
+                        'latitude' => $geocodeResult['latitude'] ?? null,
+                        'longitude' => $geocodeResult['longitude'] ?? null,
+                        'error' => $geocodeResult['error'] ?? null
+                    ]);
                     
                     if ($geocodeResult['success']) {
                         $patientLat = $geocodeResult['latitude'];
@@ -132,12 +154,31 @@ class AppointmentScheduler
                             'preferred_location_lng' => $patientLng
                         ]);
                         
-                        Log::info("Successfully geocoded patient address for solicitation #{$solicitation->id}");
+                        Log::info("Successfully geocoded and saved patient location", [
+                            'lat' => $patientLat,
+                            'lng' => $patientLng
+                        ]);
                     } else {
-                        Log::warning("Failed to geocode patient address for solicitation #{$solicitation->id}");
+                        Log::warning("Failed to geocode patient address", [
+                            'address' => $address,
+                            'error' => $geocodeResult['error'] ?? 'Unknown error'
+                        ]);
                     }
+                } else {
+                    Log::warning("Could not build full address for patient", [
+                        'patient_id' => $patient->id,
+                        'has_address' => !empty($patient->address),
+                        'has_city' => !empty($patient->city),
+                        'has_state' => !empty($patient->state)
+                    ]);
                 }
             }
+
+            Log::info("Final patient location for scheduling", [
+                'lat' => $patientLat,
+                'lng' => $patientLng,
+                'has_location' => !is_null($patientLat) && !is_null($patientLng)
+            ]);
 
             // Get providers that offer this procedure
             $maxDistanceKm = $solicitation->max_distance_km ?: $this->maxDistanceKm;
@@ -570,7 +611,7 @@ class AppointmentScheduler
             ]);
 
             // Get clinics that offer this procedure and have active pricing contracts
-            $clinics = Clinic::active()
+            $clinicQuery = Clinic::active()
                 ->whereHas('pricingContracts', function($query) use ($tussId, $healthPlanId) {
                     $query->where('tuss_procedure_id', $tussId)
                           ->where('is_active', true)
@@ -580,11 +621,70 @@ class AppointmentScheduler
                               $q->whereNull('end_date')
                                 ->orWhere('end_date', '>=', now());
                           });
-                })
-                ->get();
+                });
+
+            // Log the SQL query for debugging
+            Log::info("Clinic query SQL", [
+                'sql' => $clinicQuery->toSql(),
+                'bindings' => $clinicQuery->getBindings()
+            ]);
+
+            $clinics = $clinicQuery->get();
 
             Log::info("Found clinics with active contracts", [
-                'count' => $clinics->count()
+                'count' => $clinics->count(),
+                'tuss_id' => $tussId,
+                'health_plan_id' => $healthPlanId
+            ]);
+
+            // Get professionals that offer this procedure and have active pricing contracts
+            $professionalQuery = Professional::active()
+                ->whereHas('pricingContracts', function($query) use ($tussId, $healthPlanId) {
+                    $query->where('tuss_procedure_id', $tussId)
+                          ->where('is_active', true)
+                          ->where('contractable_type', 'App\\Models\\HealthPlan')
+                          ->where('contractable_id', $healthPlanId)
+                          ->where(function ($q) {
+                              $q->whereNull('end_date')
+                                ->orWhere('end_date', '>=', now());
+                          });
+                });
+
+            // If TUSS is 10101012, require medical specialty
+            if ($tussId === 10101012) {
+                $professionalQuery->whereHas('specialties', function($query) {
+                    $query->where('name', 'Médico');
+                });
+            }
+
+            // Log the SQL query for debugging
+            Log::info("Professional query SQL", [
+                'sql' => $professionalQuery->toSql(),
+                'bindings' => $professionalQuery->getBindings()
+            ]);
+
+            $professionals = $professionalQuery->get();
+
+            Log::info("Found professionals with active contracts", [
+                'count' => $professionals->count(),
+                'requires_medical' => ($tussId === 10101012),
+                'tuss_id' => $tussId,
+                'health_plan_id' => $healthPlanId
+            ]);
+
+            // Log pricing contracts for debugging
+            Log::info("Checking pricing contracts", [
+                'tuss_id' => $tussId,
+                'health_plan_id' => $healthPlanId,
+                'active_contracts_count' => PricingContract::where('tuss_procedure_id', $tussId)
+                    ->where('contractable_type', 'App\\Models\\HealthPlan')
+                    ->where('contractable_id', $healthPlanId)
+                    ->where('is_active', true)
+                    ->where(function ($q) {
+                        $q->whereNull('end_date')
+                          ->orWhere('end_date', '>=', now());
+                    })
+                    ->count()
             ]);
 
             foreach ($clinics as $clinic) {
@@ -630,33 +730,6 @@ class AppointmentScheduler
                     'distance' => $distance
                 ];
             }
-
-            // Get professionals that offer this procedure and have active pricing contracts
-            $professionals = Professional::active()
-                ->whereHas('pricingContracts', function($query) use ($tussId, $healthPlanId) {
-                    $query->where('tuss_procedure_id', $tussId)
-                          ->where('is_active', true)
-                          ->where('contractable_type', 'App\\Models\\HealthPlan')
-                          ->where('contractable_id', $healthPlanId)
-                          ->where(function ($q) {
-                              $q->whereNull('end_date')
-                                ->orWhere('end_date', '>=', now());
-                          });
-                });
-
-            // If TUSS is 10101012, require medical specialty
-            if ($tussId === 10101012) {
-                $professionals->whereHas('specialties', function($query) {
-                    $query->where('name', 'Médico');
-                });
-            }
-
-            $professionals = $professionals->get();
-
-            Log::info("Found professionals with active contracts", [
-                'count' => $professionals->count(),
-                'requires_medical' => ($tussId === 10101012)
-            ]);
 
             foreach ($professionals as $professional) {
                 // Calculate distance if coordinates available
