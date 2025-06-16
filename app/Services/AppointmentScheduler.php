@@ -592,226 +592,78 @@ class AppointmentScheduler
     {
         try {
             $tussId = $solicitation->tuss_id;
-            $healthPlanId = $solicitation->health_plan_id;
             $providers = [];
-            $maxDistance = 100; // 100km maximum distance
 
             Log::info("Starting provider search for solicitation #{$solicitation->id}", [
-                'tuss_id' => $tussId,
-                'health_plan_id' => $healthPlanId
+                'tuss_id' => $tussId
             ]);
 
-            // Log all pricing contracts for this TUSS and health plan
-            $allPricingContracts = PricingContract::where('tuss_procedure_id', $tussId)
-                ->where('contractable_type', 'App\\Models\\HealthPlan')
-                ->where('contractable_id', $healthPlanId)
+            // Get all active pricing contracts for this TUSS
+            $pricingContracts = PricingContract::where('tuss_procedure_id', $tussId)
+                ->where('is_active', true)
+                ->where(function ($q) {
+                    $q->whereNull('end_date')
+                      ->orWhere('end_date', '>=', now());
+                })
                 ->get();
 
-            Log::info("All pricing contracts found", [
+            Log::info("Found pricing contracts", [
                 'tuss_id' => $tussId,
-                'health_plan_id' => $healthPlanId,
-                'total_contracts' => $allPricingContracts->count(),
-                'contracts_details' => $allPricingContracts->map(function($contract) {
-                    return [
-                        'id' => $contract->id,
-                        'is_active' => $contract->is_active,
-                        'start_date' => $contract->start_date,
-                        'end_date' => $contract->end_date,
+                'total_contracts' => $pricingContracts->count()
+            ]);
+
+            foreach ($pricingContracts as $contract) {
+                // Get the contractable (clinic or professional)
+                $contractable = $contract->contractable;
+                
+                if (!$contractable || !$contractable->is_active || $contractable->status !== 'approved') {
+                    Log::info("Skipping inactive contractable", [
+                        'contract_id' => $contract->id,
                         'contractable_type' => $contract->contractable_type,
-                        'contractable_id' => $contract->contractable_id
-                    ];
-                })
-            ]);
-
-            // Get patient location
-            $patientLat = $solicitation->preferred_location_lat;
-            $patientLng = $solicitation->preferred_location_lng;
-
-            Log::info("Patient location", [
-                'lat' => $patientLat,
-                'lng' => $patientLng
-            ]);
-
-            // Get clinics that offer this procedure and have active pricing contracts
-            $clinicQuery = Clinic::active()
-                ->whereHas('pricingContracts', function($query) use ($tussId, $healthPlanId) {
-                    $query->where('tuss_procedure_id', $tussId)
-                          ->where('is_active', true)
-                          ->where('contractable_type', 'App\\Models\\HealthPlan')
-                          ->where('contractable_id', $healthPlanId)
-                          ->where(function ($q) {
-                              $q->whereNull('end_date')
-                                ->orWhere('end_date', '>=', now());
-                          });
-                });
-
-            // Log the SQL query for debugging
-            Log::info("Clinic query SQL", [
-                'sql' => $clinicQuery->toSql(),
-                'bindings' => $clinicQuery->getBindings()
-            ]);
-
-            $clinics = $clinicQuery->get();
-
-            // Log clinic details
-            Log::info("Clinic details", [
-                'count' => $clinics->count(),
-                'clinics' => $clinics->map(function($clinic) {
-                    return [
-                        'id' => $clinic->id,
-                        'name' => $clinic->name,
-                        'status' => $clinic->status,
-                        'is_active' => $clinic->is_active,
-                        'has_signed_contract' => $clinic->has_signed_contract,
-                        'pricing_contracts_count' => $clinic->pricingContracts->count()
-                    ];
-                })
-            ]);
-
-            // Get professionals that offer this procedure and have active pricing contracts
-            $professionalQuery = Professional::active()
-                ->whereHas('pricingContracts', function($query) use ($tussId, $healthPlanId) {
-                    $query->where('tuss_procedure_id', $tussId)
-                          ->where('is_active', true)
-                          ->where('contractable_type', 'App\\Models\\HealthPlan')
-                          ->where('contractable_id', $healthPlanId)
-                          ->where(function ($q) {
-                              $q->whereNull('end_date')
-                                ->orWhere('end_date', '>=', now());
-                          });
-                });
-
-            // Log the SQL query for debugging
-            Log::info("Professional query SQL", [
-                'sql' => $professionalQuery->toSql(),
-                'bindings' => $professionalQuery->getBindings()
-            ]);
-
-            $professionals = $professionalQuery->get();
-
-            // Log professional details
-            Log::info("Professional details", [
-                'count' => $professionals->count(),
-                'professionals' => $professionals->map(function($professional) {
-                    return [
-                        'id' => $professional->id,
-                        'name' => $professional->name,
-                        'status' => $professional->status,
-                        'is_active' => $professional->is_active,
-                        'has_signed_contract' => $professional->has_signed_contract,
-                        'pricing_contracts_count' => $professional->pricingContracts->count()
-                    ];
-                })
-            ]);
-
-            // Rest of the existing code...
-
-            // If TUSS is 10101012, require medical specialty
-            if ($tussId === 10101012) {
-                $professionalQuery->whereHas('specialties', function($query) {
-                    $query->where('name', 'Médico');
-                });
-            }
-
-            // Log pricing contracts for debugging
-            Log::info("Checking pricing contracts", [
-                'tuss_id' => $tussId,
-                'health_plan_id' => $healthPlanId,
-                'active_contracts_count' => PricingContract::where('tuss_procedure_id', $tussId)
-                    ->where('contractable_type', 'App\\Models\\HealthPlan')
-                    ->where('contractable_id', $healthPlanId)
-                    ->where('is_active', true)
-                    ->where(function ($q) {
-                        $q->whereNull('end_date')
-                          ->orWhere('end_date', '>=', now());
-                    })
-                    ->count()
-            ]);
-
-            foreach ($clinics as $clinic) {
-                // Calculate distance if coordinates available
-                $distance = null;
-                if ($patientLat && $patientLng && $clinic->latitude && $clinic->longitude) {
-                    $distance = $this->calculateDistance(
-                        $patientLat,
-                        $patientLng,
-                        $clinic->latitude,
-                        $clinic->longitude
-                    );
-
-                    Log::info("Calculated distance for clinic #{$clinic->id}", [
-                        'clinic_id' => $clinic->id,
-                        'distance' => $distance,
-                        'max_distance' => $maxDistance
+                        'contractable_id' => $contract->contractable_id,
+                        'is_active' => $contractable ? $contractable->is_active : false,
+                        'status' => $contractable ? $contractable->status : null
                     ]);
-
-                    // Skip if too far
-                    if ($distance > $maxDistance) {
-                        Log::info("Skipping clinic #{$clinic->id} - too far", [
-                            'distance' => $distance,
-                            'max_distance' => $maxDistance
-                        ]);
-                        continue;
-                    }
+                    continue;
                 }
 
-                // Get price from active pricing contract
-                $price = $this->getPriceFromPricingContract($clinic->pricingContracts, $tussId);
+                // Calculate distance if coordinates available
+                $distance = null;
+                if ($solicitation->preferred_location_lat && $solicitation->preferred_location_lng && 
+                    $contractable->latitude && $contractable->longitude) {
+                    $distance = $this->calculateDistance(
+                        $solicitation->preferred_location_lat,
+                        $solicitation->preferred_location_lng,
+                        $contractable->latitude,
+                        $contractable->longitude
+                    );
+                }
 
-                Log::info("Added clinic to providers list", [
-                    'clinic_id' => $clinic->id,
-                    'price' => $price,
+                // Create solicitation invite
+                $invite = new \App\Models\SolicitationInvite([
+                    'solicitation_id' => $solicitation->id,
+                    'provider_type' => $contract->contractable_type,
+                    'provider_id' => $contract->contractable_id,
+                    'price' => $contract->price,
+                    'status' => 'pending'
+                ]);
+                $invite->save();
+
+                // Send notification
+                $contractable->notify(new \App\Notifications\SolicitationInvite($solicitation, $invite));
+
+                Log::info("Created invite for provider", [
+                    'invite_id' => $invite->id,
+                    'provider_type' => $contract->contractable_type,
+                    'provider_id' => $contract->contractable_id,
+                    'price' => $contract->price,
                     'distance' => $distance
                 ]);
 
                 $providers[] = [
-                    'provider_type' => 'clinic',
-                    'provider_id' => $clinic->id,
-                    'price' => $price,
-                    'distance' => $distance
-                ];
-            }
-
-            foreach ($professionals as $professional) {
-                // Calculate distance if coordinates available
-                $distance = null;
-                if ($patientLat && $patientLng && $professional->latitude && $professional->longitude) {
-                    $distance = $this->calculateDistance(
-                        $patientLat,
-                        $patientLng,
-                        $professional->latitude,
-                        $professional->longitude
-                    );
-
-                    Log::info("Calculated distance for professional #{$professional->id}", [
-                        'professional_id' => $professional->id,
-                        'distance' => $distance,
-                        'max_distance' => $maxDistance
-                    ]);
-
-                    // Skip if too far
-                    if ($distance > $maxDistance) {
-                        Log::info("Skipping professional #{$professional->id} - too far", [
-                            'distance' => $distance,
-                            'max_distance' => $maxDistance
-                        ]);
-                        continue;
-                    }
-                }
-
-                // Get price from active pricing contract
-                $price = $this->getPriceFromPricingContract($professional->pricingContracts, $tussId);
-
-                Log::info("Added professional to providers list", [
-                    'professional_id' => $professional->id,
-                    'price' => $price,
-                    'distance' => $distance
-                ]);
-
-                $providers[] = [
-                    'provider_type' => 'professional',
-                    'provider_id' => $professional->id,
-                    'price' => $price,
+                    'provider_type' => $contract->contractable_type,
+                    'provider_id' => $contract->contractable_id,
+                    'price' => $contract->price,
                     'distance' => $distance
                 ];
             }
@@ -848,10 +700,6 @@ class AppointmentScheduler
                 }
                 return $a['distance'] <=> $b['distance'];
             });
-
-            Log::info("Providers sorted by price and distance", [
-                'providers' => $providers
-            ]);
 
             return [
                 'success' => true,
