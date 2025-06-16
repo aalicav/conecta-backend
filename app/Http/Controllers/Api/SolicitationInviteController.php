@@ -106,8 +106,8 @@ class SolicitationInviteController extends Controller
             // Create availability
             $availability = ProfessionalAvailability::create([
                 'solicitation_id' => $invite->solicitation_id,
-                'provider_type' => $invite->provider_type,
-                'provider_id' => $invite->provider_id,
+                'professional_id' => $invite->provider_type === 'professional' ? $invite->provider_id : null,
+                'clinic_id' => $invite->provider_type === 'clinic' ? $invite->provider_id : null,
                 'available_date' => $request->available_date,
                 'available_time' => $request->available_time,
                 'notes' => $request->notes,
