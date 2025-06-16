@@ -113,7 +113,7 @@ class SolicitationInviteController extends Controller
             ];
 
             // Set either professional_id or clinic_id based on provider_type
-            if ($invite->provider_type === 'professional') {
+            if ($invite->provider_type === 'App\\Models\\Professional') {
                 $availabilityData['professional_id'] = $invite->provider_id;
                 $availabilityData['clinic_id'] = null;
             } else {
