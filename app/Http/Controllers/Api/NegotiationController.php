@@ -1243,7 +1243,8 @@ class NegotiationController extends Controller
             // Mark all items as complete
             $negotiation->items()->update([
                 'status' => 'completed',
-                'responded_at' => now()
+                'responded_at' => now(),
+                'approved_value' => DB::raw('proposed_value')
             ]);
             
             // Mark as complete
