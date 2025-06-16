@@ -601,6 +601,28 @@ class AppointmentScheduler
                 'health_plan_id' => $healthPlanId
             ]);
 
+            // Log all pricing contracts for this TUSS and health plan
+            $allPricingContracts = PricingContract::where('tuss_procedure_id', $tussId)
+                ->where('contractable_type', 'App\\Models\\HealthPlan')
+                ->where('contractable_id', $healthPlanId)
+                ->get();
+
+            Log::info("All pricing contracts found", [
+                'tuss_id' => $tussId,
+                'health_plan_id' => $healthPlanId,
+                'total_contracts' => $allPricingContracts->count(),
+                'contracts_details' => $allPricingContracts->map(function($contract) {
+                    return [
+                        'id' => $contract->id,
+                        'is_active' => $contract->is_active,
+                        'start_date' => $contract->start_date,
+                        'end_date' => $contract->end_date,
+                        'contractable_type' => $contract->contractable_type,
+                        'contractable_id' => $contract->contractable_id
+                    ];
+                })
+            ]);
+
             // Get patient location
             $patientLat = $solicitation->preferred_location_lat;
             $patientLng = $solicitation->preferred_location_lng;
@@ -631,10 +653,19 @@ class AppointmentScheduler
 
             $clinics = $clinicQuery->get();
 
-            Log::info("Found clinics with active contracts", [
+            // Log clinic details
+            Log::info("Clinic details", [
                 'count' => $clinics->count(),
-                'tuss_id' => $tussId,
-                'health_plan_id' => $healthPlanId
+                'clinics' => $clinics->map(function($clinic) {
+                    return [
+                        'id' => $clinic->id,
+                        'name' => $clinic->name,
+                        'status' => $clinic->status,
+                        'is_active' => $clinic->is_active,
+                        'has_signed_contract' => $clinic->has_signed_contract,
+                        'pricing_contracts_count' => $clinic->pricingContracts->count()
+                    ];
+                })
             ]);
 
             // Get professionals that offer this procedure and have active pricing contracts
@@ -650,13 +681,6 @@ class AppointmentScheduler
                           });
                 });
 
-            // If TUSS is 10101012, require medical specialty
-            if ($tussId === 10101012) {
-                $professionalQuery->whereHas('specialties', function($query) {
-                    $query->where('name', 'Médico');
-                });
-            }
-
             // Log the SQL query for debugging
             Log::info("Professional query SQL", [
                 'sql' => $professionalQuery->toSql(),
@@ -665,12 +689,29 @@ class AppointmentScheduler
 
             $professionals = $professionalQuery->get();
 
-            Log::info("Found professionals with active contracts", [
+            // Log professional details
+            Log::info("Professional details", [
                 'count' => $professionals->count(),
-                'requires_medical' => ($tussId === 10101012),
-                'tuss_id' => $tussId,
-                'health_plan_id' => $healthPlanId
+                'professionals' => $professionals->map(function($professional) {
+                    return [
+                        'id' => $professional->id,
+                        'name' => $professional->name,
+                        'status' => $professional->status,
+                        'is_active' => $professional->is_active,
+                        'has_signed_contract' => $professional->has_signed_contract,
+                        'pricing_contracts_count' => $professional->pricingContracts->count()
+                    ];
+                })
             ]);
+
+            // Rest of the existing code...
+
+            // If TUSS is 10101012, require medical specialty
+            if ($tussId === 10101012) {
+                $professionalQuery->whereHas('specialties', function($query) {
+                    $query->where('name', 'Médico');
+                });
+            }
 
             // Log pricing contracts for debugging
             Log::info("Checking pricing contracts", [
