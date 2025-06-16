@@ -126,7 +126,12 @@ class ProfessionalAvailabilityController extends Controller
 
             // Get availabilities for this solicitation
             $availabilities = ProfessionalAvailability::where('solicitation_id', $solicitationId)
-                ->with(['professional.user', 'clinic.user'])
+                ->with([
+                    'professional.user',
+                    'professional.addresses',
+                    'clinic.user',
+                    'clinic.addresses'
+                ])
                 ->get();
 
             return response()->json([
@@ -151,13 +156,15 @@ class ProfessionalAvailabilityController extends Controller
     public function selectAvailability(Request $request, $availabilityId)
     {
         $request->validate([
-            'notes' => 'nullable|string'
+            'notes' => 'nullable|string',
+            'address_id' => 'nullable|exists:addresses,id'
         ]);
 
         try {
             DB::beginTransaction();
 
-            $availability = ProfessionalAvailability::findOrFail($availabilityId);
+            $availability = ProfessionalAvailability::with(['professional.addresses', 'clinic.addresses'])
+                ->findOrFail($availabilityId);
             
             // Check if availability is still pending
             if ($availability->status !== 'pending') {
@@ -185,15 +192,17 @@ class ProfessionalAvailabilityController extends Controller
 
             // Get the provider (professional or clinic)
             $provider = $availability->professional_id 
-                ? \App\Models\Professional::with(['addresses' => function($query) {
-                    $query->where('is_primary', true);
-                }])->find($availability->professional_id)
-                : \App\Models\Clinic::with(['addresses' => function($query) {
-                    $query->where('is_primary', true);
-                }])->find($availability->clinic_id);
+                ? $availability->professional
+                : $availability->clinic;
 
-            // Get the primary address
-            $primaryAddress = $provider->addresses->first();
+            // Get the address - use the provided address_id if available, otherwise use primary address
+            $address = null;
+            if ($request->address_id) {
+                $address = $provider->addresses()->find($request->address_id);
+            }
+            if (!$address) {
+                $address = $provider->addresses()->where('is_primary', true)->first();
+            }
 
             $appointment = $solicitation->appointments()->create([
                 'provider_type' => $availability->professional_id ? 'App\\Models\\Professional' : 'App\\Models\\Clinic',
@@ -204,7 +213,7 @@ class ProfessionalAvailabilityController extends Controller
                 'status' => 'scheduled',
                 'scheduled_date' => $scheduledFor->format('Y-m-d H:i:s'),
                 'notes' => $request->notes,
-                'address_id' => $primaryAddress ? $primaryAddress->id : null
+                'address_id' => $address ? $address->id : null
             ]);
 
             // Reject other availabilities
@@ -219,8 +228,8 @@ class ProfessionalAvailabilityController extends Controller
             return response()->json([
                 'message' => 'Disponibilidade selecionada com sucesso',
                 'data' => [
-                    'availability' => $availability,
-                    'appointment' => $appointment
+                    'availability' => $availability->load(['professional.addresses', 'clinic.addresses']),
+                    'appointment' => $appointment->load('address')
                 ]
             ]);
 
