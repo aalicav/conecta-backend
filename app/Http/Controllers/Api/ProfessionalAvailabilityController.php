@@ -181,8 +181,8 @@ class ProfessionalAvailabilityController extends Controller
 
             // Create appointment
             $appointment = $solicitation->appointments()->create([
-                'provider_type' => $availability->provider_type,
-                'provider_id' => $availability->provider_id,
+                'provider_type' => $availability->professional_id ? 'App\\Models\\Professional' : 'App\\Models\\Clinic',
+                'provider_id' => $availability->professional_id ?? $availability->clinic_id,
                 'patient_id' => $solicitation->patient_id,
                 'health_plan_id' => $solicitation->health_plan_id,
                 'tuss_id' => $solicitation->tuss_id,
