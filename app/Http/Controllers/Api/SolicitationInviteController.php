@@ -69,8 +69,9 @@ class SolicitationInviteController extends Controller
             $invite = SolicitationInvite::findOrFail($inviteId);
 
             // Verify that the invite belongs to the authenticated user
-            if ($invite->provider_type !== (Auth::user()->hasRole('professional') ? 'professional' : 'clinic') ||
-                $invite->provider_id !== Auth::user()->entity_id) {
+            if (!Auth::user()->hasRole('super_admin') && 
+                ($invite->provider_type !== (Auth::user()->hasRole('professional') ? 'professional' : 'clinic') ||
+                $invite->provider_id !== Auth::user()->entity_id)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Convite não encontrado'
