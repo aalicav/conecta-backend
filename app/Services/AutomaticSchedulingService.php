@@ -109,7 +109,11 @@ class AutomaticSchedulingService
                 $query->where('tuss_procedure_id', $tussId)
                       ->where('is_active', true)
                       ->where('contractable_type', 'App\\Models\\HealthPlan')
-                      ->where('contractable_id', $healthPlanId);
+                      ->where('contractable_id', $healthPlanId)
+                      ->where(function ($q) {
+                          $q->whereNull('end_date')
+                            ->orWhere('end_date', '>=', now());
+                      });
             }])
             ->where('is_active', true)
             ->where('status', 'approved')
@@ -120,7 +124,11 @@ class AutomaticSchedulingService
                 $query->where('tuss_procedure_id', $tussId)
                       ->where('is_active', true)
                       ->where('contractable_type', 'App\\Models\\HealthPlan')
-                      ->where('contractable_id', $healthPlanId);
+                      ->where('contractable_id', $healthPlanId)
+                      ->where(function ($q) {
+                          $q->whereNull('end_date')
+                            ->orWhere('end_date', '>=', now());
+                      });
             }])
             ->where('is_active', true)
             ->where('status', 'approved')
@@ -369,7 +377,7 @@ class AutomaticSchedulingService
     protected function getPriceFromPricingContract($pricingContracts, $tussId)
     {
         foreach ($pricingContracts as $contract) {
-            if ($contract->tuss_id === $tussId && $contract->is_active) {
+            if ($contract->tuss_procedure_id === $tussId && $contract->is_active) {
                 return $contract->price;
             }
         }
