@@ -20,6 +20,7 @@ use App\Models\User;
 use App\Notifications\SchedulingFailed;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Database\Eloquent\Collection;
+use App\Services\NotificationService;
 
 class AppointmentScheduler
 {
@@ -34,6 +35,11 @@ class AppointmentScheduler
     protected $mapboxService;
 
     /**
+     * @var NotificationService
+     */
+    protected $notificationService;
+
+    /**
      * Maximum distance in kilometers for provider search
      */
     protected $maxDistanceKm = 50;
@@ -41,9 +47,10 @@ class AppointmentScheduler
     /**
      * Constructor
      */
-    public function __construct(MapboxService $mapboxService = null)
+    public function __construct(MapboxService $mapboxService = null, NotificationService $notificationService = null)
     {
         $this->mapboxService = $mapboxService ?? new MapboxService();
+        $this->notificationService = $notificationService ?? new NotificationService();
         
         // Get max distance from config or env
         $this->maxDistanceKm = env('MAX_PROVIDER_DISTANCE_KM', 50);
@@ -649,8 +656,8 @@ class AppointmentScheduler
                 ]);
                 $invite->save();
 
-                // Send notification
-                $contractable->notify(new \App\Notifications\SolicitationInvite($solicitation, $invite));
+                // Send notification using NotificationService
+                $this->notificationService->sendSolicitationInviteNotification($solicitation, $invite, $contractable->user);
 
                 Log::info("Created invite for provider", [
                     'invite_id' => $invite->id,
