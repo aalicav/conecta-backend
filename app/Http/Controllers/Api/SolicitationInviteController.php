@@ -104,14 +104,32 @@ class SolicitationInviteController extends Controller
             ]);
 
             // Create availability
-            $availability = ProfessionalAvailability::create([
+            $availabilityData = [
                 'solicitation_id' => $invite->solicitation_id,
-                'professional_id' => $invite->provider_type === 'professional' ? $invite->provider_id : null,
-                'clinic_id' => $invite->provider_type === 'clinic' ? $invite->provider_id : null,
                 'available_date' => $request->available_date,
                 'available_time' => $request->available_time,
                 'notes' => $request->notes,
                 'status' => 'pending'
+            ];
+
+            // Set either professional_id or clinic_id based on provider_type
+            if ($invite->provider_type === 'professional') {
+                $availabilityData['professional_id'] = $invite->provider_id;
+                $availabilityData['clinic_id'] = null;
+            } else {
+                $availabilityData['professional_id'] = null;
+                $availabilityData['clinic_id'] = $invite->provider_id;
+            }
+
+            Log::info('Creating availability with data:', [
+                'invite' => $invite->toArray(),
+                'availability_data' => $availabilityData
+            ]);
+
+            $availability = ProfessionalAvailability::create($availabilityData);
+
+            Log::info('Availability created:', [
+                'availability' => $availability->toArray()
             ]);
 
             DB::commit();
