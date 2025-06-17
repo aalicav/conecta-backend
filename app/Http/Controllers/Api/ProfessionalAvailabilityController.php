@@ -129,10 +129,37 @@ class ProfessionalAvailabilityController extends Controller
                 ->with([
                     'professional.user',
                     'professional.addresses',
+                    'professional.pricingContracts' => function($query) use ($solicitation) {
+                        $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                            ->where('is_active', true);
+                    },
                     'clinic.user',
-                    'clinic.addresses'
+                    'clinic.addresses',
+                    'clinic.pricingContracts' => function($query) use ($solicitation) {
+                        $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                            ->where('is_active', true);
+                    }
                 ])
-                ->get();
+                ->get()
+                ->map(function($availability) {
+                    // Get the provider (professional or clinic)
+                    $provider = $availability->professional ?? $availability->clinic;
+                    
+                    // Get the active pricing contract for this procedure
+                    $pricingContract = $provider->pricingContracts->first();
+                    
+                    // Add pricing information to the availability
+                    $availability->price = $pricingContract ? $pricingContract->price : null;
+                    $availability->pricing_contract = $pricingContract ? [
+                        'id' => $pricingContract->id,
+                        'price' => $pricingContract->price,
+                        'notes' => $pricingContract->notes,
+                        'start_date' => $pricingContract->start_date,
+                        'end_date' => $pricingContract->end_date
+                    ] : null;
+                    
+                    return $availability;
+                });
 
             return response()->json([
                 'success' => true,
