@@ -601,6 +601,25 @@ class WhatsappController extends Controller
             
             Log::info('WhatsApp webhook received', $webhookData);
             
+            // Check if this is a message from a user (not a status update)
+            if (isset($webhookData['entry'][0]['changes'][0]['value']['messages'])) {
+                $messages = $webhookData['entry'][0]['changes'][0]['value']['messages'];
+                
+                foreach ($messages as $message) {
+                    // Check if this is a text message
+                    if ($message['type'] === 'text') {
+                        $from = $message['from'];
+                        $text = $message['text']['body'];
+                        
+                        // Check if this is an appointment verification response
+                        if (preg_match('/^(confirm|reject)-\d+$/', $text)) {
+                            $this->whatsappService->processAppointmentVerificationResponse($text, $from);
+                        }
+                    }
+                }
+            }
+            
+            // Process other webhook data (status updates, etc.)
             $this->whatsappService->handleWebhook($webhookData);
             
             return response()->json(['success' => true]);

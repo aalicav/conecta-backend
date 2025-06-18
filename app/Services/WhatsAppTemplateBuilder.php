@@ -629,4 +629,134 @@ class WhatsAppTemplateBuilder
                 '5' => $solicitationId
         ];
     }
+
+    /**
+     * Build the health plan availability selected template data
+     *
+     * @param string $adminName
+     * @param string $patientName
+     * @param string $providerName
+     * @param string $procedureName
+     * @param string $scheduledDate
+     * @param string $appointmentId
+     * @return array
+     */
+    public function buildHealthPlanAvailabilitySelected(
+        string $adminName,
+        string $patientName,
+        string $providerName,
+        string $procedureName,
+        string $scheduledDate,
+        string $appointmentId
+    ): array {
+        return [
+            '1' => $adminName,
+            '2' => $patientName,
+            '3' => $providerName,
+            '4' => $procedureName,
+            '5' => $scheduledDate,
+            '6' => $appointmentId
+        ];
+    }
+
+    /**
+     * Build the availability selected template data
+     *
+     * @param string $providerName
+     * @param string $patientName
+     * @param string $procedureName
+     * @param string $scheduledDate
+     * @param string $appointmentId
+     * @return array
+     */
+    public function buildAvailabilitySelected(
+        string $providerName,
+        string $patientName,
+        string $procedureName,
+        string $scheduledDate,
+        string $appointmentId
+    ): array {
+        return [
+            '1' => $providerName,
+            '2' => $patientName,
+            '3' => $procedureName,
+            '4' => $scheduledDate,
+            '5' => $appointmentId
+        ];
+    }
+
+    /**
+     * Build the availability rejected template data
+     *
+     * @param string $providerName
+     * @param string $patientName
+     * @param string $procedureName
+     * @param string $availableDate
+     * @param string $availableTime
+     * @return array
+     */
+    public function buildAvailabilityRejected(
+        string $providerName,
+        string $patientName,
+        string $procedureName,
+        string $availableDate,
+        string $availableTime
+    ): array {
+        return [
+            '1' => $providerName,
+            '2' => $patientName,
+            '3' => $procedureName,
+            '4' => $availableDate,
+            '5' => $availableTime
+        ];
+    }
+
+    /**
+     * Build the appointment verification template data
+     *
+     * @param string $recipientName
+     * @param string $companyName
+     * @param string $appointmentTime
+     * @param string $appointmentDate
+     * @param string $professionalName
+     * @param string $procedureName
+     * @param string $clinicAddress
+     * @param string $appointmentId
+     * @return array
+     */
+    public function buildAppointmentVerification(
+        string $recipientName,
+        string $companyName,
+        string $appointmentTime,
+        string $appointmentDate,
+        string $professionalName,
+        string $procedureName,
+        string $clinicAddress,
+        string $appointmentId
+    ): array {
+        return [
+            '1' => $recipientName,
+            '2' => $companyName,
+            '3' => $appointmentTime,
+            '4' => $appointmentDate,
+            '5' => $professionalName,
+            '6' => $procedureName,
+            '7' => $clinicAddress,
+            '8' => $appointmentId
+        ];
+    }
+
+    /**
+     * Build the appointment confirmation response template data
+     *
+     * @param bool $confirmed
+     * @return array
+     */
+    public function buildAppointmentConfirmationResponse(bool $confirmed): array
+    {
+        return [
+            '1' => $confirmed ? 'confirmado' : 'cancelado',
+            '2' => $confirmed ? 'Aguardamos você no horário agendado' : 'Se precisar reagendar, entre em contato conosco'
+        ];
+    }
 } 

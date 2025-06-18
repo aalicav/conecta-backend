@@ -3176,8 +3176,127 @@ class NotificationService
                 
                 Log::info("Sent availability selected notification for availability #{$availability->id} to provider #{$providerUser->id}");
             }
+            
+            // Notify patient
+            $this->notifyPatientAboutAvailabilitySelected($availability, $appointment);
+            
+            // Notify health plan
+            $this->notifyHealthPlanAboutAvailabilitySelected($availability, $appointment);
+            
         } catch (\Exception $e) {
             Log::error("Failed to send availability selected notification: " . $e->getMessage(), [
+                'availability_id' => $availability->id,
+                'appointment_id' => $appointment->id
+            ]);
+        }
+    }
+
+    /**
+     * Notify patient about availability selected
+     */
+    protected function notifyPatientAboutAvailabilitySelected(ProfessionalAvailability $availability, Appointment $appointment): void
+    {
+        try {
+            $solicitation = $availability->solicitation;
+            $patient = $solicitation->patient;
+            
+            if (!$patient) {
+                return;
+            }
+            
+            // Get patient user
+            $patientUser = $patient->user;
+            if (!$patientUser || !$patientUser->is_active) {
+                return;
+            }
+            
+            // Send system notification
+            $patientUser->notify(new AppointmentScheduled($appointment));
+            
+            // Send WhatsApp notification
+            try {
+                $this->sendWhatsAppAppointmentScheduled($appointment);
+            } catch (\Exception $whatsappError) {
+                Log::error("Failed to send WhatsApp notification to patient for availability selected", [
+                    'error' => $whatsappError->getMessage(),
+                    'availability_id' => $availability->id,
+                    'appointment_id' => $appointment->id,
+                    'patient_id' => $patient->id
+                ]);
+            }
+            
+            Log::info("Sent availability selected notification to patient #{$patient->id} for appointment #{$appointment->id}");
+            
+        } catch (\Exception $e) {
+            Log::error("Failed to notify patient about availability selected: " . $e->getMessage(), [
+                'availability_id' => $availability->id,
+                'appointment_id' => $appointment->id
+            ]);
+        }
+    }
+
+    /**
+     * Notify health plan about availability selected
+     */
+    protected function notifyHealthPlanAboutAvailabilitySelected(ProfessionalAvailability $availability, Appointment $appointment): void
+    {
+        try {
+            $solicitation = $availability->solicitation;
+            $healthPlan = $solicitation->healthPlan;
+            
+            if (!$healthPlan) {
+                return;
+            }
+            
+            // Get health plan admin users
+            $healthPlanAdmins = User::role('plan_admin')
+                ->where('entity_type', 'App\\Models\\HealthPlan')
+                ->where('entity_id', $healthPlan->id)
+                ->where('is_active', true)
+                ->whereNull('deleted_at')
+                ->get();
+            
+            if ($healthPlanAdmins->isEmpty()) {
+                return;
+            }
+            
+            // Send system notification to health plan admins
+            Notification::send($healthPlanAdmins, new AppointmentScheduled($appointment));
+            
+            // Send WhatsApp notification to health plan admins
+            foreach ($healthPlanAdmins as $admin) {
+                if ($admin->phone) {
+                    try {
+                        $solicitation = $availability->solicitation;
+                        $patient = $solicitation->patient;
+                        $procedure = $solicitation->tuss;
+                        $provider = $availability->professional ?? $availability->clinic;
+                        $scheduledDate = \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+                        
+                        $this->whatsAppService->sendHealthPlanAvailabilitySelectedNotification(
+                            $admin->name,
+                            $patient->name,
+                            $provider->name,
+                            $procedure->description,
+                            $scheduledDate,
+                            $appointment->id,
+                            $admin->phone
+                        );
+                    } catch (\Exception $whatsappError) {
+                        Log::error("Failed to send WhatsApp notification to health plan admin for availability selected", [
+                            'error' => $whatsappError->getMessage(),
+                            'availability_id' => $availability->id,
+                            'appointment_id' => $appointment->id,
+                            'admin_id' => $admin->id
+                        ]);
+                    }
+                }
+            }
+            
+            Log::info("Sent availability selected notification to health plan #{$healthPlan->id} admins for appointment #{$appointment->id}");
+            
+        } catch (\Exception $e) {
+            Log::error("Failed to notify health plan about availability selected: " . $e->getMessage(), [
                 'availability_id' => $availability->id,
                 'appointment_id' => $appointment->id
             ]);
