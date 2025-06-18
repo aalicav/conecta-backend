@@ -651,7 +651,7 @@ Route::post('/appointments/professional-response', [AppointmentController::class
 // Professional Availability Routes
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/availabilities', [ProfessionalAvailabilityController::class, 'submitAvailability']);
-    Route::get('/soliciations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
+    Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
     
     Route::post('/availabilities/{availabilityId}/select', [ProfessionalAvailabilityController::class, 'selectAvailability']);
     // Solicitation Invites Routes
