@@ -85,7 +85,7 @@ class AppointmentController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Appointment::with(['solicitation.healthPlan', 'solicitation.patient', 'solicitation.tuss', 'provider']);
+        $query = Appointment::with(['solicitation.healthPlan', 'solicitation.patient', 'solicitation.tuss', 'provider', 'address']);
         
         // Filter by status if provided
         if ($request->has('status')) {
@@ -165,6 +165,7 @@ class AppointmentController extends Controller
                 'solicitation.tuss', 
                 'solicitation.requestedBy', 
                 'provider',
+                'address',
                 'confirmedBy',
                 'completedBy',
                 'cancelledBy'
