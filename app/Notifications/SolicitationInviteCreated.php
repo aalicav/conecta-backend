@@ -12,6 +12,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 
 class SolicitationInviteCreated extends Notification implements ShouldQueue
 {
@@ -91,10 +92,19 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
      * Get the WhatsApp representation of the notification.
      *
      * @param  mixed  $notifiable
-     * @return \App\Notifications\Messages\WhatsAppMessage
+     * @return \App\Notifications\Messages\WhatsAppMessage|null
      */
     public function toWhatsApp($notifiable)
     {
+        // Check if notifiable has a phone number
+        if (!$notifiable->phone) {
+            Log::warning('Cannot send WhatsApp notification: no phone number available', [
+                'notifiable_id' => $notifiable->id,
+                'notifiable_type' => get_class($notifiable)
+            ]);
+            return null;
+        }
+        
         $procedure = $this->solicitation->procedure;
         $patient = $this->solicitation->patient;
         $provider = $this->invite->provider;

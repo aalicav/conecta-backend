@@ -1526,6 +1526,8 @@ class WhatsAppService
                 Log::warning("Cannot send verification message: provider has no phone number");
                 return null;
             }
+            
+            $clinicAddress = $this->getClinicAddress($appointment);
             $variables = $this->templateBuilder->buildAppointmentVerification(
                 $provider->name,
                 config('app.name', 'Conecta'),
@@ -2378,6 +2380,44 @@ class WhatsAppService
                 'appointment_id' => $appointment->id,
                 'error' => $e->getMessage()
             ]);
+        }
+    }
+
+    /**
+     * Get clinic address from appointment
+     *
+     * @param Appointment $appointment
+     * @return string
+     */
+    protected function getClinicAddress(Appointment $appointment): string
+    {
+        try {
+            if ($appointment->address) {
+                return $appointment->address->street . ', ' . 
+                       $appointment->address->number . ' - ' . 
+                       $appointment->address->neighborhood . ' - ' . 
+                       $appointment->address->city . ' - ' . 
+                       $appointment->address->state . ' - ' . 
+                       $appointment->address->postal_code;
+            }
+            
+            // Fallback to provider address if available
+            if ($appointment->provider && $appointment->provider->address) {
+                return $appointment->provider->address->street . ', ' . 
+                       $appointment->provider->address->number . ' - ' . 
+                       $appointment->provider->address->neighborhood . ' - ' . 
+                       $appointment->provider->address->city . ' - ' . 
+                       $appointment->provider->address->state . ' - ' . 
+                       $appointment->provider->address->postal_code;
+            }
+            
+            return 'Endereço não disponível';
+        } catch (\Exception $e) {
+            Log::warning('Error getting clinic address', [
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage()
+            ]);
+            return 'Endereço não disponível';
         }
     }
 }
