@@ -97,10 +97,11 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
     public function toWhatsApp($notifiable)
     {
         // Check if notifiable has a phone number
-        if (!$notifiable->phone) {
+        if (!$notifiable || !$notifiable->phone || empty(trim($notifiable->phone))) {
             Log::warning('Cannot send WhatsApp notification: no phone number available', [
-                'notifiable_id' => $notifiable->id,
-                'notifiable_type' => get_class($notifiable)
+                'notifiable_id' => $notifiable->id ?? 'unknown',
+                'notifiable_type' => get_class($notifiable),
+                'phone' => $notifiable->phone ?? 'null'
             ]);
             return null;
         }
@@ -110,7 +111,7 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
         $provider = $this->invite->provider;
         
         $message = new WhatsAppMessage();
-        $message->to($notifiable->phone);
+        $message->to(trim($notifiable->phone));
         $message->templateName = 'solicitation_invite';
         $message->variables = [
             '1' => $provider->user->name,
