@@ -104,7 +104,7 @@ class WhatsAppService
         // Create a record in the database first
         $whatsappMessage = WhatsappMessage::create([
             'recipient' => $to,
-            'message' => $message,
+            'content' => $message,
             'status' => WhatsappMessage::STATUS_PENDING,
             'related_model_type' => $relatedModelType,
             'related_model_id' => $relatedModelId,
@@ -176,7 +176,7 @@ class WhatsAppService
         // Create a record in the database first
         $whatsappMessage = WhatsappMessage::create([
             'recipient' => $to,
-            'message' => $caption,
+            'content' => $caption,
             'media_url' => $mediaUrl,
             'status' => WhatsappMessage::STATUS_PENDING,
             'related_model_type' => $relatedModelType,
@@ -255,7 +255,7 @@ class WhatsAppService
                 $message->recipient,
                 $message->media_url,
                 $this->detectMediaType($message->media_url),
-                $message->message,
+                $message->content,
                 $message->related_model_type,
                 $message->related_model_id
             );
@@ -263,7 +263,7 @@ class WhatsAppService
             // Text message
             return $this->sendTextMessage(
                 $message->recipient,
-                $message->message,
+                $message->content,
                 $message->related_model_type,
                 $message->related_model_id
             );
@@ -506,7 +506,7 @@ class WhatsAppService
             // Create a record in the database first
             $whatsappMessage = WhatsappMessage::create([
                 'recipient' => preg_replace('/[^0-9]/', '', $to),
-                'message' => json_encode($variables),
+                'content' => json_encode($variables),
                 'status' => WhatsappMessage::STATUS_PENDING,
                 'related_model_type' => $relatedModelType,
                 'related_model_id' => $relatedModelId,

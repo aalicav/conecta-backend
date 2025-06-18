@@ -18,7 +18,7 @@ class WhatsappMessageResource extends JsonResource
         return [
             'id' => $this->id,
             'recipient' => $this->recipient,
-            'message' => $this->message,
+            'content' => $this->content,
             'media_url' => $this->media_url,
             'status' => $this->status,
             'error_message' => $this->error_message,

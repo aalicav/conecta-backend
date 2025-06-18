@@ -12,7 +12,7 @@ class WhatsappMessage extends Model
 
     protected $fillable = [
         'recipient',
-        'message',
+        'content',
         'media_url',
         'status',
         'error_message',
@@ -22,6 +22,9 @@ class WhatsappMessage extends Model
         'external_id',
         'related_model_type',
         'related_model_id',
+        'provider_message_id',
+        'media_type',
+        'template_name',
     ];
 
     protected $casts = [

@@ -90,6 +90,13 @@ class ExtemporaneousNegotiation extends Model
         return $this->belongsTo(User::class, 'addendum_updated_by');
     }
 
+    public function pricingContract()
+    {
+        return $this->hasOne(PricingContract::class, 'contract_id', 'contract_id')
+            ->where('tuss_id', $this->tuss_id)
+            ->where('status', 'active');
+    }
+
     /**
      * Scope a query to only include negotiations with pending status.
      *

@@ -238,7 +238,7 @@ class ExtemporaneousNegotiationController extends Controller
                 ], 403);
             }
             
-            $negotiation = ExtemporaneousNegotiation::findOrFail($id);
+            $negotiation = ExtemporaneousNegotiation::with(['contract', 'tuss'])->findOrFail($id);
             
             if ($negotiation->status !== 'pending') {
                 return response()->json([
@@ -255,6 +255,7 @@ class ExtemporaneousNegotiationController extends Controller
             
             DB::beginTransaction();
             
+            // Atualizar a negociação
             $negotiation->update([
                 'approved_value' => $validated['approved_value'],
                 'approval_notes' => $validated['approval_notes'] ?? null,
@@ -262,6 +263,31 @@ class ExtemporaneousNegotiationController extends Controller
                 'approved_by' => Auth::id(),
                 'approved_at' => now(),
                 'is_requiring_addendum' => $validated['is_requiring_addendum'] ?? true,
+            ]);
+
+            // Criar ou atualizar o pricing contract
+            $pricingContract = \App\Models\PricingContract::updateOrCreate(
+                [
+                    'contract_id' => $negotiation->contract_id,
+                    'tuss_id' => $negotiation->tuss_id,
+                    'status' => 'active'
+                ],
+                [
+                    'price' => $validated['approved_value'],
+                    'notes' => "Valor aprovado via negociação extemporânea #{$negotiation->id}",
+                    'start_date' => now(),
+                    'end_date' => null,
+                    'created_by' => Auth::id(),
+                    'updated_by' => Auth::id(),
+                ]
+            );
+
+            // Registrar histórico do pricing contract
+            $pricingContract->history()->create([
+                'price' => $validated['approved_value'],
+                'notes' => "Valor atualizado via negociação extemporânea #{$negotiation->id}",
+                'created_by' => Auth::id(),
+                'created_at' => now()
             ]);
             
             // Send notification to the requester
