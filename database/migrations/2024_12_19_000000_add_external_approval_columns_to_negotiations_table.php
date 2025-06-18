@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('negotiations', function (Blueprint $table) {
-            $table->text('external_approval_notes')->nullable()->after('external_approved');
+            $table->text('external_approval_notes')->nullable();
             $table->timestamp('external_approved_at')->nullable()->after('external_approval_notes');
             $table->unsignedBigInteger('external_approved_by')->nullable()->after('external_approved_at');
             $table->text('external_rejection_notes')->nullable()->after('external_approved_by');
