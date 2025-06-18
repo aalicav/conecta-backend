@@ -36,7 +36,7 @@ use App\Http\Controllers\Api\HealthPlanBillingController;
 use App\Http\Controllers\Api\MedicalSpecialtyController;
 use App\Http\Controllers\Api\ProfessionalAvailabilityController;
 use App\Http\Controllers\Api\SolicitationInviteController;
-use App\Http\Controllers\Api\NFeController;
+use App\Http\Controllers\Billing\NFeController;
 
 /*
 |--------------------------------------------------------------------------
@@ -651,7 +651,7 @@ Route::post('/appointments/professional-response', [AppointmentController::class
 // Professional Availability Routes
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/availabilities', [ProfessionalAvailabilityController::class, 'submitAvailability']);
-    Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
+    Route::get('/soliciations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
     
     Route::post('/availabilities/{availabilityId}/select', [ProfessionalAvailabilityController::class, 'selectAvailability']);
     // Solicitation Invites Routes
