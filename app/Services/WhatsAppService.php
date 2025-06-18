@@ -1526,12 +1526,15 @@ class WhatsAppService
                 Log::warning("Cannot send verification message: provider has no phone number");
                 return null;
             }
-            
             $variables = $this->templateBuilder->buildAppointmentVerification(
                 $provider->name,
-                Carbon::parse($appointment->scheduled_date)->format('d/m/Y'),
+                config('app.name', 'Conecta'),
                 Carbon::parse($appointment->scheduled_date)->format('H:i'),
-                $verificationUrl
+                Carbon::parse($appointment->scheduled_date)->format('d/m/Y'),
+                $provider->name,
+                $appointment->solicitation->tuss ? $appointment->solicitation->tuss->description : 'Procedimento',
+                $appointment->address->street . ', ' . $appointment->address->number . ' - ' . $appointment->address->neighborhood . ' - ' . $appointment->address->city . ' - ' . $appointment->address->state . ' - ' . $appointment->address->postal_code,
+                (string) $appointment->id
             );
             
             return $this->sendTemplateMessage(
