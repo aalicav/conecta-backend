@@ -653,6 +653,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/availabilities', [ProfessionalAvailabilityController::class, 'submitAvailability']);
     Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
     
+    Route::post('/availabilities/{availabilityId}/select', [ProfessionalAvailabilityController::class, 'selectAvailability']);
     // Solicitation Invites Routes
     Route::get('/invites', [SolicitationInviteController::class, 'index']);
     Route::post('/invites/{inviteId}/accept', [SolicitationInviteController::class, 'accept']);
