@@ -410,6 +410,9 @@ class NegotiationController extends Controller
             
             DB::commit();
             
+            // Notificar sobre a atualização da negociação
+            $this->notificationService->notifyNegotiationUpdated($negotiation);
+            
             return response()->json([
                 'message' => 'Negotiation updated successfully',
                 'data' => new NegotiationResource($negotiation->fresh([
@@ -473,10 +476,10 @@ class NegotiationController extends Controller
     public function submitForApproval(Request $request, Negotiation $negotiation)
     {
         try {
-            // Validate user has commercial team role
-            if (!Auth::user()->hasRole('commercial')) {
+            // Validate user has commercial team role or is super_admin
+            if (!Auth::user()->hasAnyRole(['commercial', 'super_admin'])) {
                 return response()->json([
-                    'message' => 'Unauthorized. Only commercial team can submit for approval.'
+                    'message' => 'Unauthorized. Only commercial team or super admin can submit for approval.'
                 ], 403);
             }
 
@@ -538,8 +541,8 @@ class NegotiationController extends Controller
                 ], 403);
             }
 
-            // Check if the approver is different from the creator
-            if ($negotiation->creator_id === Auth::id()) {
+            // Check if the approver is different from the creator (except for super_admin)
+            if ($negotiation->creator_id === Auth::id() && !$user->hasRole('super_admin')) {
                 return response()->json([
                     'message' => 'Você não pode aprovar sua própria solicitação de negociação.'
                 ], 403);
@@ -787,6 +790,11 @@ class NegotiationController extends Controller
     {
         $user = Auth::user();
         
+        // Super admin pode aprovar externamente qualquer negociação
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+        
         // Check if user belongs to the target entity
         switch ($negotiation->negotiable_type) {
             case HealthPlan::class:
@@ -851,6 +859,9 @@ class NegotiationController extends Controller
         try {
             // Implementation will depend on contract generation logic
             // This would typically call the ContractController or a contract service
+            
+            // Notificar sobre a geração do contrato
+            $this->notificationService->notifyContractGenerated($negotiation);
             
             return response()->json([
                 'message' => 'Contract generation initiated',
@@ -1652,10 +1663,10 @@ class NegotiationController extends Controller
     public function submitForDirectorApproval(Request $request, Negotiation $negotiation)
     {
         try {
-            // Validate user has commercial team role
-            if (!Auth::user()->hasRole('commercial')) {
+            // Validate user has commercial team role or is super_admin
+            if (!Auth::user()->hasAnyRole(['commercial', 'super_admin'])) {
                 return response()->json([
-                    'message' => 'Unauthorized. Only commercial team can submit for director approval.'
+                    'message' => 'Unauthorized. Only commercial team or super admin can submit for director approval.'
                 ], 403);
             }
 
@@ -1673,7 +1684,7 @@ class NegotiationController extends Controller
             $negotiation->save();
 
             // Send notification to director (Dr. Ítalo)
-            $this->notificationService->sendNegotiationApprovalRequest($negotiation, 'director');
+            $this->notificationService->notifyApprovalRequired($negotiation, 'director');
 
             DB::commit();
 
@@ -1704,10 +1715,10 @@ class NegotiationController extends Controller
                 'approved' => 'required|boolean'
             ]);
 
-            // Validate user is director
-            if (!Auth::user()->hasRole('director')) {
+            // Validate user is director or super_admin
+            if (!Auth::user()->hasAnyRole(['director', 'super_admin'])) {
                 return response()->json([
-                    'message' => 'Unauthorized. Only director can approve at this level.'
+                    'message' => 'Unauthorized. Only director or super admin can approve at this level.'
                 ], 403);
             }
 
@@ -1726,10 +1737,16 @@ class NegotiationController extends Controller
                 $negotiation->approved_by_director_id = Auth::id();
                 $negotiation->director_approval_date = now();
                 $negotiation->director_approval_notes = $validated['approval_notes'];
+                
+                // Notificar sobre aprovação da direção
+                $this->notificationService->notifyNegotiationApproved($negotiation);
             } else {
                 $negotiation->status = self::STATUS_REJECTED;
                 $negotiation->approval_level = null;
                 $negotiation->director_approval_notes = $validated['approval_notes'];
+                
+                // Notificar sobre rejeição da direção
+                $this->notificationService->notifyApprovalRejected($negotiation);
             }
 
             $negotiation->save();
@@ -1766,10 +1783,10 @@ class NegotiationController extends Controller
     public function markAsFormalized(Request $request, Negotiation $negotiation)
     {
         try {
-            // Validate user has commercial role
-            if (!Auth::user()->hasRole('commercial')) {
+            // Validate user has commercial role or is super_admin
+            if (!Auth::user()->hasAnyRole(['commercial', 'super_admin'])) {
                 return response()->json([
-                    'message' => 'Unauthorized. Only commercial team can mark as formalized.'
+                    'message' => 'Unauthorized. Only commercial team or super admin can mark as formalized.'
                 ], 403);
             }
 
@@ -1782,6 +1799,9 @@ class NegotiationController extends Controller
 
             $negotiation->formalization_status = 'formalized';
             $negotiation->save();
+
+            // Notificar sobre formalização
+            $this->notificationService->notifyNegotiationFormalized($negotiation);
 
             // Send notification to relevant parties
             $this->notificationService->sendToRole('commercial', [

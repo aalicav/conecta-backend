@@ -323,35 +323,69 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('negotiations')->group(function () {
         Route::get('/', [NegotiationController::class, 'index'])
             ->middleware('permission:view negotiations');
+        Route::get('/list', [NegotiationController::class, 'index'])
+            ->middleware('permission:view negotiations');
         Route::post('/', [NegotiationController::class, 'store'])
+            ->middleware('permission:create negotiations');
+        Route::post('/create', [NegotiationController::class, 'store'])
             ->middleware('permission:create negotiations');
         Route::get('/{negotiation}', [NegotiationController::class, 'show'])
             ->middleware('permission:view negotiations');
+        Route::get('/{negotiation}/show', [NegotiationController::class, 'show'])
+            ->middleware('permission:view negotiations');
         Route::put('/{negotiation}', [NegotiationController::class, 'update'])
+            ->middleware('permission:edit negotiations');
+        Route::patch('/{negotiation}', [NegotiationController::class, 'update'])
             ->middleware('permission:edit negotiations');
         Route::post('/{negotiation}/submit', [NegotiationController::class, 'submit'])
             ->middleware('permission:approve negotiations');
+        Route::post('/{negotiation}/submit-negotiation', [NegotiationController::class, 'submit'])
+            ->middleware('permission:approve negotiations');
         Route::post('/{negotiation}/submit-approval', [NegotiationController::class, 'submitForApproval'])
+            ->middleware('permission:approve negotiations');
+        Route::post('/{negotiation}/submit-for-approval', [NegotiationController::class, 'submitForApproval'])
+            ->middleware('permission:approve negotiations');
+        Route::post('/{negotiation}/submit-director-approval', [NegotiationController::class, 'submitForDirectorApproval'])
+            ->middleware('permission:approve negotiations');
+        Route::post('/{negotiation}/director-approve', [NegotiationController::class, 'directorApprove'])
             ->middleware('permission:approve negotiations');
         Route::post('/{negotiation}/process-external-approval', [NegotiationController::class, 'processExternalApproval']);
         Route::post('/{negotiation}/process-approval', [NegotiationController::class, 'processApproval'])
             ->middleware('permission:approve negotiations');
+        Route::post('/{negotiation}/mark-formalized', [NegotiationController::class, 'markAsFormalized'])
+            ->middleware('permission:formalize negotiations');
         Route::post('/{negotiation}/formalize', [NegotiationController::class, 'markAsFormalized'])
             ->middleware('permission:formalize negotiations');
         Route::post('/{negotiation}/mark-complete', [NegotiationController::class, 'markAsComplete'])
             ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/mark-completed', [NegotiationController::class, 'markAsComplete'])
+            ->middleware('permission:edit negotiations');
         Route::post('/{negotiation}/mark-partially-complete', [NegotiationController::class, 'markAsPartiallyComplete'])
+            ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/partially-complete', [NegotiationController::class, 'markAsPartiallyComplete'])
             ->middleware('permission:edit negotiations');
         Route::post('/{negotiation}/cancel', [NegotiationController::class, 'cancel'])
             ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/cancel-negotiation', [NegotiationController::class, 'cancel'])
+            ->middleware('permission:edit negotiations');
         Route::post('/{negotiation}/generate-contract', [NegotiationController::class, 'generateContract'])
+            ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/generate-contracts', [NegotiationController::class, 'generateContract'])
             ->middleware('permission:edit negotiations');
         Route::post('/{negotiation}/resend-notifications', [NegotiationController::class, 'resendNotifications'])
             ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/resend-notification', [NegotiationController::class, 'resendNotifications'])
+            ->middleware('permission:edit negotiations');
         Route::post('/{negotiation}/batch-counter', [NegotiationController::class, 'batchCounterOffer'])
             ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/batch-counter-offer', [NegotiationController::class, 'batchCounterOffer'])
+            ->middleware('permission:edit negotiations');
         Route::get('/announcements', [NegotiationController::class, 'getAnnouncements']);
+        Route::get('/announcement', [NegotiationController::class, 'getAnnouncements']);
+        Route::get('/announcements/list', [NegotiationController::class, 'getAnnouncements']);
         Route::get('/{negotiation}/approval-history', [NegotiationController::class, 'getApprovalHistory'])
+            ->middleware('permission:view negotiation history');
+        Route::get('/{negotiation}/approval-histories', [NegotiationController::class, 'getApprovalHistory'])
             ->middleware('permission:view negotiation history');
         
         // Items routes
@@ -359,17 +393,27 @@ Route::middleware(['auth:sanctum'])->group(function () {
             ->middleware('permission:edit negotiations');
         Route::post('/items/{item}/counter', [NegotiationController::class, 'counterItem'])
             ->middleware('permission:edit negotiations');
+        Route::post('/negotiation-items/{item}/respond', [NegotiationController::class, 'respondToItem'])
+            ->middleware('permission:edit negotiations');
+        Route::post('/negotiation-items/{item}/counter', [NegotiationController::class, 'counterItem'])
+            ->middleware('permission:edit negotiations');
 
         // Ciclos de renegociação
         Route::post('/{negotiation}/cycles', [NegotiationController::class, 'startNewCycle'])
+            ->middleware(['permission:edit negotiations']);
+        Route::post('/{negotiation}/start-new-cycle', [NegotiationController::class, 'startNewCycle'])
             ->middleware(['permission:edit negotiations']);
 
         // Rollback no fluxo
         Route::post('/{negotiation}/rollback', [NegotiationController::class, 'rollbackStatus'])
             ->middleware(['permission:edit negotiations']);
+        Route::post('/{negotiation}/rollback-status', [NegotiationController::class, 'rollbackStatus'])
+            ->middleware(['permission:edit negotiations']);
 
         // Bifurcação de fluxo
         Route::post('/{negotiation}/fork', [NegotiationController::class, 'forkNegotiation'])
+            ->middleware(['permission:edit negotiations']);
+        Route::post('/{negotiation}/fork-negotiation', [NegotiationController::class, 'forkNegotiation'])
             ->middleware(['permission:edit negotiations']);
     });
 });

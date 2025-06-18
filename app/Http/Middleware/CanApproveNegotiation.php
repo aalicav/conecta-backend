@@ -34,8 +34,8 @@ class CanApproveNegotiation
             ], 403);
         }
 
-        // Check if user is not the creator of the negotiation
-        if ($negotiation->creator_id === $user->id) {
+        // Check if user is not the creator of the negotiation (except for super_admin)
+        if ($negotiation->creator_id === $user->id && !$user->hasRole('super_admin')) {
             return response()->json([
                 'message' => 'You cannot approve your own negotiation'
             ], 403);

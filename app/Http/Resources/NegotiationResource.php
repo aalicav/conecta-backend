@@ -98,7 +98,7 @@ class NegotiationResource extends JsonResource
             // Permissions
             'can_approve' => $request->user() && 
                            $request->user()->hasPermissionTo('approve negotiations') && 
-                           $request->user()->id !== $this->creator_id,
+                           ($request->user()->id !== $this->creator_id || $request->user()->hasRole('super_admin')),
             'can_submit_for_approval' => $request->user() && 
                                        $request->user()->hasRole('commercial'),
             'can_edit' => $request->user() && (

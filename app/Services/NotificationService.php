@@ -2780,83 +2780,35 @@ class NotificationService
     public function notifyNegotiationApproved(Negotiation $negotiation): void
     {
         try {
-            // Collect users to notify
-            $usersToNotify = collect();
-            
-            // Add creator
+            // Notificar o criador da negociação
             $creator = $negotiation->creator;
             if ($creator && $creator->is_active) {
-                $usersToNotify->push($creator);
-            }
-            
-            // Add entity representatives
-            $entityType = $negotiation->negotiable_type;
-            $entityId = $negotiation->negotiable_id;
-            
-            $entityUsers = User::where(function($query) use ($entityType, $entityId) {
-                    $query->where('entity_type', $entityType)
-                          ->where('entity_id', $entityId);
-                })
-                
-                ->get();
-                
-            foreach ($entityUsers as $user) {
-                if (!$usersToNotify->contains('id', $user->id)) {
-                    $usersToNotify->push($user);
-                }
-            }
-            
-            if ($usersToNotify->isEmpty()) {
-                Log::info("No users to notify about negotiation approval for negotiation #{$negotiation->id}");
-                return;
-            }
-            
-            // Get entity name for the notification
-            $entityName = $negotiation->negotiable ? $negotiation->negotiable->name : 'Entidade';
-            
-            // Statistics about the negotiation
-            $totalItems = $negotiation->items()->count();
-            $approvedItems = $negotiation->items()->where('status', 'approved')->count();
-            
-            // Send notifications to each user
-            foreach ($usersToNotify as $user) {
-                // Database notification
                 $this->create(
-                    userId: $user->id,
+                    userId: $creator->id,
                     title: 'Negociação Aprovada',
-                    body: "A negociação '{$negotiation->title}' foi totalmente aprovada e está pronta para ser finalizada.",
+                    body: "A negociação '{$negotiation->title}' foi aprovada e está pronta para ser enviada à entidade.",
                     type: 'negotiation_approved',
                     data: [
                         'negotiation_id' => $negotiation->id,
                         'title' => $negotiation->title,
-                        'total_items' => $totalItems,
-                        'approved_items' => $approvedItems,
-                        'entity_name' => $entityName
+                        'approved_by' => Auth::user()->name,
                     ]
                 );
-                
-                // Email notification
-                try {
-                    $actionUrl = url("/negotiations/{$negotiation->id}");
-                    
-                    Mail::to($user->email)
-                        ->send(new \App\Mail\GeneralNotification(
-                            "Negociação Aprovada",
-                            "A negociação '{$negotiation->title}' com {$entityName} foi totalmente aprovada.\n\nDetalhes:\n- Total de itens: {$totalItems}\n- Itens aprovados: {$approvedItems}\n\nPróximos passos: A negociação está pronta para ser finalizada com a entidade.",
-                            $actionUrl
-                        ));
-                } catch (\Exception $emailError) {
-                    Log::error("Failed to send negotiation approved email to {$user->email}", [
-                        'error' => $emailError->getMessage(),
-                        'negotiation_id' => $negotiation->id
-                    ]);
-                }
             }
             
-            Log::info("Sent negotiation approved notification for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
+            // Notificar equipe comercial
+            $this->sendToRole('commercial_manager', [
+                'title' => 'Negociação Aprovada',
+                'body' => "Negociação #{$negotiation->id} foi aprovada e está pronta para envio à entidade.",
+                'action_link' => "/negotiations/{$negotiation->id}",
+                'priority' => 'high'
+            ]);
+            
+            Log::info("Sent negotiation approved notification for negotiation #{$negotiation->id}");
         } catch (\Exception $e) {
-            Log::error("Failed to send negotiation approved notification: " . $e->getMessage(), [
-                'negotiation_id' => $negotiation->id
+            Log::error('Error sending negotiation approved notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
             ]);
         }
     }
@@ -3291,6 +3243,147 @@ class NotificationService
             }
         } catch (\Exception $e) {
             Log::error("Failed to send availability rejected notifications: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notifica sobre a atualização de uma negociação
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function notifyNegotiationUpdated(Negotiation $negotiation): void
+    {
+        try {
+            // Notificar o criador da negociação
+            $creator = $negotiation->creator;
+            if ($creator && $creator->is_active) {
+                $this->create(
+                    userId: $creator->id,
+                    title: 'Negociação Atualizada',
+                    body: "A negociação '{$negotiation->title}' foi atualizada com sucesso.",
+                    type: 'negotiation_updated',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                        'updated_by' => Auth::user()->name,
+                    ]
+                );
+            }
+            
+            Log::info("Sent negotiation updated notification for negotiation #{$negotiation->id}");
+        } catch (\Exception $e) {
+            Log::error('Error sending negotiation updated notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
+            ]);
+        }
+    }
+
+    /**
+     * Notifica sobre a geração de contrato
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function notifyContractGenerated(Negotiation $negotiation): void
+    {
+        try {
+            // Notificar o criador da negociação
+            $creator = $negotiation->creator;
+            if ($creator && $creator->is_active) {
+                $this->create(
+                    userId: $creator->id,
+                    title: 'Contrato Gerado',
+                    body: "O contrato para a negociação '{$negotiation->title}' foi gerado com sucesso.",
+                    type: 'contract_generated',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                    ]
+                );
+            }
+            
+            // Notificar equipe comercial
+            $this->sendToRole('commercial_manager', [
+                'title' => 'Contrato Gerado',
+                'body' => "Contrato gerado para a negociação #{$negotiation->id}",
+                'action_link' => "/negotiations/{$negotiation->id}",
+                'priority' => 'medium'
+            ]);
+            
+            Log::info("Sent contract generated notification for negotiation #{$negotiation->id}");
+        } catch (\Exception $e) {
+            Log::error('Error sending contract generated notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
+            ]);
+        }
+    }
+
+    /**
+     * Notifica sobre a formalização de uma negociação
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function notifyNegotiationFormalized(Negotiation $negotiation): void
+    {
+        try {
+            // Notificar o criador da negociação
+            $creator = $negotiation->creator;
+            if ($creator && $creator->is_active) {
+                $this->create(
+                    userId: $creator->id,
+                    title: 'Negociação Formalizada',
+                    body: "A negociação '{$negotiation->title}' foi formalizada com sucesso.",
+                    type: 'negotiation_formalized',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                    ]
+                );
+            }
+            
+            // Notificar entidade envolvida
+            $entityType = $negotiation->negotiable_type;
+            $entityId = $negotiation->negotiable_id;
+            
+            $entityUsers = User::where(function($query) use ($entityType, $entityId) {
+                    $query->where('entity_type', $entityType)
+                          ->where('entity_id', $entityId);
+                })
+                
+                ->get();
+                
+            foreach ($entityUsers as $user) {
+                // Filtrar por papéis relevantes
+                if ($entityType === HealthPlan::class && !$user->hasRole('plan_admin')) {
+                    continue;
+                } elseif ($entityType === Professional::class && !$user->hasRole('professional')) {
+                    continue;
+                } elseif ($entityType === Clinic::class && !$user->hasRole('clinic_admin')) {
+                    continue;
+                }
+                
+                $this->create(
+                    userId: $user->id,
+                    title: 'Negociação Formalizada',
+                    body: "A negociação '{$negotiation->title}' foi formalizada e está pronta para execução.",
+                    type: 'negotiation_formalized',
+                    data: [
+                        'negotiation_id' => $negotiation->id,
+                        'title' => $negotiation->title,
+                    ]
+                );
+            }
+            
+            Log::info("Sent negotiation formalized notification for negotiation #{$negotiation->id}");
+        } catch (\Exception $e) {
+            Log::error('Error sending negotiation formalized notification', [
+                'error' => $e->getMessage(),
+                'negotiation_id' => $negotiation->id,
+            ]);
         }
     }
 }
