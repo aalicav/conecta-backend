@@ -671,44 +671,44 @@ class NegotiationController extends Controller
                     }
                 }
 
-                // Check if all items were approved
-                $allApproved = $negotiation->items()->where('status', '!=', 'approved')->count() === 0;
+                // Check if all items were completed
+                $allCompleted = $negotiation->items()->where('status', '!=', 'completed')->count() === 0;
 
-                if ($allApproved) {
+                if ($allCompleted) {
                     $negotiation->status = self::STATUS_COMPLETE;
                     $negotiation->completed_at = now();
 
                     // Deactivate previous pricing contracts for the same entity and TUSS codes
                     $tussIds = $negotiation->items->pluck('tuss_id')->toArray();
-                    \App\Models\PricingContract::where('entity_type', $negotiation->negotiable_type)
-                        ->where('entity_id', $negotiation->negotiable_id)
-                        ->whereIn('tuss_id', $tussIds)
+                    \App\Models\PricingContract::where('contractable_type', $negotiation->negotiable_type)
+                        ->where('contractable_id', $negotiation->negotiable_id)
+                        ->whereIn('tuss_procedure_id', $tussIds)
                         ->where('is_active', true)
                         ->update([
                             'is_active' => false,
                             'end_date' => now(),
-                            'deactivated_at' => now(),
-                            'deactivated_by' => Auth::id(),
-                            'deactivation_reason' => 'Replaced by new negotiation #' . $negotiation->id
+                            'notes' => 'Deactivated by negotiation #' . $negotiation->id
                         ]);
 
-                    // Create pricing contracts for approved items
+                    // Create pricing contracts for all completed items
                     foreach ($negotiation->items as $item) {
-                        // Create pricing contract
-                        $pricingContract = new \App\Models\PricingContract([
-                            'entity_type' => $negotiation->negotiable_type,
-                            'entity_id' => $negotiation->negotiable_id,
-                            'tuss_id' => $item->tuss_id,
-                            'price' => $item->approved_value,
-                            'is_active' => true,
-                            'start_date' => $negotiation->start_date,
-                            'end_date' => $negotiation->end_date,
-                            'created_by' => Auth::id(),
-                            'negotiation_id' => $negotiation->id,
-                            'medical_specialty_id' => $item->medical_specialty_id
-                        ]);
+                        if ($item->status === 'completed' && $item->approved_value) {
+                            // Create pricing contract
+                            $pricingContract = new \App\Models\PricingContract([
+                                'tuss_procedure_id' => $item->tuss_id,
+                                'contractable_type' => $negotiation->negotiable_type,
+                                'contractable_id' => $negotiation->negotiable_id,
+                                'price' => $item->approved_value,
+                                'is_active' => true,
+                                'start_date' => $negotiation->start_date,
+                                'end_date' => $negotiation->end_date,
+                                'created_by' => Auth::id(),
+                                'medical_specialty_id' => $item->medical_specialty_id,
+                                'notes' => 'Created from negotiation #' . $negotiation->id
+                            ]);
 
-                        $pricingContract->save();
+                            $pricingContract->save();
+                        }
                     }
                 } else {
                     $negotiation->status = self::STATUS_PARTIALLY_COMPLETE;
@@ -722,13 +722,13 @@ class NegotiationController extends Controller
                 // Add to approval history
                 $negotiation->approvalHistory()->create([
                     'level' => 'external',
-                    'status' => $allApproved ? 'approved' : 'partially_approved',
+                    'status' => $allCompleted ? 'approved' : 'partially_approved',
                     'user_id' => Auth::id(),
                     'notes' => $validated['approval_notes'] ?? 'Approved externally'
                 ]);
 
                 // Send notifications
-                if ($allApproved) {
+                if ($allCompleted) {
                     $this->notificationService->notifyNegotiationCompleted($negotiation);
                 } else {
                     $this->notificationService->notifyNegotiationPartiallyCompleted($negotiation);
@@ -1283,7 +1283,7 @@ class NegotiationController extends Controller
                     'notes' => 'Deactivated by negotiation #' . $negotiation->id
                 ]);
 
-            // Create pricing contracts for all items
+            // Create pricing contracts for all completed items
             foreach ($negotiation->items as $item) {
                 // Skip if item doesn't have an approved value
                 if (!$item->approved_value) {
@@ -1294,7 +1294,6 @@ class NegotiationController extends Controller
                 // Create pricing contract
                 $pricingContract = new \App\Models\PricingContract([
                     'tuss_procedure_id' => $item->tuss_id,
-                    'medical_specialty_id' => $item->medical_specialty_id,
                     'contractable_type' => $negotiation->negotiable_type,
                     'contractable_id' => $negotiation->negotiable_id,
                     'price' => $item->approved_value,
@@ -1302,7 +1301,8 @@ class NegotiationController extends Controller
                     'end_date' => $negotiation->end_date,
                     'is_active' => true,
                     'notes' => 'Created from negotiation #' . $negotiation->id,
-                    'created_by' => Auth::id()
+                    'created_by' => Auth::id(),
+                    'medical_specialty_id' => $item->medical_specialty_id
                 ]);
 
                 $pricingContract->save();
