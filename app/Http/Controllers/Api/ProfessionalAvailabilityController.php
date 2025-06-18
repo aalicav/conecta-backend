@@ -158,6 +158,27 @@ class ProfessionalAvailabilityController extends Controller
                         'end_date' => $pricingContract->end_date
                     ] : null;
                     
+                    // Add provider information
+                    $availability->provider = [
+                        'id' => $provider->id,
+                        'name' => $provider->name,
+                        'type' => $availability->professional_id ? 'professional' : 'clinic',
+                        'addresses' => $provider->addresses->map(function($address) {
+                            return [
+                                'id' => $address->id,
+                                'street' => $address->street,
+                                'number' => $address->number,
+                                'complement' => $address->complement,
+                                'neighborhood' => $address->neighborhood,
+                                'city' => $address->city,
+                                'state' => $address->state,
+                                'postal_code' => $address->postal_code,
+                                'is_primary' => $address->is_primary,
+                                'full_address' => $address->full_address
+                            ];
+                        })
+                    ];
+                    
                     return $availability;
                 });
 
@@ -184,7 +205,15 @@ class ProfessionalAvailabilityController extends Controller
     {
         $request->validate([
             'notes' => 'nullable|string',
-            'address_id' => 'nullable|exists:addresses,id'
+            'address_id' => 'nullable|exists:addresses,id',
+            'custom_address' => 'nullable|array',
+            'custom_address.street' => 'required_with:custom_address|string',
+            'custom_address.number' => 'required_with:custom_address|string',
+            'custom_address.complement' => 'nullable|string',
+            'custom_address.neighborhood' => 'required_with:custom_address|string',
+            'custom_address.city' => 'required_with:custom_address|string',
+            'custom_address.state' => 'required_with:custom_address|string|size:2',
+            'custom_address.postal_code' => 'required_with:custom_address|string|size:8',
         ]);
 
         try {
@@ -222,12 +251,26 @@ class ProfessionalAvailabilityController extends Controller
                 ? $availability->professional
                 : $availability->clinic;
 
-            // Get the address - use the provided address_id if available, otherwise use primary address
+            // Handle address selection
             $address = null;
             if ($request->address_id) {
+                // Use existing address
                 $address = $provider->addresses()->find($request->address_id);
-            }
-            if (!$address) {
+            } elseif ($request->custom_address) {
+                // Create temporary address for this appointment
+                $address = $provider->addresses()->create([
+                    'street' => $request->custom_address['street'],
+                    'number' => $request->custom_address['number'],
+                    'complement' => $request->custom_address['complement'] ?? null,
+                    'neighborhood' => $request->custom_address['neighborhood'],
+                    'city' => $request->custom_address['city'],
+                    'state' => $request->custom_address['state'],
+                    'postal_code' => $request->custom_address['postal_code'],
+                    'is_primary' => false,
+                    'is_temporary' => true, // Mark as temporary
+                ]);
+            } else {
+                // Use primary address
                 $address = $provider->addresses()->where('is_primary', true)->first();
             }
 

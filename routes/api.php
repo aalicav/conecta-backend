@@ -615,11 +615,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/invites/{inviteId}/reject', [SolicitationInviteController::class, 'reject']);
 });
 
-Route::middleware(['auth:sanctum'])->group(function () {
-    Route::get('/solicitations/{solicitationId}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
-    Route::post('/availabilities/{availabilityId}/select', [ProfessionalAvailabilityController::class, 'selectAvailability']);
-});
-
 // Rotas de Notas Fiscais
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/billing/nfe', [NFeController::class, 'index']);
