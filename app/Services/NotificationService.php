@@ -8,6 +8,7 @@ use App\Models\SolicitationInvite;
 use App\Models\User;
 use App\Models\Patient;
 use App\Models\Professional;
+use App\Models\ProfessionalAvailability;
 use App\Models\Negotiation;
 use App\Models\NegotiationItem;
 use App\Models\Contract;
