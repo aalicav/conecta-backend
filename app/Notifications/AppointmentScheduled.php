@@ -4,10 +4,12 @@ namespace App\Notifications;
 
 use App\Models\Appointment;
 use App\Notifications\Channels\WhatsAppChannel;
+use App\Notifications\Messages\WhatsAppMessage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 
 class AppointmentScheduled extends Notification implements ShouldQueue
 {
@@ -86,10 +88,20 @@ class AppointmentScheduled extends Notification implements ShouldQueue
      * Get the WhatsApp representation of the notification.
      *
      * @param  mixed  $notifiable
-     * @return string|array
+     * @return \App\Notifications\Messages\WhatsAppMessage|null
      */
     public function toWhatsApp($notifiable)
     {
+        // Check if notifiable has a phone number
+        if (!$notifiable || !$notifiable->phone || empty(trim($notifiable->phone))) {
+            Log::warning('Cannot send WhatsApp notification: no phone number available', [
+                'notifiable_id' => $notifiable->id ?? 'unknown',
+                'notifiable_type' => get_class($notifiable),
+                'phone' => $notifiable->phone ?? 'null'
+            ]);
+            return null;
+        }
+        
         $solicitation = $this->appointment->solicitation;
         $patient = $solicitation->patient;
         $provider = $this->appointment->provider;
@@ -97,15 +109,20 @@ class AppointmentScheduled extends Notification implements ShouldQueue
         $providerType = class_basename($this->appointment->provider_type);
         $providerTypeText = $providerType === 'Clinic' ? 'Clínica' : 'Profissional';
         
-        $text = "Agendamento realizado para {$patient->name}.\n" .
-                "Data: " . $this->appointment->scheduled_date->format('d/m/Y H:i') . "\n" .
-                "{$providerTypeText}: {$providerName}";
-                
-        if ($this->appointment->scheduled_automatically) {
-            $text .= "\nEste agendamento foi realizado automaticamente pelo sistema.";
-        }
+        $message = new WhatsAppMessage();
+        $message->to(trim($notifiable->phone));
+        $message->templateName = 'appointment_scheduled';
+        $message->variables = [
+            '1' => $notifiable->name,
+            '2' => $patient->name,
+            '3' => $this->appointment->scheduled_date->format('d/m/Y H:i'),
+            '4' => $providerTypeText,
+            '5' => $providerName,
+            '6' => $this->appointment->scheduled_automatically ? 'Sim' : 'Não',
+            '7' => (string) $this->appointment->id
+        ];
         
-        return $text;
+        return $message;
     }
 
     /**
