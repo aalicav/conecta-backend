@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ProfessionalAvailability;
 use App\Models\Solicitation;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,24 @@ use Carbon\Carbon;
 
 class ProfessionalAvailabilityController extends Controller
 {
+    /**
+     * The notification service instance.
+     *
+     * @var \App\Services\NotificationService
+     */
+    protected $notificationService;
+
+    /**
+     * Create a new controller instance.
+     *
+     * @param  \App\Services\NotificationService  $notificationService
+     * @return void
+     */
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
     /**
      * Submit availability for a solicitation
      */
@@ -287,6 +306,11 @@ class ProfessionalAvailabilityController extends Controller
             ]);
 
             // Reject other availabilities
+            $rejectedAvailabilities = ProfessionalAvailability::where('solicitation_id', $solicitation->id)
+                ->where('id', '!=', $availability->id)
+                ->where('status', 'pending')
+                ->get();
+
             ProfessionalAvailability::where('solicitation_id', $solicitation->id)
                 ->where('id', '!=', $availability->id)
                 ->update([
@@ -294,6 +318,27 @@ class ProfessionalAvailabilityController extends Controller
                 ]);
 
             DB::commit();
+
+            // Send notifications after successful transaction
+            try {
+                // Notify the selected provider
+                $this->notificationService->notifyAvailabilitySelected($availability, $appointment);
+                
+                // Notify rejected providers
+                if ($rejectedAvailabilities->isNotEmpty()) {
+                    $this->notificationService->notifyAvailabilitiesRejected($rejectedAvailabilities);
+                }
+                
+                // Notify about the new appointment (using existing appointment notification)
+                $this->notificationService->notifyAppointmentScheduled($appointment);
+                
+            } catch (\Exception $notificationError) {
+                Log::error('Failed to send notifications after availability selection: ' . $notificationError->getMessage(), [
+                    'availability_id' => $availability->id,
+                    'appointment_id' => $appointment->id
+                ]);
+                // Don't throw the error, as the main operation was successful
+            }
 
             return response()->json([
                 'message' => 'Disponibilidade selecionada com sucesso',

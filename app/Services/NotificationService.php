@@ -28,6 +28,8 @@ use App\Notifications\ProfessionalRegistrationSubmitted;
 use App\Notifications\ProfessionalRegistrationReviewed;
 use App\Notifications\ProfessionalContractLinked;
 use App\Notifications\SolicitationInviteCreated;
+use App\Notifications\AvailabilitySelected;
+use App\Notifications\AvailabilityRejected;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Auth;
@@ -3160,6 +3162,135 @@ class NotificationService
             ]);
 
             throw $e;
+        }
+    }
+
+    /**
+     * Notify provider when their availability is selected and appointment is created.
+     *
+     * @param  \App\Models\ProfessionalAvailability  $availability
+     * @param  \App\Models\Appointment  $appointment
+     * @return void
+     */
+    public function notifyAvailabilitySelected(ProfessionalAvailability $availability, Appointment $appointment): void
+    {
+        try {
+            // Get the provider user
+            $providerUser = null;
+            
+            if ($availability->professional_id) {
+                $professional = $availability->professional;
+                $providerUser = User::where('entity_type', 'App\\Models\\Professional')
+                    ->where('entity_id', $professional->id)
+                    ->where('is_active', true)
+                    ->first();
+            } elseif ($availability->clinic_id) {
+                $clinic = $availability->clinic;
+                $providerUser = User::where('entity_type', 'App\\Models\\Clinic')
+                    ->where('entity_id', $clinic->id)
+                    ->where('is_active', true)
+                    ->first();
+            }
+            
+            if ($providerUser) {
+                // Send system notification
+                $providerUser->notify(new AvailabilitySelected($availability, $appointment));
+                
+                // Send WhatsApp notification if available
+                if ($providerUser->phone) {
+                    try {
+                        $solicitation = $availability->solicitation;
+                        $patient = $solicitation->patient;
+                        $procedure = $solicitation->tuss;
+                        $scheduledDate = \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+                        
+                        $this->whatsAppService->sendAvailabilitySelectedNotification(
+                            $providerUser->name,
+                            $patient->name,
+                            $procedure->description,
+                            $scheduledDate,
+                            $appointment->id,
+                            $providerUser->phone
+                        );
+                    } catch (\Exception $whatsappError) {
+                        Log::error("Failed to send WhatsApp notification for availability selected", [
+                            'error' => $whatsappError->getMessage(),
+                            'availability_id' => $availability->id,
+                            'appointment_id' => $appointment->id
+                        ]);
+                    }
+                }
+                
+                Log::info("Sent availability selected notification for availability #{$availability->id} to provider #{$providerUser->id}");
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to send availability selected notification: " . $e->getMessage(), [
+                'availability_id' => $availability->id,
+                'appointment_id' => $appointment->id
+            ]);
+        }
+    }
+
+    /**
+     * Notify providers when their availabilities are rejected.
+     *
+     * @param  \Illuminate\Database\Eloquent\Collection  $rejectedAvailabilities
+     * @return void
+     */
+    public function notifyAvailabilitiesRejected($rejectedAvailabilities): void
+    {
+        try {
+            foreach ($rejectedAvailabilities as $availability) {
+                // Get the provider user
+                $providerUser = null;
+                
+                if ($availability->professional_id) {
+                    $professional = $availability->professional;
+                    $providerUser = User::where('entity_type', 'App\\Models\\Professional')
+                        ->where('entity_id', $professional->id)
+                        ->where('is_active', true)
+                        ->first();
+                } elseif ($availability->clinic_id) {
+                    $clinic = $availability->clinic;
+                    $providerUser = User::where('entity_type', 'App\\Models\\Clinic')
+                        ->where('entity_id', $clinic->id)
+                        ->where('is_active', true)
+                        ->first();
+                }
+                
+                if ($providerUser) {
+                    // Send system notification
+                    $providerUser->notify(new AvailabilityRejected($availability));
+                    
+                    // Send WhatsApp notification if available
+                    if ($providerUser->phone) {
+                        try {
+                            $solicitation = $availability->solicitation;
+                            $patient = $solicitation->patient;
+                            $procedure = $solicitation->tuss;
+                            $availableDate = \Carbon\Carbon::parse($availability->available_date)->format('d/m/Y');
+                            
+                            $this->whatsAppService->sendAvailabilityRejectedNotification(
+                                $providerUser->name,
+                                $patient->name,
+                                $procedure->description,
+                                $availableDate,
+                                $availability->available_time,
+                                $providerUser->phone
+                            );
+                        } catch (\Exception $whatsappError) {
+                            Log::error("Failed to send WhatsApp notification for availability rejected", [
+                                'error' => $whatsappError->getMessage(),
+                                'availability_id' => $availability->id
+                            ]);
+                        }
+                    }
+                    
+                    Log::info("Sent availability rejected notification for availability #{$availability->id} to provider #{$providerUser->id}");
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to send availability rejected notifications: " . $e->getMessage());
         }
     }
 }

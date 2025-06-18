@@ -1720,7 +1720,85 @@ class WhatsAppService
      */
     public function sendNpsQuestion(string $appointmentId, string $to): void
     {
-        $variables = $this->templateBuilder->buildNpsQuestion($appointmentId);
-        $this->sendTemplateMessage($to, 'nps_pergunta', $variables);
+        $this->sendTemplateMessage(
+            $to,
+            self::TEMPLATE_NPS_PERGUNTA,
+            [
+                'appointment_id' => $appointmentId
+            ],
+            'App\\Models\\Appointment',
+            $appointmentId
+        );
+    }
+
+    /**
+     * Send notification when provider's availability is selected.
+     *
+     * @param string $providerName
+     * @param string $patientName
+     * @param string $procedureName
+     * @param string $scheduledDate
+     * @param string $appointmentId
+     * @param string $to
+     * @return void
+     */
+    public function sendAvailabilitySelectedNotification(
+        string $providerName,
+        string $patientName,
+        string $procedureName,
+        string $scheduledDate,
+        string $appointmentId,
+        string $to
+    ): void {
+        $message = "Olá {$providerName}! 🎉\n\n" .
+                  "Sua disponibilidade foi selecionada e um agendamento foi criado!\n\n" .
+                  "📋 **Detalhes do Agendamento:**\n" .
+                  "• Paciente: {$patientName}\n" .
+                  "• Procedimento: {$procedureName}\n" .
+                  "• Data/Hora: {$scheduledDate}\n\n" .
+                  "O agendamento está confirmado e aguardando a confirmação do paciente.\n\n" .
+                  "Obrigado por fazer parte da nossa rede de profissionais! 👨‍⚕️";
+
+        $this->sendTextMessage(
+            $to,
+            $message,
+            'App\\Models\\Appointment',
+            $appointmentId
+        );
+    }
+
+    /**
+     * Send notification when provider's availability is rejected.
+     *
+     * @param string $providerName
+     * @param string $patientName
+     * @param string $procedureName
+     * @param string $availableDate
+     * @param string $availableTime
+     * @param string $to
+     * @return void
+     */
+    public function sendAvailabilityRejectedNotification(
+        string $providerName,
+        string $patientName,
+        string $procedureName,
+        string $availableDate,
+        string $availableTime,
+        string $to
+    ): void {
+        $message = "Olá {$providerName}! 📅\n\n" .
+                  "Infelizmente sua disponibilidade não foi selecionada para esta solicitação.\n\n" .
+                  "📋 **Detalhes da Solicitação:**\n" .
+                  "• Paciente: {$patientName}\n" .
+                  "• Procedimento: {$procedureName}\n" .
+                  "• Sua Disponibilidade: {$availableDate} às {$availableTime}\n\n" .
+                  "Não se preocupe! Continue registrando suas disponibilidades para futuras solicitações.\n\n" .
+                  "Obrigado por fazer parte da nossa rede de profissionais! 👨‍⚕️";
+
+        $this->sendTextMessage(
+            $to,
+            $message,
+            'App\\Models\\ProfessionalAvailability'
+        );
     }
 }
