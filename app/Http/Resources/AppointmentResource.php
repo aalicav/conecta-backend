@@ -47,6 +47,7 @@ class AppointmentResource extends JsonResource
             'cancelled_by_user' => new UserResource($this->whenLoaded('cancelledBy')),
             'created_by_user' => new UserResource($this->whenLoaded('createdBy')),
             'payment' => new PaymentResource($this->whenLoaded('payment')),
+            'address' => $this->address,
             
             // Computed values
             'is_active' => $this->when(!is_null($this->status), function() {
