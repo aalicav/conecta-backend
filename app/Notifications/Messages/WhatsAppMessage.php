@@ -6,6 +6,7 @@ class WhatsAppMessage
 {
     public string $templateName;
     public array $parameters = [];
+    public array $variables = [];
     public string $recipientPhone;
 
     /**
@@ -23,6 +24,17 @@ class WhatsAppMessage
     public function parameters(array $parameters): self
     {
         $this->parameters = $parameters;
+        $this->variables = $parameters; // Keep in sync for backwards compatibility
+        return $this;
+    }
+
+    /**
+     * Set the variables for the template (alias for parameters).
+     */
+    public function variables(array $variables): self
+    {
+        $this->variables = $variables;
+        $this->parameters = $variables; // Keep in sync for backwards compatibility
         return $this;
     }
 
@@ -37,5 +49,13 @@ class WhatsAppMessage
         
         $this->recipientPhone = $recipientPhone;
         return $this;
+    }
+
+    /**
+     * Get the template variables (prioritize variables over parameters).
+     */
+    public function getVariables(): array
+    {
+        return !empty($this->variables) ? $this->variables : $this->parameters;
     }
 } 

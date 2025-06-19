@@ -52,12 +52,16 @@ class WhatsAppChannel
         }
         
         try {
+            // Prepare payload for the sendFromTemplate method
+            $payload = [
+                'template' => $message->templateName,
+                'to' => $message->recipientPhone,
+                'variables' => $message->getVariables()
+            ];
+            
             // Delegate to the actual WhatsAppService to send the templated message
-            $this->whatsAppService->sendTemplateMessage(
-                $message->recipientPhone,
-                $message->templateName,
-                $message->variables
-            );
+            $this->whatsAppService->sendFromTemplate($payload);
+            
             Log::info('WhatsApp notification sent via WhatsAppChannel', [
                 'notification' => get_class($notification),
                 'recipient' => $message->recipientPhone,

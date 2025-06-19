@@ -840,6 +840,11 @@ class WhatsAppService
         // Remove any non-numeric characters
         $number = preg_replace('/[^0-9]/', '', $number);
         
+        // If the number doesn't start with a country code, add Brazil's +55
+        if (!str_starts_with($number, '55') && strlen($number) >= 10) {
+            $number = '55' . $number;
+        }
+        
         // Format as required by Twilio WhatsApp
         return "whatsapp:+{$number}";
     }

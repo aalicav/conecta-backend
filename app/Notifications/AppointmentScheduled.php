@@ -111,8 +111,8 @@ class AppointmentScheduled extends Notification implements ShouldQueue
         
         $message = new WhatsAppMessage();
         $message->to(trim($notifiable->phone));
-        $message->templateName = 'appointment_scheduled';
-        $message->variables = [
+        $message->template('agendamento_cliente');
+        $message->variables([
             '1' => $notifiable->name,
             '2' => $patient->name,
             '3' => $this->appointment->scheduled_date->format('d/m/Y H:i'),
@@ -120,7 +120,7 @@ class AppointmentScheduled extends Notification implements ShouldQueue
             '5' => $providerName,
             '6' => $this->appointment->scheduled_automatically ? 'Sim' : 'Não',
             '7' => (string) $this->appointment->id
-        ];
+        ]);
         
         return $message;
     }
