@@ -2106,11 +2106,21 @@ class WhatsAppService
         // Remove all non-numeric characters
         $normalized = preg_replace('/[^0-9]/', '', $phoneNumber);
         
-        // If the number doesn't start with country code, add Brazil's 55
-        if (strlen($normalized) >= 10 && !str_starts_with($normalized, '55')) {
-            $normalized = '55' . $normalized;
+        // Brazilian phone numbers logic:
+        // - 10 digits: old landline format (without 9th digit) - add 55
+        // - 11 digits: mobile or new landline format - add 55  
+        // - 12+ digits starting with 55: already has country code
+        // - 13+ digits starting with 55: has country code, check if valid
+        
+        if (strlen($normalized) >= 12 && str_starts_with($normalized, '55')) {
+            // Already has country code, use as is
+            return $normalized;
+        } elseif (strlen($normalized) >= 10) {
+            // Brazilian number without country code, add 55
+            return '55' . $normalized;
         }
         
+        // Invalid number, return as is
         return $normalized;
     }
     
@@ -2126,7 +2136,31 @@ class WhatsAppService
         $normalized1 = $this->normalizePhoneNumber($phone1);
         $normalized2 = $this->normalizePhoneNumber($phone2);
         
-        return $normalized1 === $normalized2;
+        // Direct match
+        if ($normalized1 === $normalized2) {
+            return true;
+        }
+        
+        // Try removing potential extra digits for cases where there might be formatting differences
+        // Remove leading 55 from both and compare
+        $without55_1 = str_starts_with($normalized1, '55') ? substr($normalized1, 2) : $normalized1;
+        $without55_2 = str_starts_with($normalized2, '55') ? substr($normalized2, 2) : $normalized2;
+        
+        if ($without55_1 === $without55_2) {
+            return true;
+        }
+        
+        // Handle case where one number might have an extra 5 at the beginning
+        // This handles cases like 85996345077 vs 5596345077
+        if (str_starts_with($without55_1, '5') && $without55_1 === '5' . $without55_2) {
+            return true;
+        }
+        
+        if (str_starts_with($without55_2, '5') && $without55_2 === '5' . $without55_1) {
+            return true;
+        }
+        
+        return false;
     }
     
     /**
