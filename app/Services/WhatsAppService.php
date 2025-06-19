@@ -627,7 +627,7 @@ class WhatsAppService
         $appointmentTime = Carbon::parse($appointment->scheduled_date)->format('H:i');
         
         $variables = $this->templateBuilder->buildAppointmentReminder(
-            $appointment->healthPlan->name,
+            $appointment->healthPlan,
             $patient->name,
             $professional->name,
             $specialty,
