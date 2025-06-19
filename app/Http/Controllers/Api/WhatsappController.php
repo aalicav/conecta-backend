@@ -601,7 +601,24 @@ class WhatsappController extends Controller
             
             Log::info('WhatsApp webhook received', $webhookData);
             
-            // Check if this is a message from a user (not a status update)
+            // Handle Twilio webhook for interactive messages (buttons)
+            if (isset($webhookData['MessageType']) && $webhookData['MessageType'] === 'interactive') {
+                $from = str_replace('whatsapp:+', '', $webhookData['From'] ?? '');
+                $buttonPayload = $webhookData['ButtonPayload'] ?? '';
+                
+                // Check if this is an appointment verification response
+                if (preg_match('/^(confirm|reject)-\d+$/', $buttonPayload)) {
+                    Log::info('Processing appointment verification response', [
+                        'from' => $from,
+                        'payload' => $buttonPayload
+                    ]);
+                    
+                    $this->whatsappService->processAppointmentVerificationResponse($buttonPayload, $from);
+                    return response()->json(['success' => true]);
+                }
+            }
+            
+            // Check if this is a message from a user (Facebook webhook format)
             if (isset($webhookData['entry'][0]['changes'][0]['value']['messages'])) {
                 $messages = $webhookData['entry'][0]['changes'][0]['value']['messages'];
                 
@@ -619,8 +636,10 @@ class WhatsappController extends Controller
                 }
             }
             
-            // Process other webhook data (status updates, etc.)
-            $this->whatsappService->handleWebhook($webhookData);
+            // Process other webhook data (status updates, etc.) - but only if it's not an interactive message
+            if (!isset($webhookData['MessageType']) || $webhookData['MessageType'] !== 'interactive') {
+                $this->whatsappService->handleWebhook($webhookData);
+            }
             
             return response()->json(['success' => true]);
         } catch (\Exception $e) {
