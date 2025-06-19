@@ -343,12 +343,28 @@ class NotificationService
                 Log::info("Sent appointment reminder notification for appointment #{$appointment->id} to " . $users->count() . " users");
             }
             
-            // Send WhatsApp notification
-            $this->sendWhatsAppAppointmentReminder($appointment);
+            // Send WhatsApp notification using the same template as scheduled notification
+            $patient = $appointment->solicitation->patient;
+            
+            if ($patient) {
+                $result = $this->whatsAppService->sendAppointmentNotificationToPatient(
+                    $patient,
+                    $appointment
+                );
+                
+                if ($result) {
+                    Log::info("Sent WhatsApp appointment reminder to patient #{$patient->id} for appointment #{$appointment->id}");
+                } else {
+                    Log::warning("Failed to send WhatsApp appointment reminder to patient #{$patient->id} for appointment #{$appointment->id}");
+                }
+            }
             
         } catch (\Exception $e) {
             Log::error("Failed to send appointment reminder notifications: " . $e->getMessage(), [
-                'appointment_id' => $appointment->id
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
             ]);
         }
     }
@@ -585,11 +601,32 @@ class NotificationService
     protected function sendWhatsAppAppointmentScheduled(Appointment $appointment): void
     {
         try {
-            // Same as reminder, but sent at scheduling time
-            $this->sendWhatsAppAppointmentReminder($appointment);
+            $patient = $appointment->solicitation->patient;
+            
+            if (!$patient) {
+                Log::warning("No patient found for appointment #{$appointment->id}");
+                return;
+            }
+            
+            // Use the same template as verification message to ensure consistency
+            $result = $this->whatsAppService->sendAppointmentNotificationToPatient(
+                $patient,
+                $appointment
+            );
+            
+            if ($result) {
+                Log::info("Sent WhatsApp appointment notification to patient #{$patient->id} for appointment #{$appointment->id}");
+            } else {
+                Log::warning("Failed to send WhatsApp appointment notification to patient #{$patient->id} for appointment #{$appointment->id}");
+            }
+            
         } catch (\Exception $e) {
-            Log::error("Failed to send WhatsApp appointment scheduled notification: " . $e->getMessage());
-            // Just log the error, don't rethrow
+            Log::error("Failed to send WhatsApp appointment scheduled notification: " . $e->getMessage(), [
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
         }
     }
     
@@ -605,13 +642,25 @@ class NotificationService
             $patient = $appointment->solicitation->patient;
             
             if ($patient) {
-                $this->whatsAppService->sendAppointmentConfirmationToPatient($patient);
+                // Use the same template as other appointment notifications
+                $result = $this->whatsAppService->sendAppointmentNotificationToPatient(
+                    $patient,
+                    $appointment
+                );
                 
-                Log::info("Sent WhatsApp appointment confirmation for appointment #{$appointment->id} to patient #{$patient->id}");
+                if ($result) {
+                    Log::info("Sent WhatsApp appointment confirmation to patient #{$patient->id} for appointment #{$appointment->id}");
+                } else {
+                    Log::warning("Failed to send WhatsApp appointment confirmation to patient #{$patient->id} for appointment #{$appointment->id}");
+                }
             }
         } catch (\Exception $e) {
-            Log::error("Failed to send WhatsApp appointment confirmation: " . $e->getMessage());
-            // Just log the error, don't rethrow
+            Log::error("Failed to send WhatsApp appointment confirmation: " . $e->getMessage(), [
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
         }
     }
     
@@ -3676,6 +3725,48 @@ class NotificationService
                 'error' => $e->getMessage(),
                 'negotiation_id' => $negotiation->id,
             ]);
+        }
+    }
+
+    /**
+     * Resend appointment notification to patient using the same template as initial notification.
+     *
+     * @param Appointment $appointment
+     * @return bool
+     */
+    public function resendAppointmentNotificationToPatient(Appointment $appointment): bool
+    {
+        try {
+            $patient = $appointment->solicitation->patient;
+            
+            if (!$patient) {
+                Log::warning("No patient found for appointment #{$appointment->id}");
+                return false;
+            }
+            
+            // Use the same method as initial appointment notification
+            $result = $this->whatsAppService->sendAppointmentNotificationToPatient(
+                $patient,
+                $appointment
+            );
+            
+            if ($result) {
+                Log::info("Resent WhatsApp appointment notification to patient #{$patient->id} for appointment #{$appointment->id}");
+                return true;
+            } else {
+                Log::warning("Failed to resend WhatsApp appointment notification to patient #{$patient->id} for appointment #{$appointment->id}");
+                return false;
+            }
+            
+        } catch (\Exception $e) {
+            Log::error("Failed to resend appointment notification: " . $e->getMessage(), [
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            
+            return false;
         }
     }
 }

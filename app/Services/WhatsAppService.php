@@ -2578,4 +2578,60 @@ class WhatsAppService
             return 'Endereço não disponível';
         }
     }
+
+    /**
+     * Send appointment notification to patient using the same template as verification.
+     *
+     * @param Patient $patient
+     * @param Appointment $appointment
+     * @return \App\Models\WhatsappMessage|null
+     */
+    public function sendAppointmentNotificationToPatient(
+        Patient $patient,
+        Appointment $appointment
+    ) {
+        try {
+            if (!$patient->phone) {
+                Log::warning("Cannot send appointment notification: patient has no phone number");
+                return null;
+            }
+            
+            // Get provider information
+            $provider = $appointment->provider;
+            $providerName = $provider ? $provider->name : 'Profissional';
+            
+            // Get procedure information
+            $solicitation = $appointment->solicitation;
+            $procedureName = $solicitation->tuss ? $solicitation->tuss->description : 'Procedimento';
+            
+            // Get clinic address
+            $clinicAddress = $this->getClinicAddress($appointment);
+            
+            $variables = $this->templateBuilder->buildAppointmentVerification(
+                $patient->name,
+                config('app.name', 'Conecta'),
+                Carbon::parse($appointment->scheduled_date)->format('H:i'),
+                Carbon::parse($appointment->scheduled_date)->format('d/m/Y'),
+                $providerName,
+                $procedureName,
+                $clinicAddress,
+                (string) $appointment->id
+            );
+            
+            return $this->sendTemplateMessage(
+                $patient->phone,
+                self::TEMPLATE_APPOINTMENT_VERIFICATION,
+                $variables,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+        } catch (Exception $e) {
+            Log::error("Failed to send appointment notification to patient: " . $e->getMessage(), [
+                'patient_id' => $patient->id,
+                'appointment_id' => $appointment->id
+            ]);
+            
+            return null;
+        }
+    }
 }
