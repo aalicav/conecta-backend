@@ -348,24 +348,65 @@ class NotificationService
             $patient = $appointment->solicitation->patient;
             $provider = $appointment->provider;
             
+            Log::info("Attempting to send WhatsApp appointment reminder", [
+                'appointment_id' => $appointment->id,
+                'patient_id' => $patient->id ?? 'null',
+                'provider_id' => $appointment->provider_id,
+                'provider_type' => $appointment->provider_type
+            ]);
+            
             // Only proceed if a valid provider is found
             if (!$provider) {
+                Log::warning("No provider found for appointment #{$appointment->id}");
                 return;
             }
             
             // Get clinic address from the provider
             $clinicAddress = $this->getClinicAddress($appointment);
             
-            // Only send if we have a valid clinic address
+            // Log address check
             if (!$clinicAddress) {
-                return;
+                Log::warning("No clinic address found for appointment #{$appointment->id}", [
+                    'provider_type' => $appointment->provider_type,
+                    'provider_id' => $appointment->provider_id
+                ]);
             }
             
             $professional = null;
             if ($appointment->provider_type === 'App\\Models\\Professional') {
                 $professional = Professional::find($appointment->provider_id);
+                Log::info("Found professional for appointment #{$appointment->id}", [
+                    'professional_id' => $professional->id ?? 'null'
+                ]);
             } else {
-                // For clinics, we don't have a specific professional
+                Log::info("Provider is not a professional for appointment #{$appointment->id}, trying alternative approach");
+                
+                // Try to send a simplified WhatsApp message for clinics
+                if ($patient && $patient->phone) {
+                    try {
+                        $providerName = $provider->name ?? 'Prestador';
+                        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+                        
+                        $message = "📅 *Agendamento Confirmado*\n\n";
+                        $message .= "Olá {$patient->name}!\n\n";
+                        $message .= "Seu agendamento foi confirmado:\n";
+                        $message .= "📍 Local: {$providerName}\n";
+                        $message .= "📅 Data: {$appointmentDate}\n\n";
+                        $message .= "Em caso de dúvidas, entre em contato conosco.";
+                        
+                        $this->whatsAppService->sendTextMessage(
+                            $patient->phone,
+                            $message,
+                            'App\\Models\\Appointment',
+                            $appointment->id
+                        );
+                        
+                        Log::info("Sent simplified WhatsApp appointment notification for appointment #{$appointment->id} to patient #{$patient->id}");
+                        return;
+                    } catch (\Exception $e) {
+                        Log::error("Failed to send simplified WhatsApp message: " . $e->getMessage());
+                    }
+                }
                 return;
             }
             
@@ -375,17 +416,54 @@ class NotificationService
                     $professional = $professional->first();
                 }
                 
-                $this->whatsAppService->sendAppointmentReminderToPatient(
-                    $patient,
-                    $professional,
-                    $appointment,
-                    $clinicAddress
-                );
-                
-                Log::info("Sent WhatsApp appointment reminder for appointment #{$appointment->id} to patient #{$patient->id}");
+                // Send template message if we have clinic address, otherwise send simple text message
+                if ($clinicAddress) {
+                    $this->whatsAppService->sendAppointmentReminderToPatient(
+                        $patient,
+                        $professional,
+                        $appointment,
+                        $clinicAddress
+                    );
+                    
+                    Log::info("Sent WhatsApp appointment reminder template for appointment #{$appointment->id} to patient #{$patient->id}");
+                } else {
+                    // Send a simplified text message if we don't have clinic address
+                    if ($patient->phone) {
+                        try {
+                            $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+                            $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+                            
+                            $message = "📅 *Agendamento Confirmado*\n\n";
+                            $message .= "Olá {$patient->name}!\n\n";
+                            $message .= "Seu agendamento foi confirmado:\n";
+                            $message .= "👨‍⚕️ Profissional: {$professional->name}\n";
+                            $message .= "🩺 Especialidade: {$specialty}\n";
+                            $message .= "📅 Data: {$appointmentDate}\n\n";
+                            $message .= "Em caso de dúvidas, entre em contato conosco.";
+                            
+                            $this->whatsAppService->sendTextMessage(
+                                $patient->phone,
+                                $message,
+                                'App\\Models\\Appointment',
+                                $appointment->id
+                            );
+                            
+                            Log::info("Sent simplified WhatsApp appointment notification for appointment #{$appointment->id} to patient #{$patient->id}");
+                        } catch (\Exception $e) {
+                            Log::error("Failed to send simplified WhatsApp message: " . $e->getMessage());
+                        }
+                    }
+                }
+            } else {
+                Log::warning("Missing professional or patient for appointment #{$appointment->id}", [
+                    'professional_exists' => $professional !== null,
+                    'patient_exists' => $patient !== null
+                ]);
             }
         } catch (\Exception $e) {
-            Log::error("Failed to send WhatsApp appointment reminder: " . $e->getMessage());
+            Log::error("Failed to send WhatsApp appointment reminder: " . $e->getMessage(), [
+                'appointment_id' => $appointment->id
+            ]);
             // Just log the error, don't rethrow
         }
     }
