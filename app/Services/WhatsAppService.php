@@ -2233,7 +2233,7 @@ class WhatsAppService
         try {
             // Update appointment status
             $appointment->status = 'confirmed';
-            $appointment->confirmed_at = now();
+            $appointment->confirmed_date = now();
             $appointment->save();
             
             // Send confirmation message to patient
@@ -2272,8 +2272,7 @@ class WhatsAppService
         try {
             // Update appointment status
             $appointment->status = 'cancelled';
-            $appointment->cancelled_at = now();
-            $appointment->cancellation_reason = 'Rejeitado pelo paciente via WhatsApp';
+            $appointment->cancelled_date = now();
             $appointment->save();
             
             // Send rejection message to patient
