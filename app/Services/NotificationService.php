@@ -95,16 +95,24 @@ class NotificationService
     }
 
     /**
-     * Send notification for a scheduled appointment.
+     * Send notifications when an appointment is scheduled.
      *
      * @param Appointment $appointment
      * @return void
      */
     public function notifyAppointmentScheduled(Appointment $appointment): void
     {
-        // Enviar notificação do sistema
         try {
-            // Find users to notify (patient, provider, health plan admin)
+            // Load all necessary relationships to prevent "property on string" errors
+            $appointment->load([
+                'solicitation.patient',
+                'solicitation.healthPlan',
+                'solicitation.tuss',
+                'provider',
+                'address'
+            ]);
+            
+            // Enviar notificação do sistema
             $users = $this->getUsersToNotifyForAppointment($appointment);
             
             if (!$users->isEmpty()) {
@@ -112,16 +120,14 @@ class NotificationService
                 Notification::send($users, new AppointmentScheduled($appointment));
                 Log::info("Sent appointment scheduled notification for appointment #{$appointment->id} to " . $users->count() . " users");
             }
-        } catch (\Exception $e) {
-            Log::error("Failed to send appointment scheduled system notification: " . $e->getMessage());
-        }
-        
-        // Enviar notificação do WhatsApp (independente da notificação do sistema)
-        try {
-            // Send WhatsApp notification to patient
+            
+            // Send WhatsApp notification
             $this->sendWhatsAppAppointmentScheduled($appointment);
+            
         } catch (\Exception $e) {
-            Log::error("Failed to send appointment scheduled WhatsApp notification: " . $e->getMessage());
+            Log::error("Failed to send appointment scheduled notifications: " . $e->getMessage(), [
+                'appointment_id' => $appointment->id
+            ]);
         }
     }
 
@@ -181,26 +187,32 @@ class NotificationService
      */
     public function notifyAppointmentConfirmed(Appointment $appointment): void
     {
-        // Enviar notificação do sistema
         try {
-            // Principalmente notificar o paciente
-            $users = $this->getPatientsToNotify($appointment);
+            // Load all necessary relationships to prevent "property on string" errors
+            $appointment->load([
+                'solicitation.patient',
+                'solicitation.healthPlan',
+                'solicitation.tuss',
+                'provider',
+                'address'
+            ]);
+            
+            // Enviar notificação do sistema
+            $users = $this->getUsersToNotifyForAppointment($appointment);
             
             if (!$users->isEmpty()) {
                 // Send system notification
                 Notification::send($users, new AppointmentConfirmed($appointment));
                 Log::info("Sent appointment confirmed notification for appointment #{$appointment->id} to " . $users->count() . " users");
             }
-        } catch (\Exception $e) {
-            Log::error("Failed to send appointment confirmed system notification: " . $e->getMessage());
-        }
-        
-        // Enviar notificação do WhatsApp (independente da notificação do sistema)
-        try {
-            // Send WhatsApp notification to patient
+            
+            // Send WhatsApp notification
             $this->sendWhatsAppAppointmentConfirmed($appointment);
+            
         } catch (\Exception $e) {
-            Log::error("Failed to send appointment confirmed WhatsApp notification: " . $e->getMessage());
+            Log::error("Failed to send appointment confirmed notifications: " . $e->getMessage(), [
+                'appointment_id' => $appointment->id
+            ]);
         }
     }
 
@@ -312,27 +324,32 @@ class NotificationService
      */
     public function sendAppointmentReminder(Appointment $appointment, int $hoursRemaining = 24): void
     {
-        // Enviar notificação do sistema
         try {
-            // Principalmente notificar o paciente
+            // Load all necessary relationships to prevent "property on string" errors
+            $appointment->load([
+                'solicitation.patient',
+                'solicitation.healthPlan',
+                'solicitation.tuss',
+                'provider',
+                'address'
+            ]);
+            
+            // Enviar notificação do sistema
             $users = $this->getPatientsToNotify($appointment);
             
             if (!$users->isEmpty()) {
-                // For the current reminder system, send Notification
+                // Send system notification
                 Notification::send($users, new AppointmentReminder($appointment, $hoursRemaining));
-                Log::info("Sent appointment reminder notification for appointment #{$appointment->id} ({$hoursRemaining} hours remaining) to " . $users->count() . " users");
+                Log::info("Sent appointment reminder notification for appointment #{$appointment->id} to " . $users->count() . " users");
             }
+            
+            // Send WhatsApp notification
+            $this->sendWhatsAppAppointmentReminder($appointment);
+            
         } catch (\Exception $e) {
-            Log::error("Failed to send appointment reminder system notification: " . $e->getMessage());
-        }
-        
-        // Enviar lembrete por WhatsApp quando estiver a 24 horas do agendamento
-        try {
-            if ($hoursRemaining == 24) {
-                $this->sendWhatsAppAppointmentReminder($appointment);
-            }
-        } catch (\Exception $e) {
-            Log::error("Failed to send appointment reminder WhatsApp notification: " . $e->getMessage());
+            Log::error("Failed to send appointment reminder notifications: " . $e->getMessage(), [
+                'appointment_id' => $appointment->id
+            ]);
         }
     }
 
