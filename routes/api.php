@@ -481,6 +481,9 @@ Route::middleware(['auth:sanctum'])->prefix('whatsapp')->group(function () {
     Route::match(['get', 'post'], 'webhook', [WhatsappController::class, 'webhook'])->withoutMiddleware('auth:sanctum');
 });
 
+// Additional webhook route for external services that expect api/webhook
+Route::match(['get', 'post'], '/webhook', [WhatsappController::class, 'webhook'])->withoutMiddleware('auth:sanctum');
+
 // Additional route outside the middleware group for testing
 Route::post('/api/whatsapp/test/simple', [App\Http\Controllers\Api\WhatsappController::class, 'sendSimpleTest']);
 
