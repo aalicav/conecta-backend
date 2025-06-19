@@ -621,32 +621,48 @@ class WhatsAppService
         Appointment $appointment,
         string $clinicAddress
     ) {
-        
-        $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
-        $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
-        $appointmentTime = Carbon::parse($appointment->scheduled_date)->format('H:i');
-        
-        $variables = $this->templateBuilder->buildAppointmentReminder(
-            $appointment->healthPlan,
-            $patient->name,
-            $professional->name,
-            $specialty,
-            $appointmentDate,
-            $appointmentTime,
-            $clinicAddress,
-            $appointment->id
-        );
-        
-        // Construct complete payload for sendFromTemplate
-        $payload = [
-            'to' => $patient->phone,
-            'template' => 'agendamento_cliente', // Use the correct template for scheduled appointments
-            'variables' => $variables,
-            'related_model_type' => 'App\\Models\\Appointment',
-            'related_model_id' => $appointment->id
-        ];
-        
-        return $this->sendFromTemplate($payload);
+        try {
+            $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+            $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
+            $appointmentTime = Carbon::parse($appointment->scheduled_date)->format('H:i');
+            
+            // Get health plan name safely
+            $healthPlanName = 'Plano de Saúde'; // Default fallback
+            if ($appointment->solicitation && $appointment->solicitation->healthPlan) {
+                $healthPlanName = $appointment->solicitation->healthPlan->name;
+            }
+            
+            $variables = $this->templateBuilder->buildAppointmentReminder(
+                $healthPlanName,
+                $patient->name,
+                $professional->name,
+                $specialty,
+                $appointmentDate,
+                $appointmentTime,
+                $clinicAddress,
+                $appointment->id
+            );
+            
+            // Construct complete payload for sendFromTemplate
+            $payload = [
+                'to' => $patient->phone,
+                'template' => 'agendamento_cliente', // Use the correct template for scheduled appointments
+                'variables' => $variables,
+                'related_model_type' => 'App\\Models\\Appointment',
+                'related_model_id' => $appointment->id
+            ];
+            
+            return $this->sendFromTemplate($payload);
+        } catch (\Exception $e) {
+            Log::error('Failed to send WhatsApp appointment reminder', [
+                'appointment_id' => $appointment->id,
+                'patient_id' => $patient->id,
+                'professional_id' => $professional->id,
+                'error' => $e->getMessage()
+            ]);
+            
+            throw $e;
+        }
     }
     
     /**
