@@ -3382,14 +3382,8 @@ class NotificationService
                 return;
             }
             
-            // Get patient user
-            $patientUser = $patient->user;
-            if (!$patientUser || !$patientUser->is_active) {
-                return;
-            }
-            
-            // Send system notification
-            $patientUser->notify(new AppointmentScheduled($appointment));
+            // Patients don't have user accounts for system notifications
+            // They only receive WhatsApp notifications
             
             // Send WhatsApp notification
             try {
@@ -3403,7 +3397,7 @@ class NotificationService
                 ]);
             }
             
-            Log::info("Sent availability selected notification to patient #{$patient->id} for appointment #{$appointment->id}");
+            Log::info("Sent availability selected WhatsApp notification to patient #{$patient->id} for appointment #{$appointment->id}");
             
         } catch (\Exception $e) {
             Log::error("Failed to notify patient about availability selected: " . $e->getMessage(), [
