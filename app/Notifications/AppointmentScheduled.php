@@ -92,37 +92,64 @@ class AppointmentScheduled extends Notification implements ShouldQueue
      */
     public function toWhatsApp($notifiable)
     {
+        // Add debug logging to understand what's happening
+        Log::info('AppointmentScheduled toWhatsApp called', [
+            'notifiable_id' => $notifiable->id ?? 'unknown',
+            'notifiable_type' => get_class($notifiable),
+            'phone' => $notifiable->phone ?? 'null',
+            'has_phone' => isset($notifiable->phone),
+            'phone_empty' => empty($notifiable->phone ?? ''),
+            'phone_trimmed_empty' => empty(trim($notifiable->phone ?? ''))
+        ]);
+        
         // Check if notifiable has a phone number
-        if (!$notifiable || !$notifiable->phone || empty(trim($notifiable->phone))) {
+        if (!$notifiable || !isset($notifiable->phone) || empty(trim($notifiable->phone))) {
             Log::warning('Cannot send WhatsApp notification: no phone number available', [
                 'notifiable_id' => $notifiable->id ?? 'unknown',
                 'notifiable_type' => get_class($notifiable),
-                'phone' => $notifiable->phone ?? 'null'
+                'phone' => $notifiable->phone ?? 'null',
+                'appointment_id' => $this->appointment->id
             ]);
             return null;
         }
         
-        $solicitation = $this->appointment->solicitation;
-        $patient = $solicitation->patient;
-        $provider = $this->appointment->provider;
-        $providerName = $provider->name ?? 'Prestador não especificado';
-        $providerType = class_basename($this->appointment->provider_type);
-        $providerTypeText = $providerType === 'Clinic' ? 'Clínica' : 'Profissional';
-        
-        $message = new WhatsAppMessage();
-        $message->to(trim($notifiable->phone));
-        $message->template('agendamento_cliente');
-        $message->variables([
-            '1' => $notifiable->name,
-            '2' => $patient->name,
-            '3' => $this->appointment->scheduled_date->format('d/m/Y H:i'),
-            '4' => $providerTypeText,
-            '5' => $providerName,
-            '6' => $this->appointment->scheduled_automatically ? 'Sim' : 'Não',
-            '7' => (string) $this->appointment->id
-        ]);
-        
-        return $message;
+        try {
+            $solicitation = $this->appointment->solicitation;
+            $patient = $solicitation->patient;
+            $provider = $this->appointment->provider;
+            $providerName = $provider->name ?? 'Prestador não especificado';
+            $providerType = class_basename($this->appointment->provider_type);
+            $providerTypeText = $providerType === 'Clinic' ? 'Clínica' : 'Profissional';
+            
+            $message = new WhatsAppMessage();
+            $message->to(trim($notifiable->phone));
+            $message->template('agendamento_cliente');
+            $message->variables([
+                '1' => $notifiable->name,
+                '2' => $patient->name,
+                '3' => $this->appointment->scheduled_date->format('d/m/Y H:i'),
+                '4' => $providerTypeText,
+                '5' => $providerName,
+                '6' => $this->appointment->scheduled_automatically ? 'Sim' : 'Não',
+                '7' => (string) $this->appointment->id
+            ]);
+            
+            Log::info('WhatsApp message created successfully for AppointmentScheduled', [
+                'appointment_id' => $this->appointment->id,
+                'notifiable_id' => $notifiable->id,
+                'phone' => $notifiable->phone,
+                'template' => 'agendamento_cliente'
+            ]);
+            
+            return $message;
+        } catch (\Exception $e) {
+            Log::error('Error creating WhatsApp message in AppointmentScheduled', [
+                'appointment_id' => $this->appointment->id,
+                'notifiable_id' => $notifiable->id ?? 'unknown',
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 
     /**

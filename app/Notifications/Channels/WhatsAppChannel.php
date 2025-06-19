@@ -34,7 +34,20 @@ class WhatsAppChannel
         $message = $notification->toWhatsApp($notifiable);
 
         if (!$message instanceof WhatsAppMessage) {
-            Log::warning('toWhatsApp method did not return a WhatsAppMessage instance for notification: ' . get_class($notification));
+            // This is expected when user doesn't have a phone number - log as info instead of warning
+            if ($message === null) {
+                Log::info('WhatsApp notification skipped - no phone number available', [
+                    'notification' => get_class($notification),
+                    'notifiable_type' => get_class($notifiable),
+                    'notifiable_id' => $notifiable->id ?? 'unknown'
+                ]);
+            } else {
+                Log::warning('toWhatsApp method did not return a WhatsAppMessage instance for notification: ' . get_class($notification), [
+                    'returned_type' => gettype($message),
+                    'notifiable_type' => get_class($notifiable),
+                    'notifiable_id' => $notifiable->id ?? 'unknown'
+                ]);
+            }
             return;
         }
 
@@ -47,7 +60,11 @@ class WhatsAppChannel
         }
 
         if (empty($message->recipientPhone)) {
-            Log::warning('No recipient phone number for WhatsApp notification: ' . get_class($notification) . ' to ' . get_class($notifiable));
+            Log::info('WhatsApp notification skipped - no recipient phone number', [
+                'notification' => get_class($notification),
+                'notifiable_type' => get_class($notifiable),
+                'notifiable_id' => $notifiable->id ?? 'unknown'
+            ]);
             return;
         }
         
