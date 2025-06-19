@@ -28,12 +28,7 @@ class AppServiceProvider extends ServiceProvider
     {
         // Register WhatsApp notification channel
         Notification::extend('whatsapp', function ($app) {
-            return new WhatsAppChannel(
-                new Client(
-                    config('services.twilio.account_sid'),
-                    config('services.twilio.auth_token')
-                )
-            );
+            return $app->make(\App\Notifications\Channels\WhatsAppChannel::class);
         });
 
         Negotiation::observe(NegotiationObserver::class);

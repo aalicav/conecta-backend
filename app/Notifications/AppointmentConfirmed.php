@@ -126,14 +126,30 @@ class AppointmentConfirmed extends Notification
      * Get the WhatsApp representation of the notification.
      *
      * @param  mixed  $notifiable
-     * @return array
+     * @return \App\Notifications\Messages\WhatsAppMessage|null
      */
     public function toWhatsApp($notifiable)
     {
-        // Return template format for WhatsApp channel
-        return [
-            'template' => 'agendamento_confirmado',
-            'variables' => []
+        // Check if notifiable has a phone number
+        if (!$notifiable || !$notifiable->phone || empty(trim($notifiable->phone))) {
+            return null;
+        }
+        
+        $appointmentDate = \Carbon\Carbon::parse($this->appointment->scheduled_date)->format('d/m/Y');
+        $appointmentTime = \Carbon\Carbon::parse($this->appointment->scheduled_time)->format('H:i');
+        $professionalName = $this->professional ? $this->professional->name : 'Profissional não especificado';
+        
+        $message = new \App\Notifications\Messages\WhatsAppMessage();
+        $message->to(trim($notifiable->phone));
+        $message->templateName = 'appointment_confirmed';
+        $message->variables = [
+            '1' => $notifiable->name,
+            '2' => $appointmentDate,
+            '3' => $appointmentTime,
+            '4' => $professionalName,
+            '5' => (string) $this->appointment->id
         ];
+        
+        return $message;
     }
 } 

@@ -60,7 +60,7 @@ class AppointmentCompleted extends Notification
         
         // Add the WhatsApp channel if the notifiable has a WhatsApp delivery method
         if ($notifiable->routeNotificationFor('whatsapp')) {
-            $channels[] = 'whatsapp';
+            $channels[] = \App\Notifications\Channels\WhatsAppChannel::class;
         }
         
         return $channels;
@@ -126,25 +126,31 @@ class AppointmentCompleted extends Notification
      * Get the WhatsApp representation of the notification.
      *
      * @param  mixed  $notifiable
-     * @return array
+     * @return \App\Notifications\Messages\WhatsAppMessage|null
      */
     public function toWhatsApp($notifiable)
     {
+        // Check if notifiable has a phone number
+        if (!$notifiable || !$notifiable->phone || empty(trim($notifiable->phone))) {
+            return null;
+        }
+        
         // We're sending a survey after completion
         if (!$this->professional || !$this->appointment->solicitation->patient) {
             return null;
         }
         
-        // Return template format for WhatsApp channel
-        return [
-            'template' => 'nps_survey',
-            'variables' => [
-                '1' => $notifiable->name ?? $this->appointment->solicitation->patient->name,
-                '2' => \Carbon\Carbon::parse($this->appointment->scheduled_date)->format('d/m/Y'),
-                '3' => $this->professional->name,
-                '4' => $this->professional->specialty ?? '',
-                '5' => $this->appointment->id
-            ]
+        $message = new \App\Notifications\Messages\WhatsAppMessage();
+        $message->to(trim($notifiable->phone));
+        $message->templateName = 'nps_survey';
+        $message->variables = [
+            '1' => $notifiable->name ?? $this->appointment->solicitation->patient->name,
+            '2' => \Carbon\Carbon::parse($this->appointment->scheduled_date)->format('d/m/Y'),
+            '3' => $this->professional->name,
+            '4' => $this->professional->specialty ?? '',
+            '5' => (string) $this->appointment->id
         ];
+        
+        return $message;
     }
 } 

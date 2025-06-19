@@ -105,16 +105,23 @@ class ProfessionalRegistrationReviewed extends Notification implements ShouldQue
     /**
      * Get the WhatsApp representation of the notification.
      */
-    public function toWhatsApp(object $notifiable): array
+    public function toWhatsApp(object $notifiable): ?\App\Notifications\Messages\WhatsAppMessage
     {
-        return [
-            'template' => $this->approved ? 'professional_registration_approved' : 'professional_registration_rejected',
-            'params' => [
-                'professional_name' => $this->professional->name,
-                'professional_type' => $this->professional->professional_type,
-                'rejection_reason' => $this->rejectionReason,
-                'action_url' => url("/professionals/{$this->professional->id}")
-            ]
+        // Check if notifiable has a phone number
+        if (!$notifiable || !$notifiable->phone || empty(trim($notifiable->phone))) {
+            return null;
+        }
+        
+        $message = new \App\Notifications\Messages\WhatsAppMessage();
+        $message->to(trim($notifiable->phone));
+        $message->templateName = $this->approved ? 'professional_registration_approved' : 'professional_registration_rejected';
+        $message->variables = [
+            '1' => $this->professional->name,
+            '2' => $this->professional->professional_type,
+            '3' => $this->rejectionReason ?? '',
+            '4' => (string) $this->professional->id
         ];
+        
+        return $message;
     }
 } 

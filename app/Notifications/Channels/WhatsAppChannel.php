@@ -30,7 +30,7 @@ class WhatsAppChannel
             return;
         }
 
-        /** @var WhatsAppMessage $message */
+        /** @var WhatsAppMessage|null $message */
         $message = $notification->toWhatsApp($notifiable);
 
         if (!$message instanceof WhatsAppMessage) {

@@ -31,6 +31,10 @@ class WhatsAppMessage
      */
     public function to(string $recipientPhone): self
     {
+        if (empty($recipientPhone)) {
+            throw new \InvalidArgumentException('Recipient phone number cannot be empty or null');
+        }
+        
         $this->recipientPhone = $recipientPhone;
         return $this;
     }

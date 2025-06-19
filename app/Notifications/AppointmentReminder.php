@@ -104,7 +104,7 @@ class AppointmentReminder extends Notification
         // Add the WhatsApp channel if the notifiable has a WhatsApp delivery method
         // and it's 24 hours before the appointment
         if ($notifiable->routeNotificationFor('whatsapp') && $this->hoursRemaining == 24) {
-            $channels[] = 'whatsapp';
+            $channels[] = \App\Notifications\Channels\WhatsAppChannel::class;
         }
         
         return $channels;
@@ -184,10 +184,15 @@ class AppointmentReminder extends Notification
      * Get the WhatsApp representation of the notification.
      *
      * @param  mixed  $notifiable
-     * @return array|null
+     * @return \App\Notifications\Messages\WhatsAppMessage|null
      */
     public function toWhatsApp($notifiable)
     {
+        // Check if notifiable has a phone number
+        if (!$notifiable || !$notifiable->phone || empty(trim($notifiable->phone))) {
+            return null;
+        }
+        
         // Only send WhatsApp reminder if it's 24 hours before the appointment
         if ($this->hoursRemaining != 24 || !$this->professional || !$this->patient) {
             return null;
@@ -201,19 +206,21 @@ class AppointmentReminder extends Notification
         
         $providerTitle = $this->professional->professional_type === 'doctor' ? 'Dr.' : 'Especialista';
         
-        // Return template format for WhatsApp channel
-        return [
-            'template' => 'agendamento_cliente',
-            'variables' => [
-                '1' => $this->patient->name,
-                '2' => "{$providerTitle} {$this->professional->name}",
-                '3' => $this->professional->specialty ?? '',
-                '4' => $appointmentDate,
-                '5' => $appointmentTime,
-                '6' => $this->clinicAddress ?? config('app.clinic_address', 'Endereço da clínica'),
-                '7' => $token
-            ]
+        $message = new \App\Notifications\Messages\WhatsAppMessage();
+        $message->to(trim($notifiable->phone));
+        $message->templateName = 'appointment_reminder';
+        $message->variables = [
+            '1' => $this->patient->name,
+            '2' => "{$providerTitle} {$this->professional->name}",
+            '3' => $this->professional->specialty ?? '',
+            '4' => $appointmentDate,
+            '5' => $appointmentTime,
+            '6' => $this->clinicAddress ?? config('app.clinic_address', 'Endereço da clínica'),
+            '7' => $token,
+            '8' => (string) $this->appointment->id
         ];
+        
+        return $message;
     }
 
     /**
