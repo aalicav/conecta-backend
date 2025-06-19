@@ -621,20 +621,20 @@ class WhatsAppService
         Appointment $appointment,
         string $clinicAddress
     ) {
-        $token = $this->templateBuilder->generateAppointmentToken($appointment);
         
         $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
         $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
         $appointmentTime = Carbon::parse($appointment->scheduled_date)->format('H:i');
         
         $variables = $this->templateBuilder->buildAppointmentReminder(
+            $appointment->healthPlan->name,
             $patient->name,
             $professional->name,
             $specialty,
             $appointmentDate,
             $appointmentTime,
             $clinicAddress,
-            $token
+            $appointment->id
         );
         
         // Construct complete payload for sendFromTemplate

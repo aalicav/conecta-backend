@@ -23,22 +23,24 @@ class WhatsAppTemplateBuilder
      * @return array
      */
     public function buildAppointmentReminder(
+        string $healthPlanName,
         string $patientName,
         string $professionalName,
         string $specialty,
         string $appointmentDate,
         string $appointmentTime,
         string $clinicAddress,
-        string $appointmentToken
+        string $appointmentId
     ): array {
         return [
-            '1' => $patientName,
-            '2' => $professionalName,
-            '3' => $specialty,
-            '4' => $appointmentDate,
-            '5' => $appointmentTime,
-            '6' => $clinicAddress,
-            '7' => $appointmentToken
+            '1' => $healthPlanName,
+            '2' => $patientName,
+            '3' => $professionalName,
+            '4' => $specialty,
+            '5' => $appointmentDate,
+            '6' => $appointmentTime,
+            '7' => $clinicAddress,
+            '8' => $appointmentId
         ];
     }
 
