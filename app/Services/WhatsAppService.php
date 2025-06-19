@@ -622,7 +622,33 @@ class WhatsAppService
         string $clinicAddress
     ) {
         try {
-            $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+            // Safely get specialty name with better error handling
+            $specialty = 'Especialista'; // Default fallback
+            
+            Log::info("Processing professional specialty for WhatsApp message", [
+                'appointment_id' => $appointment->id,
+                'professional_id' => $professional->id ?? 'no_id',
+                'professional_name' => $professional->name ?? 'no_name',
+                'specialty_exists' => isset($professional->specialty),
+                'specialty_type' => $professional->specialty ? gettype($professional->specialty) : 'null',
+                'specialty_value' => $professional->specialty ?? 'null'
+            ]);
+            
+            if ($professional && isset($professional->specialty)) {
+                if (is_object($professional->specialty) && isset($professional->specialty->name)) {
+                    $specialty = $professional->specialty->name;
+                    Log::info("Using specialty object name", ['specialty' => $specialty]);
+                } elseif (is_string($professional->specialty) && !empty($professional->specialty)) {
+                    $specialty = $professional->specialty;
+                    Log::info("Using specialty string value", ['specialty' => $specialty]);
+                } else {
+                    Log::warning("Specialty exists but is not object or string", [
+                        'specialty_type' => gettype($professional->specialty),
+                        'specialty_value' => $professional->specialty
+                    ]);
+                }
+            }
+            
             $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
             $appointmentTime = Carbon::parse($appointment->scheduled_date)->format('H:i');
             
@@ -631,6 +657,16 @@ class WhatsAppService
             if ($appointment->solicitation && $appointment->solicitation->healthPlan) {
                 $healthPlanName = $appointment->solicitation->healthPlan->name;
             }
+            
+            Log::info("Building WhatsApp template variables", [
+                'appointment_id' => $appointment->id,
+                'health_plan_name' => $healthPlanName,
+                'patient_name' => $patient->name ?? 'no_name',
+                'professional_name' => $professional->name ?? 'no_name',
+                'specialty' => $specialty,
+                'appointment_date' => $appointmentDate,
+                'appointment_time' => $appointmentTime
+            ]);
             
             $variables = $this->templateBuilder->buildAppointmentReminder(
                 $healthPlanName,
@@ -652,13 +688,23 @@ class WhatsAppService
                 'related_model_id' => $appointment->id
             ];
             
+            Log::info("Sending WhatsApp template with payload", [
+                'appointment_id' => $appointment->id,
+                'to' => $patient->phone,
+                'template' => 'agendamento_cliente',
+                'variables_count' => count($variables)
+            ]);
+            
             return $this->sendFromTemplate($payload);
         } catch (\Exception $e) {
             Log::error('Failed to send WhatsApp appointment reminder', [
                 'appointment_id' => $appointment->id,
                 'patient_id' => $patient->id,
                 'professional_id' => $professional->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
             ]);
             
             throw $e;
@@ -704,7 +750,17 @@ class WhatsAppService
         Professional $professional,
         Appointment $appointment
     ) {
-        $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+        // Safely get specialty name with better error handling
+        $specialty = 'Especialista'; // Default fallback
+        
+        if ($professional && isset($professional->specialty)) {
+            if (is_object($professional->specialty) && isset($professional->specialty->name)) {
+                $specialty = $professional->specialty->name;
+            } elseif (is_string($professional->specialty) && !empty($professional->specialty)) {
+                $specialty = $professional->specialty;
+            }
+        }
+        
         $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
         
         $variables = $this->templateBuilder->buildNpsSurvey(
@@ -803,7 +859,17 @@ class WhatsAppService
         Appointment $appointment,
         string $clinicAddress
     ) {
-        $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+        // Safely get specialty name with better error handling
+        $specialty = 'Especialista'; // Default fallback
+        
+        if ($professional && isset($professional->specialty)) {
+            if (is_object($professional->specialty) && isset($professional->specialty->name)) {
+                $specialty = $professional->specialty->name;
+            } elseif (is_string($professional->specialty) && !empty($professional->specialty)) {
+                $specialty = $professional->specialty;
+            }
+        }
+        
         $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
         $appointmentTime = Carbon::parse($appointment->scheduled_date)->format('H:i');
         
@@ -1099,7 +1165,16 @@ class WhatsAppService
         }
 
         try {
-            $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
+            // Safely get specialty name with better error handling
+            $specialty = 'Especialista'; // Default fallback
+            
+            if ($professional && isset($professional->specialty)) {
+                if (is_object($professional->specialty) && isset($professional->specialty->name)) {
+                    $specialty = $professional->specialty->name;
+                } elseif (is_string($professional->specialty) && !empty($professional->specialty)) {
+                    $specialty = $professional->specialty;
+                }
+            }
             
             $variables = $this->templateBuilder->buildNewProfessional(
                 $professional->name,

@@ -393,8 +393,79 @@ class NotificationService
             if ($appointment->provider_type === 'App\\Models\\Professional') {
                 $professional = Professional::find($appointment->provider_id);
                 Log::info("Found professional for appointment #{$appointment->id}", [
-                    'professional_id' => $professional->id ?? 'null'
+                    'professional_id' => $professional->id ?? 'null',
+                    'professional_name' => $professional->name ?? 'null',
+                    'professional_specialty_type' => $professional ? gettype($professional->specialty) : 'null',
+                    'professional_specialty_value' => $professional ? $professional->specialty : 'null'
                 ]);
+                
+                if ($professional && $patient) {
+                    // Check if $professional is a Collection and extract the first item
+                    if ($professional instanceof \Illuminate\Database\Eloquent\Collection) {
+                        Log::warning("Professional returned as Collection, extracting first item", [
+                            'appointment_id' => $appointment->id,
+                            'collection_count' => $professional->count()
+                        ]);
+                        $professional = $professional->first();
+                    }
+                    
+                    // Validate professional object structure
+                    if (!$professional) {
+                        Log::error("Professional is null after collection check", [
+                            'appointment_id' => $appointment->id
+                        ]);
+                        return;
+                    }
+                    
+                    Log::info("Professional validation", [
+                        'appointment_id' => $appointment->id,
+                        'professional_class' => get_class($professional),
+                        'professional_id' => $professional->id ?? 'no_id',
+                        'professional_name' => $professional->name ?? 'no_name',
+                        'has_specialty' => isset($professional->specialty),
+                        'specialty_type' => $professional->specialty ? gettype($professional->specialty) : 'null'
+                    ]);
+                    
+                    // Send template message if we have clinic address, otherwise send simple text message
+                    if ($clinicAddress) {
+                        try {
+                            Log::info("Attempting to send WhatsApp template message", [
+                                'appointment_id' => $appointment->id,
+                                'patient_name' => $patient->name ?? 'no_name',
+                                'professional_name' => $professional->name ?? 'no_name',
+                                'clinic_address' => substr($clinicAddress, 0, 50) . '...'
+                            ]);
+                            
+                            $this->whatsAppService->sendAppointmentReminderToPatient(
+                                $patient,
+                                $professional,
+                                $appointment,
+                                $clinicAddress
+                            );
+                            
+                            Log::info("Sent WhatsApp appointment reminder template for appointment #{$appointment->id} to patient #{$patient->id}");
+                        } catch (\Exception $templateError) {
+                            Log::error("Failed to send WhatsApp template message", [
+                                'appointment_id' => $appointment->id,
+                                'error' => $templateError->getMessage(),
+                                'file' => $templateError->getFile(),
+                                'line' => $templateError->getLine(),
+                                'trace' => $templateError->getTraceAsString()
+                            ]);
+                            
+                            // Fallback to simple text message
+                            $this->sendSimpleWhatsAppMessage($appointment, $patient, $professional);
+                        }
+                    } else {
+                        // Send a simplified text message if we don't have clinic address
+                        $this->sendSimpleWhatsAppMessage($appointment, $patient, $professional);
+                    }
+                } else {
+                    Log::warning("Missing professional or patient for appointment #{$appointment->id}", [
+                        'professional_exists' => $professional !== null,
+                        'patient_exists' => $patient !== null
+                    ]);
+                }
             } else {
                 Log::info("Provider is not a professional for appointment #{$appointment->id}, trying alternative approach");
                 
@@ -419,69 +490,89 @@ class NotificationService
                         );
                         
                         Log::info("Sent simplified WhatsApp appointment notification for appointment #{$appointment->id} to patient #{$patient->id}");
-                        return;
                     } catch (\Exception $e) {
-                        Log::error("Failed to send simplified WhatsApp message: " . $e->getMessage());
+                        Log::error("Failed to send simplified WhatsApp message for clinic", [
+                            'appointment_id' => $appointment->id,
+                            'error' => $e->getMessage(),
+                            'file' => $e->getFile(),
+                            'line' => $e->getLine()
+                        ]);
                     }
                 }
-                return;
-            }
-            
-            if ($professional && $patient) {
-                // Check if $professional is a Collection and extract the first item
-                if ($professional instanceof \Illuminate\Database\Eloquent\Collection) {
-                    $professional = $professional->first();
-                }
-                
-                // Send template message if we have clinic address, otherwise send simple text message
-                if ($clinicAddress) {
-                    $this->whatsAppService->sendAppointmentReminderToPatient(
-                        $patient,
-                        $professional,
-                        $appointment,
-                        $clinicAddress
-                    );
-                    
-                    Log::info("Sent WhatsApp appointment reminder template for appointment #{$appointment->id} to patient #{$patient->id}");
-                } else {
-                    // Send a simplified text message if we don't have clinic address
-                    if ($patient->phone) {
-                        try {
-                            $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
-                            $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
-                            
-                            $message = "📅 *Agendamento Confirmado*\n\n";
-                            $message .= "Olá {$patient->name}!\n\n";
-                            $message .= "Seu agendamento foi confirmado:\n";
-                            $message .= "👨‍⚕️ Profissional: {$professional->name}\n";
-                            $message .= "🩺 Especialidade: {$specialty}\n";
-                            $message .= "📅 Data: {$appointmentDate}\n\n";
-                            $message .= "Em caso de dúvidas, entre em contato conosco.";
-                            
-                            $this->whatsAppService->sendTextMessage(
-                                $patient->phone,
-                                $message,
-                                'App\\Models\\Appointment',
-                                $appointment->id
-                            );
-                            
-                            Log::info("Sent simplified WhatsApp appointment notification for appointment #{$appointment->id} to patient #{$patient->id}");
-                        } catch (\Exception $e) {
-                            Log::error("Failed to send simplified WhatsApp message: " . $e->getMessage());
-                        }
-                    }
-                }
-            } else {
-                Log::warning("Missing professional or patient for appointment #{$appointment->id}", [
-                    'professional_exists' => $professional !== null,
-                    'patient_exists' => $patient !== null
-                ]);
             }
         } catch (\Exception $e) {
-            Log::error("Failed to send WhatsApp appointment reminder: " . $e->getMessage(), [
-                'appointment_id' => $appointment->id
+            Log::error("Failed to send WhatsApp appointment reminder", [
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
             ]);
             // Just log the error, don't rethrow
+        }
+    }
+    
+    /**
+     * Send simple WhatsApp message when template fails or no clinic address.
+     *
+     * @param Appointment $appointment
+     * @param Patient $patient
+     * @param Professional $professional
+     * @return void
+     */
+    protected function sendSimpleWhatsAppMessage(Appointment $appointment, $patient, $professional): void
+    {
+        if ($patient && $patient->phone) {
+            try {
+                $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+                
+                // Safely get specialty name
+                $specialty = 'Especialista'; // Default fallback
+                if ($professional && isset($professional->specialty)) {
+                    if (is_object($professional->specialty) && isset($professional->specialty->name)) {
+                        $specialty = $professional->specialty->name;
+                    } elseif (is_string($professional->specialty)) {
+                        $specialty = $professional->specialty;
+                    }
+                }
+                
+                // Safely get professional name
+                $professionalName = 'Profissional';
+                if ($professional && isset($professional->name)) {
+                    $professionalName = $professional->name;
+                }
+                
+                Log::info("Sending simple WhatsApp message", [
+                    'appointment_id' => $appointment->id,
+                    'patient_name' => $patient->name ?? 'no_name',
+                    'professional_name' => $professionalName,
+                    'specialty' => $specialty
+                ]);
+                
+                $message = "📅 *Agendamento Confirmado*\n\n";
+                $message .= "Olá {$patient->name}!\n\n";
+                $message .= "Seu agendamento foi confirmado:\n";
+                $message .= "👨‍⚕️ Profissional: {$professionalName}\n";
+                $message .= "🩺 Especialidade: {$specialty}\n";
+                $message .= "📅 Data: {$appointmentDate}\n\n";
+                $message .= "Em caso de dúvidas, entre em contato conosco.";
+                
+                $this->whatsAppService->sendTextMessage(
+                    $patient->phone,
+                    $message,
+                    'App\\Models\\Appointment',
+                    $appointment->id
+                );
+                
+                Log::info("Sent simple WhatsApp appointment notification for appointment #{$appointment->id} to patient #{$patient->id}");
+            } catch (\Exception $e) {
+                Log::error("Failed to send simple WhatsApp message", [
+                    'appointment_id' => $appointment->id,
+                    'error' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine()
+                ]);
+            }
         }
     }
     
