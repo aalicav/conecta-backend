@@ -627,7 +627,7 @@ class WhatsAppService
         $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
         $appointmentTime = Carbon::parse($appointment->scheduled_date)->format('H:i');
         
-        $payload = $this->templateBuilder->buildAppointmentReminder(
+        $variables = $this->templateBuilder->buildAppointmentReminder(
             $patient->name,
             $professional->name,
             $specialty,
@@ -636,6 +636,15 @@ class WhatsAppService
             $clinicAddress,
             $token
         );
+        
+        // Construct complete payload for sendFromTemplate
+        $payload = [
+            'to' => $patient->phone,
+            'template' => 'agendamento_cliente', // Use the correct template for scheduled appointments
+            'variables' => $variables,
+            'related_model_type' => 'App\\Models\\Appointment',
+            'related_model_id' => $appointment->id
+        ];
         
         return $this->sendFromTemplate($payload);
     }
@@ -682,13 +691,22 @@ class WhatsAppService
         $specialty = $professional->specialty ? $professional->specialty->name : 'Especialista';
         $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
         
-        $payload = $this->templateBuilder->buildNpsSurvey(
+        $variables = $this->templateBuilder->buildNpsSurvey(
             $patient->name,
             $appointmentDate,
             $professional->name,
             $specialty,
             (string)$appointment->id
         );
+        
+        // Construct complete payload for sendFromTemplate
+        $payload = [
+            'to' => $patient->phone,
+            'template' => 'nps_survey',
+            'variables' => $variables,
+            'related_model_type' => 'App\\Models\\Appointment',
+            'related_model_id' => $appointment->id
+        ];
         
         return $this->sendFromTemplate($payload);
     }
@@ -708,12 +726,21 @@ class WhatsAppService
     ) {
         $appointmentDate = Carbon::parse($appointment->scheduled_date)->format('d/m/Y');
         
-        $payload = $this->templateBuilder->buildNpsProviderSurvey(
+        $variables = $this->templateBuilder->buildNpsProviderSurvey(
             $patient->name,
             $professional->name,
             $appointmentDate,
             (string)$appointment->id
         );
+        
+        // Construct complete payload for sendFromTemplate
+        $payload = [
+            'to' => $patient->phone,
+            'template' => 'nps_survey_prestador',
+            'variables' => $variables,
+            'related_model_type' => 'App\\Models\\Appointment',
+            'related_model_id' => $appointment->id
+        ];
         
         return $this->sendFromTemplate($payload);
     }
@@ -727,7 +754,16 @@ class WhatsAppService
      */
     public function sendNpsQuestionToPatient(Patient $patient, Appointment $appointment)
     {
-        $payload = $this->templateBuilder->buildNpsQuestion((string)$appointment->id);
+        $variables = $this->templateBuilder->buildNpsQuestion((string)$appointment->id);
+        
+        // Construct complete payload for sendFromTemplate
+        $payload = [
+            'to' => $patient->phone,
+            'template' => 'nps_pergunta',
+            'variables' => $variables,
+            'related_model_type' => 'App\\Models\\Appointment',
+            'related_model_id' => $appointment->id
+        ];
         
         return $this->sendFromTemplate($payload);
     }
