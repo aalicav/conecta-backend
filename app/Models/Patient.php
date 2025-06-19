@@ -68,15 +68,6 @@ class Patient extends Model
     }
 
     /**
-     * Get the user associated with this patient.
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'id', 'entity_id')
-                    ->where('entity_type', 'App\\Models\\Patient');
-    }
-
-    /**
      * Get solicitations for this patient.
      */
     public function solicitations(): HasMany
@@ -89,7 +80,7 @@ class Patient extends Model
      *
      * @return string|null
      */
-    public function phone(): ?string
+    public function getPhoneAttribute(): ?string
     {
         $phone = $this->phones()->first();
         return $phone ? $phone->number : null;

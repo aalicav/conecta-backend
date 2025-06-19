@@ -775,23 +775,16 @@ class NotificationService
 
     /**
      * Get the patients who should be notified about an appointment.
+     * Note: Patients don't have user accounts, they only receive WhatsApp notifications
      *
      * @param Appointment $appointment
      * @return \Illuminate\Database\Eloquent\Collection
      */
     protected function getPatientsToNotify(Appointment $appointment)
     {
-        $users = collect();
-        
-        // Get solicitation and patient
-        $solicitation = $appointment->solicitation;
-        $patient = $solicitation->patient->user;
-        
-        if ($patient && $patient->is_active) {
-            $users->push($patient);
-        }
-        
-        return $users;
+        // Patients don't have user accounts for system notifications
+        // They only receive WhatsApp notifications
+        return collect();
     }
 
     /**
