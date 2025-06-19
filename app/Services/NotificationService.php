@@ -582,19 +582,7 @@ class NotificationService
      */
     protected function getClinicAddress(Appointment $appointment): ?string
     {
-        if ($appointment->provider_type === 'App\\Models\\Clinic') {
-            $clinic = Clinic::find($appointment->provider_id);
-            if ($clinic) {
-                return $clinic->address . ', ' . $clinic->city . ' - ' . $clinic->state;
-            }
-        } elseif ($appointment->provider_type === 'App\\Models\\Professional') {
-            $professional = Professional::find($appointment->provider_id);
-            if ($professional && $professional->clinic) {
-                return $professional->clinic->address . ', ' . $professional->clinic->city . ' - ' . $professional->clinic->state;
-            }
-        }
-        
-        return null;
+        return $appointment->address->address . ', ' . $appointment->address->number . ', ' . $appointment->address->neighborhood . ', ' . $appointment->address->city . ' - ' . $appointment->address->state;
     }
 
     /**
