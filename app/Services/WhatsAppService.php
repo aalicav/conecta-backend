@@ -2136,22 +2136,32 @@ class WhatsAppService
         $normalized1 = $this->normalizePhoneNumber($phone1);
         $normalized2 = $this->normalizePhoneNumber($phone2);
         
+        Log::info("Comparing phone numbers", [
+            'phone1' => $phone1,
+            'phone2' => $phone2,
+            'normalized1' => $normalized1,
+            'normalized2' => $normalized2
+        ]);
+        
         // Direct match
         if ($normalized1 === $normalized2) {
             return true;
         }
         
-        // Try removing potential extra digits for cases where there might be formatting differences
         // Remove leading 55 from both and compare
         $without55_1 = str_starts_with($normalized1, '55') ? substr($normalized1, 2) : $normalized1;
         $without55_2 = str_starts_with($normalized2, '55') ? substr($normalized2, 2) : $normalized2;
+        
+        Log::info("Comparing without country code", [
+            'without55_1' => $without55_1,
+            'without55_2' => $without55_2
+        ]);
         
         if ($without55_1 === $without55_2) {
             return true;
         }
         
         // Handle case where one number might have an extra 5 at the beginning
-        // This handles cases like 85996345077 vs 5596345077
         if (str_starts_with($without55_1, '5') && $without55_1 === '5' . $without55_2) {
             return true;
         }
@@ -2160,7 +2170,55 @@ class WhatsAppService
             return true;
         }
         
+        // Handle Brazilian mobile number format differences
+        // Some numbers might have an extra 9 in the mobile format
+        // Compare the last 8 digits (core number) for mobile numbers
+        if (strlen($without55_1) >= 8 && strlen($without55_2) >= 8) {
+            $core1 = substr($without55_1, -8);
+            $core2 = substr($without55_2, -8);
+            
+            Log::info("Comparing core numbers (last 8 digits)", [
+                'core1' => $core1,
+                'core2' => $core2
+            ]);
+            
+            if ($core1 === $core2) {
+                return true;
+            }
+        }
+        
+        // Try removing potential 9 from mobile numbers
+        // Brazilian mobile: XX9XXXXXXXX or XXXXXXXXX
+        $clean1 = $this->cleanMobileNumber($without55_1);
+        $clean2 = $this->cleanMobileNumber($without55_2);
+        
+        Log::info("Comparing cleaned mobile numbers", [
+            'clean1' => $clean1,
+            'clean2' => $clean2
+        ]);
+        
+        if ($clean1 === $clean2) {
+            return true;
+        }
+        
         return false;
+    }
+    
+    /**
+     * Clean mobile number by removing the 9th digit if present
+     *
+     * @param string $number
+     * @return string
+     */
+    protected function cleanMobileNumber(string $number): string
+    {
+        // For numbers with 11 digits starting with area code + 9
+        // Remove the 9 to get the base number
+        if (strlen($number) === 11 && substr($number, 2, 1) === '9') {
+            return substr($number, 0, 2) . substr($number, 3);
+        }
+        
+        return $number;
     }
     
     /**
