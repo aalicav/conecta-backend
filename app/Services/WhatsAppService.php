@@ -560,6 +560,15 @@ class WhatsAppService
     public function sendFromTemplate(array $payload)
     {
         try {
+            // Validate that we have a phone number
+            if (empty($payload['to'])) {
+                Log::warning("Cannot send WhatsApp template: missing phone number", [
+                    'template' => $payload['template'] ?? 'unknown',
+                    'payload' => $payload
+                ]);
+                return null;
+            }
+            
             $templateMap = [
                 'agendamento_cliente' => self::TEMPLATE_AGENDAMENTO_CLIENTE,
                 'agendamento_cancelado' => self::TEMPLATE_AGENDAMENTO_CANCELADO,
@@ -600,6 +609,8 @@ class WhatsAppService
             Log::error('Failed to send WhatsApp template message', [
                 'payload' => $payload,
                 'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
             ]);
             
             return null;
@@ -613,7 +624,7 @@ class WhatsAppService
      * @param Professional $professional
      * @param Appointment $appointment
      * @param string $clinicAddress
-     * @return \Twilio\Rest\Api\V2010\Account\MessageInstance
+     * @return \Twilio\Rest\Api\V2010\Account\MessageInstance|null
      */
     public function sendAppointmentReminderToPatient(
         Patient $patient,
@@ -622,11 +633,22 @@ class WhatsAppService
         string $clinicAddress
     ) {
         try {
+            // Check if patient has a phone number
+            if (empty($patient->phone)) {
+                Log::warning("Cannot send WhatsApp appointment reminder: patient has no phone number", [
+                    'appointment_id' => $appointment->id,
+                    'patient_id' => $patient->id,
+                    'patient_name' => $patient->name ?? 'no_name'
+                ]);
+                return null;
+            }
+            
             // Safely get specialty name with better error handling
             $specialty = 'Especialista'; // Default fallback
             
             Log::info("Processing professional specialty for WhatsApp message", [
                 'appointment_id' => $appointment->id,
+                'patient_phone' => $patient->phone,
                 'professional_id' => $professional->id ?? 'no_id',
                 'professional_name' => $professional->name ?? 'no_name',
                 'specialty_exists' => isset($professional->specialty),
@@ -660,6 +682,7 @@ class WhatsAppService
             
             Log::info("Building WhatsApp template variables", [
                 'appointment_id' => $appointment->id,
+                'patient_phone' => $patient->phone,
                 'health_plan_name' => $healthPlanName,
                 'patient_name' => $patient->name ?? 'no_name',
                 'professional_name' => $professional->name ?? 'no_name',
@@ -692,7 +715,8 @@ class WhatsAppService
                 'appointment_id' => $appointment->id,
                 'to' => $patient->phone,
                 'template' => 'agendamento_cliente',
-                'variables_count' => count($variables)
+                'variables_count' => count($variables),
+                'phone_is_valid' => !empty($patient->phone)
             ]);
             
             return $this->sendFromTemplate($payload);
@@ -700,14 +724,16 @@ class WhatsAppService
             Log::error('Failed to send WhatsApp appointment reminder', [
                 'appointment_id' => $appointment->id,
                 'patient_id' => $patient->id,
-                'professional_id' => $professional->id,
+                'patient_phone' => $patient->phone ?? 'null',
+                'professional_id' => $professional->id ?? 'null',
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
             ]);
             
-            throw $e;
+            // Don't rethrow the exception to prevent breaking the notification flow
+            return null;
         }
     }
     
