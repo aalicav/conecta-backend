@@ -2057,11 +2057,13 @@ class WhatsAppService
                 
                 // Verify the phone number matches the patient
                 $patient = $appointment->solicitation->patient;
-                if (!$patient || ('55'.$patient->phone) !== $from) {
+                if (!$patient || !$this->phoneNumbersMatch($patient->phone, $from)) {
                     Log::warning("Phone number mismatch for appointment verification", [
                         'appointment_id' => $appointmentId,
                         'from' => $from,
-                        'patient_phone' => $patient->phone ?? 'null'
+                        'patient_phone' => $patient->phone ?? 'null',
+                        'normalized_patient' => $this->normalizePhoneNumber($patient->phone ?? ''),
+                        'normalized_from' => $this->normalizePhoneNumber($from)
                     ]);
                     return;
                 }
@@ -2091,6 +2093,40 @@ class WhatsAppService
                 'error' => $e->getMessage()
             ]);
         }
+    }
+    
+    /**
+     * Normalize phone number to compare different formats
+     *
+     * @param string $phoneNumber
+     * @return string
+     */
+    protected function normalizePhoneNumber(string $phoneNumber): string
+    {
+        // Remove all non-numeric characters
+        $normalized = preg_replace('/[^0-9]/', '', $phoneNumber);
+        
+        // If the number doesn't start with country code, add Brazil's 55
+        if (strlen($normalized) >= 10 && !str_starts_with($normalized, '55')) {
+            $normalized = '55' . $normalized;
+        }
+        
+        return $normalized;
+    }
+    
+    /**
+     * Check if two phone numbers match after normalization
+     *
+     * @param string $phone1
+     * @param string $phone2
+     * @return bool
+     */
+    protected function phoneNumbersMatch(string $phone1, string $phone2): bool
+    {
+        $normalized1 = $this->normalizePhoneNumber($phone1);
+        $normalized2 = $this->normalizePhoneNumber($phone2);
+        
+        return $normalized1 === $normalized2;
     }
     
     /**
