@@ -564,6 +564,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/appointments/{appointment}/complete', [AppointmentController::class, 'completeAppointment']);
     Route::post('/appointments/{appointment}/cancel', [AppointmentController::class, 'cancelAppointment']);
     Route::post('/appointments/{appointment}/missed', [AppointmentController::class, 'markAsMissed']);
+    Route::post('/appointments/{appointment}/resend-notifications', [AppointmentController::class, 'resendNotifications']);
 });
 
 // Scheduling exceptions routing

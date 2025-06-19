@@ -1934,4 +1934,149 @@ class AppointmentController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Resend notifications for an appointment.
+     *
+     * @param Request $request
+     * @param Appointment $appointment
+     * @return JsonResponse
+     */
+    public function resendNotifications(Request $request, Appointment $appointment): JsonResponse
+    {
+        try {
+            // Check if user has permission to manage this appointment
+            if (!$this->canManageAppointment($appointment)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to resend notifications for this appointment'
+                ], 403);
+            }
+
+            // Validate notification types
+            $validator = Validator::make($request->all(), [
+                'notification_types' => 'required|array|min:1',
+                'notification_types.*' => 'required|string|in:scheduled,confirmed,completed,cancelled,missed,reminder',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $notificationTypes = $request->notification_types;
+            $sentNotifications = [];
+            $failedNotifications = [];
+
+            // Load relationships needed for notifications
+            $appointment->load([
+                'solicitation.healthPlan',
+                'solicitation.patient',
+                'solicitation.tuss',
+                'provider'
+            ]);
+
+            foreach ($notificationTypes as $type) {
+                try {
+                    switch ($type) {
+                        case 'scheduled':
+                            $this->notificationService->notifyAppointmentScheduled($appointment);
+                            $sentNotifications[] = 'scheduled';
+                            break;
+
+                        case 'confirmed':
+                            if ($appointment->isConfirmed()) {
+                                $this->notificationService->notifyAppointmentConfirmed($appointment);
+                                $sentNotifications[] = 'confirmed';
+                            } else {
+                                $failedNotifications[] = [
+                                    'type' => 'confirmed',
+                                    'reason' => 'Appointment is not in confirmed status'
+                                ];
+                            }
+                            break;
+
+                        case 'completed':
+                            if ($appointment->isCompleted()) {
+                                $this->notificationService->notifyAppointmentCompleted($appointment);
+                                $sentNotifications[] = 'completed';
+                            } else {
+                                $failedNotifications[] = [
+                                    'type' => 'completed',
+                                    'reason' => 'Appointment is not in completed status'
+                                ];
+                            }
+                            break;
+
+                        case 'cancelled':
+                            if ($appointment->isCancelled()) {
+                                $this->notificationService->notifyAppointmentCancelled($appointment);
+                                $sentNotifications[] = 'cancelled';
+                            } else {
+                                $failedNotifications[] = [
+                                    'type' => 'cancelled',
+                                    'reason' => 'Appointment is not in cancelled status'
+                                ];
+                            }
+                            break;
+
+                        case 'missed':
+                            if ($appointment->isMissed()) {
+                                $this->notificationService->notifyAppointmentMissed($appointment);
+                                $sentNotifications[] = 'missed';
+                            } else {
+                                $failedNotifications[] = [
+                                    'type' => 'missed',
+                                    'reason' => 'Appointment is not in missed status'
+                                ];
+                            }
+                            break;
+
+                        case 'reminder':
+                            // Send reminder notification regardless of status
+                            $this->notificationService->notifyAppointmentReminder($appointment);
+                            $sentNotifications[] = 'reminder';
+                            break;
+
+                        default:
+                            $failedNotifications[] = [
+                                'type' => $type,
+                                'reason' => 'Invalid notification type'
+                            ];
+                    }
+                } catch (\Exception $e) {
+                    Log::error("Failed to resend {$type} notification for appointment {$appointment->id}: " . $e->getMessage());
+                    $failedNotifications[] = [
+                        'type' => $type,
+                        'reason' => $e->getMessage()
+                    ];
+                }
+            }
+
+            $response = [
+                'success' => true,
+                'message' => count($sentNotifications) > 0 
+                    ? 'Notifications resent successfully' 
+                    : 'No notifications were sent',
+                'data' => [
+                    'sent_notifications' => $sentNotifications,
+                    'failed_notifications' => $failedNotifications,
+                    'sent_count' => count($sentNotifications),
+                    'failed_count' => count($failedNotifications)
+                ]
+            ];
+
+            return response()->json($response);
+        } catch (\Exception $e) {
+            Log::error('Error resending notifications for appointment: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to resend notifications',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 

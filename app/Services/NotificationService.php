@@ -271,8 +271,8 @@ class NotificationService
     {
         // Enviar notificação do sistema
         try {
-            // Principalmente notificar o paciente
-            $users = $this->getPatientsToNotify($appointment);
+            // Notificar usuários relevantes sobre conclusão do agendamento
+            $users = $this->getUsersToNotifyForAppointment($appointment);
             
             if (!$users->isEmpty()) {
                 // Send system notification
@@ -283,13 +283,24 @@ class NotificationService
             Log::error("Failed to send appointment completed system notification: " . $e->getMessage());
         }
         
-        // Enviar notificação da pesquisa NPS por WhatsApp (independente da notificação do sistema)
+        // Enviar pesquisa NPS via WhatsApp após conclusão
         try {
-            // After appointment is completed, send NPS survey via WhatsApp
             $this->sendWhatsAppNpsSurvey($appointment);
         } catch (\Exception $e) {
-            Log::error("Failed to send NPS survey WhatsApp notification: " . $e->getMessage());
+            Log::error("Failed to send NPS survey after appointment completion: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Send appointment reminder notification.
+     *
+     * @param Appointment $appointment
+     * @param int $hoursRemaining
+     * @return void
+     */
+    public function notifyAppointmentReminder(Appointment $appointment, int $hoursRemaining = 24): void
+    {
+        $this->sendAppointmentReminder($appointment, $hoursRemaining);
     }
 
     /**
