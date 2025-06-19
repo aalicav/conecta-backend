@@ -92,22 +92,11 @@ class AppointmentScheduled extends Notification implements ShouldQueue
      */
     public function toWhatsApp($notifiable)
     {
-        // Add debug logging to understand what's happening
-        Log::info('AppointmentScheduled toWhatsApp called', [
-            'notifiable_id' => $notifiable->id ?? 'unknown',
-            'notifiable_type' => get_class($notifiable),
-            'phone' => $notifiable->phone ?? 'null',
-            'has_phone' => isset($notifiable->phone),
-            'phone_empty' => empty($notifiable->phone ?? ''),
-            'phone_trimmed_empty' => empty(trim($notifiable->phone ?? ''))
-        ]);
-        
         // Check if notifiable has a phone number
         if (!$notifiable || !isset($notifiable->phone) || empty(trim($notifiable->phone))) {
-            Log::warning('Cannot send WhatsApp notification: no phone number available', [
+            Log::info('WhatsApp notification skipped for AppointmentScheduled - no phone number', [
                 'notifiable_id' => $notifiable->id ?? 'unknown',
                 'notifiable_type' => get_class($notifiable),
-                'phone' => $notifiable->phone ?? 'null',
                 'appointment_id' => $this->appointment->id
             ]);
             return null;
@@ -132,13 +121,6 @@ class AppointmentScheduled extends Notification implements ShouldQueue
                 '5' => $providerName,
                 '6' => $this->appointment->scheduled_automatically ? 'Sim' : 'Não',
                 '7' => (string) $this->appointment->id
-            ]);
-            
-            Log::info('WhatsApp message created successfully for AppointmentScheduled', [
-                'appointment_id' => $this->appointment->id,
-                'notifiable_id' => $notifiable->id,
-                'phone' => $notifiable->phone,
-                'template' => 'agendamento_cliente'
             ]);
             
             return $message;
