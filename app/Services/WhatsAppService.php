@@ -2057,7 +2057,7 @@ class WhatsAppService
                 
                 // Verify the phone number matches the patient
                 $patient = $appointment->solicitation->patient;
-                if (!$patient || $patient->phone !== $from) {
+                if (!$patient || ('55'.$patient->phone) !== $from) {
                     Log::warning("Phone number mismatch for appointment verification", [
                         'appointment_id' => $appointmentId,
                         'from' => $from,
