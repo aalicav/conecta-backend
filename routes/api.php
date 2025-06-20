@@ -126,7 +126,15 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::apiResource('patients', PatientController::class);
     
     // Solicitations
-    Route::apiResource('solicitations', SolicitationController::class);
+    Route::prefix('solicitations')->group(function () {
+        Route::get('/', [SolicitationController::class, 'index']);
+        Route::post('/', [SolicitationController::class, 'store']);
+        Route::get('/{id}', [SolicitationController::class, 'show']);
+        Route::put('/{id}', [SolicitationController::class, 'update']);
+        Route::delete('/{id}', [SolicitationController::class, 'destroy']);
+        Route::get('/{id}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
+        Route::get('/{id}/available-professionals', [SolicitationController::class, 'getAvailableProfessionals']);
+    });
     Route::patch('/solicitations/{solicitation}/cancel', [SolicitationController::class, 'cancel']);
     Route::post('/solicitations/{solicitation}/reschedule', [SolicitationController::class, 'reschedule']);
     Route::post('/solicitations/{solicitation}/auto-schedule', [SolicitationController::class, 'forceSchedule']);

@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 use App\Models\Appointment;
 use App\Jobs\ProcessAutomaticScheduling;
+use App\Models\Professional;
 
 class SolicitationController extends Controller
 {
@@ -848,6 +849,42 @@ class SolicitationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Falha ao cancelar convites pendentes',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get available professionals for a solicitation.
+     *
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function getAvailableProfessionals($id): JsonResponse
+    {
+        try {
+            $solicitation = Solicitation::findOrFail($id);
+
+            // Get professionals that offer the required procedure
+            $professionals = Professional::whereHas('procedures', function ($query) use ($solicitation) {
+                $query->where('tuss_procedure_id', $solicitation->tuss_id);
+            })
+            ->where('status', 'approved')
+            ->where('is_active', true)
+            ->with(['addresses' => function ($query) {
+                $query->where('is_active', true);
+            }])
+            ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $professionals
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting available professionals: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao buscar profissionais disponíveis',
                 'error' => $e->getMessage()
             ], 500);
         }
