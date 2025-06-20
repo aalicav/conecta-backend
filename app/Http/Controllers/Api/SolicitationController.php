@@ -877,9 +877,7 @@ class SolicitationController extends Controller
             ->where('status', 'approved')
             ->where('is_active', true)
             ->with([
-                'addresses' => function ($query) {
-                    $query->where('is_active', true);
-                },
+                'addresses',
                 'pricingContracts' => function ($query) use ($solicitation) {
                     $query->where('tuss_procedure_id', $solicitation->tuss_id)
                         ->where('is_active', true)
