@@ -37,6 +37,7 @@ class NegotiationPermissionsSeeder extends Seeder
         $commercialRole = Role::firstOrCreate(['name' => 'commercial']);
         $approverRole = Role::firstOrCreate(['name' => 'approver']);
         $adminRole = Role::firstOrCreate(['name' => 'admin']);
+        $networkManagerRole = Role::firstOrCreate(['name' => 'network_manager']);
 
         // Assign permissions to roles
         $commercialRole->givePermissionTo([
@@ -55,6 +56,18 @@ class NegotiationPermissionsSeeder extends Seeder
         ]);
 
         $adminRole->givePermissionTo([
+            'view negotiations',
+            'create negotiations',
+            'edit negotiations',
+            'delete negotiations',
+            'submit negotiations',
+            'approve negotiations',
+            'formalize negotiations',
+            'view negotiation history'
+        ]);
+
+        // Give all permissions to network_manager role
+        $networkManagerRole->givePermissionTo([
             'view negotiations',
             'create negotiations',
             'edit negotiations',
