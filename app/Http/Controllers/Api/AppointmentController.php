@@ -647,8 +647,8 @@ class AppointmentController extends Controller
                     'success' => false,
                     'message' => 'Validation error',
                     'errors' => [
-                        'provider_type' => ['The selected provider type is invalid.']
-                    ]
+                        'provider_type' => ['O tipo de provedor selecionado é inválido.']
+                    ]   
                 ], 422);
             }
 
@@ -664,7 +664,7 @@ class AppointmentController extends Controller
             if (!$this->canAccessSolicitation($solicitation)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized to create appointment for this solicitation'
+                    'message' => 'Não autorizado para criar agendamento para esta solicitação'
                 ], 403);
             }
 
@@ -672,7 +672,7 @@ class AppointmentController extends Controller
             if ($solicitation->status !== 'failed') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only solicitations with failed status can be manually scheduled'
+                    'message' => 'Apenas solicitações com status falha podem ser agendadas manualmente'
                 ], 422);
             }
 
@@ -690,7 +690,7 @@ class AppointmentController extends Controller
                 if (!$procedureOffered) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'The selected clinic does not offer the required procedure'
+                        'message' => 'O estabelecimento selecionada não oferece o procedimento requerido'
                     ], 422);
                 }
             }
@@ -1000,7 +1000,7 @@ class AppointmentController extends Controller
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Scheduling exception requested successfully',
+                'message' => 'Solicitação de agendamento excepcional solicitada com sucesso',
                 'data' => $exception->load(['solicitation', 'requestedBy'])
             ]);
         } catch (\Exception $e) {
@@ -1047,7 +1047,7 @@ class AppointmentController extends Controller
             if ($appointment->status !== Appointment::STATUS_SCHEDULED) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Only scheduled appointments can be confirmed'
+                    'message' => 'Apenas agendamentos agendados podem ser confirmados'
                 ], 422);
             }
             
@@ -1075,7 +1075,7 @@ class AppointmentController extends Controller
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Appointment confirmed successfully',
+                'message' => 'Agendamento confirmado com sucesso',
                 'data' => $appointment->fresh(['solicitation.patient', 'solicitation.healthPlan', 'solicitation.tuss', 'provider', 'payment'])
             ]);
         } catch (\Exception $e) {
@@ -1089,7 +1089,7 @@ class AppointmentController extends Controller
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to confirm appointment',
+                'message' => 'Falha ao confirmar agendamento',
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
         }
@@ -1115,7 +1115,7 @@ class AppointmentController extends Controller
             if ($appointment->status !== Appointment::STATUS_CONFIRMED) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Only confirmed appointments can have guides generated'
+                    'message' => 'Apenas agendamentos confirmados podem ter guias geradas'
                 ], 422);
             }
             
@@ -1125,13 +1125,13 @@ class AppointmentController extends Controller
             if (!$guidePath) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Failed to generate appointment guide'
+                    'message' => 'Falha ao gerar guia de agendamento'
                 ], 500);
             }
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Appointment guide generated successfully',
+                'message' => 'Guia de agendamento gerada com sucesso',
                 'data' => [
                     'appointment' => $appointment,
                     'guide_path' => $guidePath,
@@ -1146,7 +1146,7 @@ class AppointmentController extends Controller
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to generate appointment guide',
+                'message' => 'Falha ao gerar guia de agendamento',
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
         }
@@ -1175,7 +1175,7 @@ class AppointmentController extends Controller
             if (!file_exists($path)) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Guide file not found'
+                    'message' => 'Arquivo da guia não encontrado'
                 ], 404);
             }
             
@@ -1188,7 +1188,7 @@ class AppointmentController extends Controller
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to download appointment guide',
+                'message' => 'Falha ao baixar guia de agendamento',
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
         }
