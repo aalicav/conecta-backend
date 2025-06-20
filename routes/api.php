@@ -69,6 +69,13 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::get('/chapters/{chapter}/groups/{group}/subgroups', [TussController::class, 'getSubgroups']);
     });
 
+    // Health Plans Dashboard (must come before health-plans/{health_plan} routes)
+    Route::get('/health-plans/dashboard/stats', [HealthPlanDashboardController::class, 'getStats']);
+    Route::get('/health-plans/dashboard/procedures', [HealthPlanDashboardController::class, 'getProcedures']);
+    Route::get('/health-plans/dashboard/financial', [HealthPlanDashboardController::class, 'getFinancial']);
+    Route::get('/health-plans/dashboard/recent', [HealthPlanDashboardController::class, 'getRecentPlans']);
+    Route::get('/health-plans/dashboard/solicitations', [HealthPlanDashboardController::class, 'getRecentSolicitations']);
+
     // Health Plans
     Route::prefix('health-plans')->group(function () {
         Route::get('/', [HealthPlanController::class, 'index']);
@@ -83,13 +90,6 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::post('/{health_plan}/documents', [HealthPlanController::class, 'uploadDocuments']);
     });
 
-    // Health Plans Dashboard
-    Route::get('/health-plans/dashboard/stats', [HealthPlanDashboardController::class, 'getStats']);
-    Route::get('/health-plans/dashboard/procedures', [HealthPlanDashboardController::class, 'getProcedures']);
-    Route::get('/health-plans/dashboard/financial', [HealthPlanDashboardController::class, 'getFinancial']);
-    Route::get('/health-plans/dashboard/recent', [HealthPlanDashboardController::class, 'getRecentPlans']);
-    Route::get('/health-plans/dashboard/solicitations', [HealthPlanDashboardController::class, 'getRecentSolicitations']);
-    
     // Clinics
     Route::apiResource('clinics', ClinicController::class);
     Route::post('/clinics/{clinic}/approve', [ClinicController::class, 'approve'])->middleware('permission:approve clinics');
