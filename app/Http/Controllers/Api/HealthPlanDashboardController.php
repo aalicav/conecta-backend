@@ -93,8 +93,8 @@ class HealthPlanDashboardController extends Controller
                 
                 $totalRevenue = DB::table('payments')
                     ->where('status', 'paid')
-                    ->where('entity_type', 'App\\Models\\HealthPlan')
-                    ->where('entity_id', $healthPlanId)
+                    ->where('payable_type', 'App\\Models\\HealthPlan')
+                    ->where('payable_id', $healthPlanId)
                     ->when($startDate, function ($query) use ($startDate) {
                         return $query->where('created_at', '>=', $startDate);
                     })
@@ -151,7 +151,7 @@ class HealthPlanDashboardController extends Controller
                 
                 $totalRevenue = DB::table('payments')
                     ->where('status', 'paid')
-                    ->whereIn('entity_type', ['App\\Models\\HealthPlan'])
+                    ->whereIn('payable_type', ['App\\Models\\HealthPlan'])
                     ->when($startDate, function ($query) use ($startDate) {
                         return $query->where('created_at', '>=', $startDate);
                     })
@@ -277,12 +277,12 @@ class HealthPlanDashboardController extends Controller
             // Build query
             $query = DB::table('payments')
                 ->where('status', 'paid')
-                ->where('entity_type', 'App\\Models\\HealthPlan')
+                ->where('payable_type', 'App\\Models\\HealthPlan')
                 ->where('created_at', '>=', $startDate);
                 
             // Filter by health plan ID for health plan users
             if ($isHealthPlanUser) {
-                $query->where('entity_id', $healthPlanId);
+                $query->where('payable_id', $healthPlanId);
             }
             
             // Group by interval
