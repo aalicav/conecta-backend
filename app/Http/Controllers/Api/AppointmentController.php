@@ -682,8 +682,9 @@ class AppointmentController extends Controller
 
             // For clinics, check if they offer the required procedure
             if ($providerClass === Clinic::class) {
-                $procedureOffered = $provider->procedures()
+                $procedureOffered = $provider->pricingContracts()
                     ->where('tuss_procedure_id', $solicitation->tuss_id)
+                    ->where('is_active', true)
                     ->exists();
 
                 if (!$procedureOffered) {
@@ -696,8 +697,9 @@ class AppointmentController extends Controller
 
             // For professionals, check if they offer the required procedure
             if ($providerClass === Professional::class) {
-                $procedureOffered = $provider->procedures()
+                $procedureOffered = $provider->pricingContracts()
                     ->where('tuss_procedure_id', $solicitation->tuss_id)
+                    ->where('is_active', true)
                     ->exists();
 
                 if (!$procedureOffered) {
@@ -1913,8 +1915,9 @@ class AppointmentController extends Controller
 
             // For clinics, check if they offer the required procedure
             if ($providerClass === Clinic::class) {
-                $procedureOffered = $provider->procedures()
+                $procedureOffered = $provider->pricingContracts()
                     ->where('tuss_procedure_id', $solicitation->tuss_id)
+                    ->where('is_active', true)
                     ->exists();
 
                 if (!$procedureOffered) {
@@ -1927,8 +1930,9 @@ class AppointmentController extends Controller
 
             // For professionals, check if they offer the required procedure
             if ($providerClass === Professional::class) {
-                $procedureOffered = $provider->procedures()
+                $procedureOffered = $provider->pricingContracts()
                     ->where('tuss_procedure_id', $solicitation->tuss_id)
+                    ->where('is_active', true)
                     ->exists();
 
                 if (!$procedureOffered) {
