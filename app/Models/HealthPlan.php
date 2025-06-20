@@ -352,10 +352,26 @@ class HealthPlan extends Model implements Auditable
     }
 
     /**
-     * Get the billing batches for the health plan.
+     * Get the billing rules for this health plan.
      */
-    public function billingBatches(): MorphMany
+    public function billingRules(): HasMany
     {
-        return $this->morphMany(BillingBatch::class, 'entity');
+        return $this->hasMany(HealthPlanBillingRule::class);
+    }
+
+    /**
+     * Get the billing batches for this health plan.
+     */
+    public function billingBatches(): HasMany
+    {
+        return $this->hasMany(BillingBatch::class);
+    }
+
+    /**
+     * Get the appointments for this health plan.
+     */
+    public function appointments(): HasMany
+    {
+        return $this->hasMany(Appointment::class);
     }
 } 

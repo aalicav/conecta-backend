@@ -9,6 +9,7 @@ use App\Console\Commands\CheckMailConfig;
 use App\Console\Commands\SendTestMail;
 use App\Console\Commands\UpdateNegotiationPermissions;
 use App\Console\Commands\CleanupOldNegotiations;
+use App\Console\Commands\ProcessHealthPlanBilling;
 
 class Kernel extends ConsoleKernel
 {
@@ -23,6 +24,7 @@ class Kernel extends ConsoleKernel
         SendTestMail::class,
         UpdateNegotiationPermissions::class,
         CleanupOldNegotiations::class,
+        ProcessHealthPlanBilling::class,
     ];
 
     /**
@@ -50,6 +52,12 @@ class Kernel extends ConsoleKernel
             ->at('00:00')
             ->withoutOverlapping()
             ->runInBackground();
+
+        // Process health plan billing daily
+        $schedule->command('billing:process-health-plans')
+            ->dailyAt('01:00')
+            ->withoutOverlapping()
+            ->appendOutputTo(storage_path('logs/billing.log'));
     }
 
     /**
