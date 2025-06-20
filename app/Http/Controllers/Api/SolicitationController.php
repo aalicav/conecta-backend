@@ -865,16 +865,36 @@ class SolicitationController extends Controller
         try {
             $solicitation = Solicitation::findOrFail($id);
 
-            // Get professionals that offer the required procedure
-            $professionals = Professional::whereHas('procedures', function ($query) use ($solicitation) {
-                $query->where('tuss_procedure_id', $solicitation->tuss_id);
+            // Get professionals that offer the required procedure through pricing contracts
+            $professionals = Professional::whereHas('pricingContracts', function ($query) use ($solicitation) {
+                $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                    ->where('is_active', true)
+                    ->where(function ($q) {
+                        $q->whereNull('end_date')
+                          ->orWhere('end_date', '>=', now());
+                    });
             })
             ->where('status', 'approved')
             ->where('is_active', true)
-            ->with(['addresses' => function ($query) {
-                $query->where('is_active', true);
-            }])
-            ->get();
+            ->with([
+                'addresses' => function ($query) {
+                    $query->where('is_active', true);
+                },
+                'pricingContracts' => function ($query) use ($solicitation) {
+                    $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                        ->where('is_active', true)
+                        ->where(function ($q) {
+                            $q->whereNull('end_date')
+                              ->orWhere('end_date', '>=', now());
+                        });
+                }
+            ])
+            ->get()
+            ->map(function ($professional) {
+                // Adicionar o preço do procedimento aos dados do profissional
+                $professional->price = $professional->pricingContracts->first()?->price;
+                return $professional;
+            });
 
             return response()->json([
                 'success' => true,
