@@ -5,9 +5,11 @@ namespace App\Mail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Content;
+use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class GeneralNotification extends Mailable
+class GeneralNotification extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
@@ -16,14 +18,14 @@ class GeneralNotification extends Mailable
      *
      * @var string
      */
-    public $title;
+    public $subject;
 
     /**
      * The notification body.
      *
      * @var string
      */
-    public $body;
+    public $content;
 
     /**
      * The action URL.
@@ -33,30 +35,56 @@ class GeneralNotification extends Mailable
     public $actionUrl;
 
     /**
+     * The action text.
+     *
+     * @var string
+     */
+    public $actionText;
+
+    /**
      * Create a new message instance.
      *
-     * @param string $title
-     * @param string $body
+     * @param string $subject
+     * @param string $content
      * @param string|null $actionUrl
+     * @param string $actionText
      * @return void
      */
-    public function __construct(string $title, string $body, ?string $actionUrl = null)
+    public function __construct(string $subject, string $content, string $actionUrl = null, string $actionText = 'Ver Detalhes')
     {
-        $this->title = $title;
-        $this->body = $body;
+        $this->subject = $subject;
+        $this->content = $content;
         $this->actionUrl = $actionUrl;
+        $this->actionText = $actionText;
     }
 
     /**
-     * Build the message.
-     *
-     * @return $this
+     * Get the message envelope.
      */
-    public function build()
+    public function envelope(): Envelope
     {
-        $mail = $this->subject($this->title)
-                     ->view('emails.general-notification');
-                     
-        return $mail;
+        return new Envelope(
+            subject: $this->subject,
+        );
+    }
+
+    /**
+     * Get the message content definition.
+     */
+    public function content(): Content
+    {
+        return new Content(
+            html: 'emails.general-notification',
+        );
+    }
+
+    /**
+     * Get the attachments for the message.
+     *
+     * @return array<int, \Illuminate\Mail\Mailables\Attachment>
+     */
+    public function attachments(): array
+    {
+        return [];
     }
 } 

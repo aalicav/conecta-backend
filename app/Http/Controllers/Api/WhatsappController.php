@@ -577,6 +577,12 @@ class WhatsappController extends Controller
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
+     * 
+     * Enhanced to provide comprehensive feedback and notifications:
+     * 1. Send detailed feedback messages via WhatsApp to patients
+     * 2. Notify appointment creators via email and database
+     * 3. Notify health plan admins via email and database  
+     * 4. Improved logging and error handling
      */
     public function webhook(Request $request)
     {
@@ -613,6 +619,11 @@ class WhatsappController extends Controller
                         'payload' => $buttonPayload
                     ]);
                     
+                    // Process the response with enhanced notifications
+                    // This will now trigger:
+                    // - Detailed WhatsApp feedback to patient
+                    // - Email + database notifications to appointment creator
+                    // - Email + database notifications to health plan admins
                     $this->whatsappService->processAppointmentVerificationResponse($buttonPayload, $from);
                     return response()->json(['success' => true]);
                 }
@@ -630,6 +641,7 @@ class WhatsappController extends Controller
                         
                         // Check if this is an appointment verification response
                         if (preg_match('/^(confirm|reject)-\d+$/', $text)) {
+                            // Process the response with enhanced notifications
                             $this->whatsappService->processAppointmentVerificationResponse($text, $from);
                         }
                     }

@@ -2237,7 +2237,7 @@ class WhatsAppService
             $appointment->save();
             
             // Send confirmation message to patient
-            $this->sendAppointmentConfirmationResponse($patient, true);
+            $this->sendAppointmentConfirmationResponse($patient, true, $appointment);
             
             // Notify health plan
             $this->notifyHealthPlanAboutConfirmation($appointment);
@@ -2276,7 +2276,7 @@ class WhatsAppService
             $appointment->save();
             
             // Send rejection message to patient
-            $this->sendAppointmentConfirmationResponse($patient, false);
+            $this->sendAppointmentConfirmationResponse($patient, false, $appointment);
             
             // Notify health plan
             $this->notifyHealthPlanAboutRejection($appointment);
@@ -2304,24 +2304,73 @@ class WhatsAppService
      *
      * @param Patient $patient
      * @param bool $confirmed
+     * @param Appointment $appointment
      * @return void
      */
-    protected function sendAppointmentConfirmationResponse(Patient $patient, bool $confirmed): void
+    protected function sendAppointmentConfirmationResponse(Patient $patient, bool $confirmed, Appointment $appointment = null): void
     {
         try {
+            // Send the template-based feedback message
             $variables = $this->templateBuilder->buildAppointmentConfirmationResponse($confirmed);
+            
+            $templateName = $confirmed ? 'appointment_confirmed_response' : 'appointment_rejected_response';
             
             $this->sendTemplateMessage(
                 $patient->phone,
-                $confirmed ? 'appointment_confirmed_response' : 'appointment_rejected_response',
+                $templateName,
                 $variables,
                 'App\\Models\\Patient',
                 $patient->id
             );
+            
+            // Send additional informative text message with appointment details
+            if ($appointment) {
+                $provider = $appointment->provider;
+                $procedure = $appointment->solicitation->tuss;
+                $appointmentDate = \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+                
+                $detailMessage = $confirmed 
+                    ? "✅ *Agendamento Confirmado com Sucesso!*\n\n" .
+                      "📋 *Detalhes do seu agendamento:*\n" .
+                      "👤 Paciente: {$patient->name}\n" .
+                      "👨‍⚕️ Profissional: {$provider->name}\n" .
+                      "🩺 Procedimento: {$procedure->description}\n" .
+                      "📅 Data/Hora: {$appointmentDate}\n\n" .
+                      "📝 *Orientações importantes:*\n" .
+                      "• Chegue com 15 minutos de antecedência\n" .
+                      "• Traga documento de identidade e cartão do plano\n" .
+                      "• Em caso de dúvidas, entre em contato conosco\n\n" .
+                      "Aguardamos você no horário agendado! 😊"
+                    : "❌ *Agendamento Cancelado*\n\n" .
+                      "📋 *Detalhes do agendamento cancelado:*\n" .
+                      "👤 Paciente: {$patient->name}\n" .
+                      "👨‍⚕️ Profissional: {$provider->name}\n" .
+                      "🩺 Procedimento: {$procedure->description}\n" .
+                      "📅 Data/Hora: {$appointmentDate}\n\n" .
+                      "📞 *Precisa reagendar?*\n" .
+                      "Entre em contato conosco através dos nossos canais de atendimento.\n" .
+                      "Estamos aqui para ajudar! 😊";
+                
+                // Send the detailed feedback message
+                $this->sendTextMessage(
+                    $patient->phone,
+                    $detailMessage,
+                    'App\\Models\\Appointment',
+                    $appointment->id
+                );
+            }
+            
+            Log::info("Sent enhanced appointment confirmation response to patient", [
+                'patient_id' => $patient->id,
+                'confirmed' => $confirmed,
+                'appointment_id' => $appointment ? $appointment->id : null
+            ]);
+            
         } catch (\Exception $e) {
             Log::error("Error sending confirmation response to patient", [
                 'patient_id' => $patient->id,
                 'confirmed' => $confirmed,
+                'appointment_id' => $appointment ? $appointment->id : null,
                 'error' => $e->getMessage()
             ]);
         }
@@ -2341,6 +2390,9 @@ class WhatsAppService
             $patient = $solicitation->patient;
             
             if (!$healthPlan) {
+                Log::warning("No health plan found for appointment confirmation notification", [
+                    'appointment_id' => $appointment->id
+                ]);
                 return;
             }
             
@@ -2353,30 +2405,85 @@ class WhatsAppService
                 ->get();
             
             if ($healthPlanAdmins->isEmpty()) {
+                Log::warning("No health plan admins found for confirmation notification", [
+                    'appointment_id' => $appointment->id,
+                    'health_plan_id' => $healthPlan->id
+                ]);
                 return;
             }
             
-            // Send WhatsApp notification
+            // Prepare notification data
+            $appointmentDate = \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+            $provider = $appointment->provider;
+            $procedure = $solicitation->tuss;
+            
+            // Send WhatsApp notification to each admin
             foreach ($healthPlanAdmins as $admin) {
                 if ($admin->phone) {
                     $this->sendHealthPlanConfirmationNotification($admin, $appointment, true);
                 }
             }
             
-            // Send system notification
+            // Send system notification (database notification)
             \Illuminate\Support\Facades\Notification::send($healthPlanAdmins, new \App\Notifications\AppointmentConfirmed($appointment));
             
-            // Send email notification
+            // Send detailed email notification to each admin
             foreach ($healthPlanAdmins as $admin) {
                 if ($admin->email) {
-                    $patient = $solicitation->patient;
-                    \Mail::to($admin->email)->send(new \App\Mail\GeneralNotification(
-                        'Agendamento Confirmado',
-                        "O agendamento do paciente {$patient->name} foi confirmado para " . \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i'),
-                        url("/appointments/{$appointment->id}")
-                    ));
+                    try {
+                        $emailSubject = 'Agendamento Confirmado pelo Paciente';
+                        $emailContent = "
+                            <h2>Agendamento Confirmado</h2>
+                            <p>O agendamento foi confirmado pelo paciente. Veja os detalhes abaixo:</p>
+                            
+                            <h3>Informações do Agendamento:</h3>
+                            <ul>
+                                <li><strong>ID do Agendamento:</strong> #{$appointment->id}</li>
+                                <li><strong>Paciente:</strong> {$patient->name}</li>
+                                <li><strong>Profissional:</strong> {$provider->name}</li>
+                                <li><strong>Procedimento:</strong> {$procedure->description}</li>
+                                <li><strong>Data/Hora:</strong> {$appointmentDate}</li>
+                                <li><strong>Status:</strong> Confirmado</li>
+                                <li><strong>Confirmado em:</strong> " . now()->format('d/m/Y H:i:s') . "</li>
+                            </ul>
+                            
+                            <h3>Informações do Plano de Saúde:</h3>
+                            <ul>
+                                <li><strong>Plano:</strong> {$healthPlan->name}</li>
+                                <li><strong>Cartão do Beneficiário:</strong> {$patient->health_card_number}</li>
+                            </ul>
+                            
+                            <p>Este agendamento está confirmado e deve proceder conforme planejado.</p>
+                        ";
+                        
+                        \Mail::to($admin->email)->send(new \App\Mail\GeneralNotification(
+                            $emailSubject,
+                            $emailContent,
+                            url("/appointments/{$appointment->id}")
+                        ));
+                        
+                        Log::info("Sent email notification to health plan admin about confirmation", [
+                            'admin_id' => $admin->id,
+                            'admin_email' => $admin->email,
+                            'appointment_id' => $appointment->id
+                        ]);
+                        
+                    } catch (\Exception $emailError) {
+                        Log::error("Failed to send email to health plan admin about confirmation", [
+                            'admin_id' => $admin->id,
+                            'admin_email' => $admin->email,
+                            'appointment_id' => $appointment->id,
+                            'error' => $emailError->getMessage()
+                        ]);
+                    }
                 }
             }
+            
+            Log::info("Successfully notified health plan about appointment confirmation", [
+                'appointment_id' => $appointment->id,
+                'health_plan_id' => $healthPlan->id,
+                'notified_admins' => $healthPlanAdmins->count()
+            ]);
             
         } catch (\Exception $e) {
             Log::error("Error notifying health plan about confirmation", [
@@ -2400,6 +2507,9 @@ class WhatsAppService
             $patient = $solicitation->patient;
             
             if (!$healthPlan) {
+                Log::warning("No health plan found for appointment rejection notification", [
+                    'appointment_id' => $appointment->id
+                ]);
                 return;
             }
             
@@ -2412,30 +2522,93 @@ class WhatsAppService
                 ->get();
             
             if ($healthPlanAdmins->isEmpty()) {
+                Log::warning("No health plan admins found for rejection notification", [
+                    'appointment_id' => $appointment->id,
+                    'health_plan_id' => $healthPlan->id
+                ]);
                 return;
             }
             
-            // Send WhatsApp notification
+            // Prepare notification data
+            $appointmentDate = \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+            $provider = $appointment->provider;
+            $procedure = $solicitation->tuss;
+            
+            // Send WhatsApp notification to each admin
             foreach ($healthPlanAdmins as $admin) {
                 if ($admin->phone) {
                     $this->sendHealthPlanConfirmationNotification($admin, $appointment, false);
                 }
             }
             
-            // Send system notification
+            // Send system notification (database notification)
             \Illuminate\Support\Facades\Notification::send($healthPlanAdmins, new \App\Notifications\AppointmentCancelled($appointment, 'Rejeitado pelo paciente'));
             
-            // Send email notification
+            // Send detailed email notification to each admin
             foreach ($healthPlanAdmins as $admin) {
                 if ($admin->email) {
-                    $patient = $solicitation->patient;
-                    \Mail::to($admin->email)->send(new \App\Mail\GeneralNotification(
-                        'Agendamento Cancelado',
-                        "O agendamento do paciente {$patient->name} foi cancelado para " . \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i') . "\nMotivo: Rejeitado pelo paciente",
-                        url("/appointments/{$appointment->id}")
-                    ));
+                    try {
+                        $emailSubject = 'Agendamento Rejeitado pelo Paciente';
+                        $emailContent = "
+                            <h2>Agendamento Rejeitado</h2>
+                            <p><strong>ATENÇÃO:</strong> O agendamento foi rejeitado pelo paciente. Veja os detalhes abaixo:</p>
+                            
+                            <h3>Informações do Agendamento:</h3>
+                            <ul>
+                                <li><strong>ID do Agendamento:</strong> #{$appointment->id}</li>
+                                <li><strong>Paciente:</strong> {$patient->name}</li>
+                                <li><strong>Profissional:</strong> {$provider->name}</li>
+                                <li><strong>Procedimento:</strong> {$procedure->description}</li>
+                                <li><strong>Data/Hora:</strong> {$appointmentDate}</li>
+                                <li><strong>Status:</strong> Cancelado</li>
+                                <li><strong>Motivo:</strong> Rejeitado pelo paciente</li>
+                                <li><strong>Cancelado em:</strong> " . now()->format('d/m/Y H:i:s') . "</li>
+                            </ul>
+                            
+                            <h3>Informações do Plano de Saúde:</h3>
+                            <ul>
+                                <li><strong>Plano:</strong> {$healthPlan->name}</li>
+                                <li><strong>Cartão do Beneficiário:</strong> {$patient->health_card_number}</li>
+                            </ul>
+                            
+                            <h3>Ações Necessárias:</h3>
+                            <ul>
+                                <li>Verificar se o paciente deseja reagendar</li>
+                                <li>Liberar o horário para outros pacientes</li>
+                                <li>Entrar em contato com o paciente se necessário</li>
+                            </ul>
+                            
+                            <p>Este agendamento foi cancelado e requer atenção para possível reagendamento.</p>
+                        ";
+                        
+                        \Mail::to($admin->email)->send(new \App\Mail\GeneralNotification(
+                            $emailSubject,
+                            $emailContent,
+                            url("/appointments/{$appointment->id}")
+                        ));
+                        
+                        Log::info("Sent email notification to health plan admin about rejection", [
+                            'admin_id' => $admin->id,
+                            'admin_email' => $admin->email,
+                            'appointment_id' => $appointment->id
+                        ]);
+                        
+                    } catch (\Exception $emailError) {
+                        Log::error("Failed to send email to health plan admin about rejection", [
+                            'admin_id' => $admin->id,
+                            'admin_email' => $admin->email,
+                            'appointment_id' => $appointment->id,
+                            'error' => $emailError->getMessage()
+                        ]);
+                    }
                 }
             }
+            
+            Log::info("Successfully notified health plan about appointment rejection", [
+                'appointment_id' => $appointment->id,
+                'health_plan_id' => $healthPlan->id,
+                'notified_admins' => $healthPlanAdmins->count()
+            ]);
             
         } catch (\Exception $e) {
             Log::error("Error notifying health plan about rejection", [
@@ -2493,37 +2666,113 @@ class WhatsAppService
             $creator = \App\Models\User::find($solicitation->created_by);
             
             if (!$creator || !$creator->is_active) {
+                Log::warning("No creator found or creator inactive for confirmation notification", [
+                    'appointment_id' => $appointment->id,
+                    'solicitation_id' => $solicitation->id,
+                    'creator_id' => $solicitation->created_by
+                ]);
                 return;
             }
             
-            // Send system notification
+            $patient = $solicitation->patient;
+            $provider = $appointment->provider;
+            $procedure = $solicitation->tuss;
+            $appointmentDate = \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+            
+            // Send system notification (database notification)
             $creator->notify(new \App\Notifications\AppointmentConfirmed($appointment));
             
             // Send WhatsApp notification
             if ($creator->phone) {
-                $patient = $solicitation->patient;
-                $provider = $appointment->provider;
-                $procedure = $solicitation->tuss;
-                
-                $message = "✅ Agendamento Confirmado!\n\nPaciente: {$patient->name}\nProfissional: {$provider->name}\nProcedimento: {$procedure->description}\nData: " . \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
-                
-                $this->sendTextMessage(
-                    $creator->phone,
-                    $message,
-                    'App\\Models\\Appointment',
-                    $appointment->id
-                );
+                try {
+                    $whatsappMessage = "✅ *Agendamento Confirmado pelo Paciente*\n\n" .
+                                     "📋 *Detalhes do agendamento:*\n" .
+                                     "🆔 ID: #{$appointment->id}\n" .
+                                     "👤 Paciente: {$patient->name}\n" .
+                                     "👨‍⚕️ Profissional: {$provider->name}\n" .
+                                     "🩺 Procedimento: {$procedure->description}\n" .
+                                     "📅 Data/Hora: {$appointmentDate}\n" .
+                                     "✅ Status: Confirmado pelo paciente\n\n" .
+                                     "O agendamento está confirmado e pode proceder conforme planejado.";
+                    
+                    $this->sendTextMessage(
+                        $creator->phone,
+                        $whatsappMessage,
+                        'App\\Models\\Appointment',
+                        $appointment->id
+                    );
+                    
+                    Log::info("Sent WhatsApp notification to solicitation creator about confirmation", [
+                        'creator_id' => $creator->id,
+                        'appointment_id' => $appointment->id
+                    ]);
+                    
+                } catch (\Exception $whatsappError) {
+                    Log::error("Failed to send WhatsApp to solicitation creator about confirmation", [
+                        'creator_id' => $creator->id,
+                        'appointment_id' => $appointment->id,
+                        'error' => $whatsappError->getMessage()
+                    ]);
+                }
             }
             
-            // Send email notification
+            // Send detailed email notification
             if ($creator->email) {
-                $patient = $solicitation->patient;
-                \Mail::to($creator->email)->send(new \App\Mail\GeneralNotification(
-                    'Agendamento Confirmado',
-                    "O agendamento do paciente {$patient->name} foi confirmado para " . \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i'),
-                    url("/appointments/{$appointment->id}")
-                ));
+                try {
+                    $emailSubject = 'Agendamento Confirmado pelo Paciente';
+                    $emailContent = "
+                        <h2>Agendamento Confirmado</h2>
+                        <p>O agendamento que você criou foi confirmado pelo paciente. Veja os detalhes abaixo:</p>
+                        
+                        <h3>Informações do Agendamento:</h3>
+                        <ul>
+                            <li><strong>ID do Agendamento:</strong> #{$appointment->id}</li>
+                            <li><strong>ID da Solicitação:</strong> #{$solicitation->id}</li>
+                            <li><strong>Paciente:</strong> {$patient->name}</li>
+                            <li><strong>Profissional:</strong> {$provider->name}</li>
+                            <li><strong>Procedimento:</strong> {$procedure->description}</li>
+                            <li><strong>Data/Hora:</strong> {$appointmentDate}</li>
+                            <li><strong>Status:</strong> Confirmado pelo paciente</li>
+                            <li><strong>Confirmado em:</strong> " . now()->format('d/m/Y H:i:s') . "</li>
+                        </ul>
+                        
+                        <h3>Próximos Passos:</h3>
+                        <ul>
+                            <li>O agendamento está confirmado e pode proceder</li>
+                            <li>O profissional foi notificado</li>
+                            <li>O plano de saúde foi informado</li>
+                        </ul>
+                        
+                        <p>Você pode acompanhar o status do agendamento através do sistema.</p>
+                    ";
+                    
+                    \Mail::to($creator->email)->send(new \App\Mail\GeneralNotification(
+                        $emailSubject,
+                        $emailContent,
+                        url("/appointments/{$appointment->id}")
+                    ));
+                    
+                    Log::info("Sent email notification to solicitation creator about confirmation", [
+                        'creator_id' => $creator->id,
+                        'creator_email' => $creator->email,
+                        'appointment_id' => $appointment->id
+                    ]);
+                    
+                } catch (\Exception $emailError) {
+                    Log::error("Failed to send email to solicitation creator about confirmation", [
+                        'creator_id' => $creator->id,
+                        'creator_email' => $creator->email,
+                        'appointment_id' => $appointment->id,
+                        'error' => $emailError->getMessage()
+                    ]);
+                }
             }
+            
+            Log::info("Successfully notified solicitation creator about appointment confirmation", [
+                'creator_id' => $creator->id,
+                'appointment_id' => $appointment->id,
+                'solicitation_id' => $solicitation->id
+            ]);
             
         } catch (\Exception $e) {
             Log::error("Error notifying solicitation creator about confirmation", [
@@ -2546,37 +2795,118 @@ class WhatsAppService
             $creator = \App\Models\User::find($solicitation->created_by);
             
             if (!$creator || !$creator->is_active) {
+                Log::warning("No creator found or creator inactive for rejection notification", [
+                    'appointment_id' => $appointment->id,
+                    'solicitation_id' => $solicitation->id,
+                    'creator_id' => $solicitation->created_by
+                ]);
                 return;
             }
             
-            // Send system notification
+            $patient = $solicitation->patient;
+            $provider = $appointment->provider;
+            $procedure = $solicitation->tuss;
+            $appointmentDate = \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
+            
+            // Send system notification (database notification)
             $creator->notify(new \App\Notifications\AppointmentCancelled($appointment, 'Rejeitado pelo paciente'));
             
             // Send WhatsApp notification
             if ($creator->phone) {
-                $patient = $solicitation->patient;
-                $provider = $appointment->provider;
-                $procedure = $solicitation->tuss;
-                
-                $message = "❌ Agendamento Cancelado!\n\nPaciente: {$patient->name}\nProfissional: {$provider->name}\nProcedimento: {$procedure->description}\nData: " . \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i') . "\nMotivo: Rejeitado pelo paciente";
-                
-                $this->sendTextMessage(
-                    $creator->phone,
-                    $message,
-                    'App\\Models\\Appointment',
-                    $appointment->id
-                );
+                try {
+                    $whatsappMessage = "❌ *Agendamento Rejeitado pelo Paciente*\n\n" .
+                                     "📋 *Detalhes do agendamento:*\n" .
+                                     "🆔 ID: #{$appointment->id}\n" .
+                                     "👤 Paciente: {$patient->name}\n" .
+                                     "👨‍⚕️ Profissional: {$provider->name}\n" .
+                                     "🩺 Procedimento: {$procedure->description}\n" .
+                                     "📅 Data/Hora: {$appointmentDate}\n" .
+                                     "❌ Status: Rejeitado pelo paciente\n\n" .
+                                     "⚠️ *Ação necessária:*\n" .
+                                     "• Verificar se o paciente deseja reagendar\n" .
+                                     "• Entrar em contato se necessário\n" .
+                                     "• Liberar o horário para outros pacientes";
+                    
+                    $this->sendTextMessage(
+                        $creator->phone,
+                        $whatsappMessage,
+                        'App\\Models\\Appointment',
+                        $appointment->id
+                    );
+                    
+                    Log::info("Sent WhatsApp notification to solicitation creator about rejection", [
+                        'creator_id' => $creator->id,
+                        'appointment_id' => $appointment->id
+                    ]);
+                    
+                } catch (\Exception $whatsappError) {
+                    Log::error("Failed to send WhatsApp to solicitation creator about rejection", [
+                        'creator_id' => $creator->id,
+                        'appointment_id' => $appointment->id,
+                        'error' => $whatsappError->getMessage()
+                    ]);
+                }
             }
             
-            // Send email notification
+            // Send detailed email notification
             if ($creator->email) {
-                $patient = $solicitation->patient;
-                \Mail::to($creator->email)->send(new \App\Mail\GeneralNotification(
-                    'Agendamento Cancelado',
-                    "O agendamento do paciente {$patient->name} foi cancelado para " . Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i') . "\nMotivo: Rejeitado pelo paciente",
-                    url("/appointments/{$appointment->id}")
-                ));
+                try {
+                    $emailSubject = 'URGENTE: Agendamento Rejeitado pelo Paciente';
+                    $emailContent = "
+                        <h2>Agendamento Rejeitado</h2>
+                        <p><strong>ATENÇÃO:</strong> O agendamento que você criou foi rejeitado pelo paciente. Veja os detalhes abaixo:</p>
+                        
+                        <h3>Informações do Agendamento:</h3>
+                        <ul>
+                            <li><strong>ID do Agendamento:</strong> #{$appointment->id}</li>
+                            <li><strong>ID da Solicitação:</strong> #{$solicitation->id}</li>
+                            <li><strong>Paciente:</strong> {$patient->name}</li>
+                            <li><strong>Profissional:</strong> {$provider->name}</li>
+                            <li><strong>Procedimento:</strong> {$procedure->description}</li>
+                            <li><strong>Data/Hora:</strong> {$appointmentDate}</li>
+                            <li><strong>Status:</strong> Cancelado</li>
+                            <li><strong>Motivo:</strong> Rejeitado pelo paciente</li>
+                            <li><strong>Cancelado em:</strong> " . now()->format('d/m/Y H:i:s') . "</li>
+                        </ul>
+                        
+                        <h3>Ações Necessárias:</h3>
+                        <ul>
+                            <li><strong>Entrar em contato com o paciente</strong> para verificar se deseja reagendar</li>
+                            <li><strong>Liberar o horário</strong> para outros pacientes se não houver reagendamento</li>
+                            <li><strong>Verificar motivo</strong> da rejeição para melhorar o processo</li>
+                            <li><strong>Atualizar status</strong> da solicitação no sistema se necessário</li>
+                        </ul>
+                        
+                        <p><strong>Este agendamento requer atenção imediata para possível reagendamento ou liberação do horário.</strong></p>
+                    ";
+                    
+                    \Mail::to($creator->email)->send(new \App\Mail\GeneralNotification(
+                        $emailSubject,
+                        $emailContent,
+                        url("/appointments/{$appointment->id}")
+                    ));
+                    
+                    Log::info("Sent email notification to solicitation creator about rejection", [
+                        'creator_id' => $creator->id,
+                        'creator_email' => $creator->email,
+                        'appointment_id' => $appointment->id
+                    ]);
+                    
+                } catch (\Exception $emailError) {
+                    Log::error("Failed to send email to solicitation creator about rejection", [
+                        'creator_id' => $creator->id,
+                        'creator_email' => $creator->email,
+                        'appointment_id' => $appointment->id,
+                        'error' => $emailError->getMessage()
+                    ]);
+                }
             }
+            
+            Log::info("Successfully notified solicitation creator about appointment rejection", [
+                'creator_id' => $creator->id,
+                'appointment_id' => $appointment->id,
+                'solicitation_id' => $solicitation->id
+            ]);
             
         } catch (\Exception $e) {
             Log::error("Error notifying solicitation creator about rejection", [
