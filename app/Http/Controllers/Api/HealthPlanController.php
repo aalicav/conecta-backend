@@ -79,13 +79,13 @@ class HealthPlanController extends Controller
             $query = HealthPlan::with(['phones', 'approver', 'contract', 'user']);
             
             // If user has health plan role, only show their own plan
-            if (Auth::user()->hasRole('plan_admin') || Auth::user()->hasRole('plan_admin')) {
+            if (Auth::user()->hasRole('plan_admin') || Auth::user()->hasRole('plan_user')) {
                 $healthPlanId = Auth::user()->entity_id;
                 $query->where('id', $healthPlanId);
             }
             // If user is super_admin and health_plan_id filter is provided
-            elseif ($request->has('health_plan_id') && $request->health_plan_id) {
-                $query->where('id', $request->health_plan_id);
+            elseif ($request->input('health_plan_id')) {
+                $query->where('id', $request->input('health_plan_id'));
             }
             
             // Search by name or CNPJ if search parameter is provided
