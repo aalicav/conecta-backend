@@ -266,8 +266,8 @@ class DashboardController extends Controller
         $formattedAppointments = $appointments->map(function ($appointment) {
             return [
                 'id' => $appointment->id,
-                'patient' => $appointment->patient->name,
-                'patient_id' => $appointment->patient_id,
+                'patient' => $appointment->patient ? $appointment->patient->name : 'Paciente não encontrado',
+                'patient_id' => $appointment->patient ? $appointment->patient->id : null,
                 'time' => $appointment->scheduled_date ? $appointment->scheduled_date->format('H:i') : null,
                 'date' => $appointment->scheduled_date ? $appointment->scheduled_date->format('Y-m-d') : $appointment->created_at->format('Y-m-d'),
                 'type' => $appointment->procedure ? $appointment->procedure->name : 'Consulta',
@@ -314,8 +314,8 @@ class DashboardController extends Controller
         $formattedAppointments = $appointments->map(function ($appointment) {
             return [
                 'id' => $appointment->id,
-                'patient' => $appointment->patient->name,
-                'patient_id' => $appointment->patient_id,
+                'patient' => $appointment->patient ? $appointment->patient->name : 'Paciente não encontrado',
+                'patient_id' => $appointment->patient ? $appointment->patient->id : null,
                 'time' => $appointment->scheduled_date ? $appointment->scheduled_date->format('H:i') : null,
                 'date' => $appointment->scheduled_date ? $appointment->scheduled_date->format('Y-m-d') : $appointment->created_at->format('Y-m-d'),
                 'type' => $appointment->procedure ? $appointment->procedure->name : 'Consulta',

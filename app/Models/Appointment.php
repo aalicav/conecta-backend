@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Carbon\Carbon;
 
 class Appointment extends Model
@@ -178,7 +179,14 @@ class Appointment extends Model
      */
     public function patient()
     {
-        return $this->solicitation->patient;
+        return $this->hasOneThrough(
+            Patient::class,
+            Solicitation::class,
+            'id', // Foreign key on solicitations table
+            'id', // Foreign key on patients table
+            'solicitation_id', // Local key on appointments table
+            'patient_id' // Local key on solicitations table
+        );
     }
 
     /**
@@ -186,7 +194,14 @@ class Appointment extends Model
      */
     public function procedure()
     {
-        return $this->solicitation->procedure;
+        return $this->hasOneThrough(
+            TussProcedure::class,
+            Solicitation::class,
+            'id', // Foreign key on solicitations table
+            'id', // Foreign key on tuss_procedures table
+            'solicitation_id', // Local key on appointments table
+            'tuss_id' // Local key on solicitations table
+        );
     }
 
     /**
