@@ -137,6 +137,9 @@ class SolicitationController extends Controller
             if (!isset($validated['preferred_date_end'])) {
                 $validated['preferred_date_end'] = now()->addDays(14);
             }
+            if(!isset($validated['requested_by'])){
+                $validated['requested_by'] = Auth::user()->id;
+            }
 
             // Get health plan
             $healthPlan = HealthPlan::findOrFail($validated['health_plan_id']);
