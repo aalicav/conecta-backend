@@ -251,7 +251,7 @@ class SolicitationController extends Controller
 
             // Check if user has permission to view this solicitation
             if (Auth::user()->hasRole('plan_admin') && 
-                Auth::user()->health_plan_id != $solicitation->health_plan_id) {
+                Auth::user()->entity_id != $solicitation->health_plan_id) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Não autorizado a visualizar esta solicitação'
