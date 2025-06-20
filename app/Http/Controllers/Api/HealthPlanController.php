@@ -83,8 +83,8 @@ class HealthPlanController extends Controller
                 $healthPlanId = Auth::user()->entity_id;
                 $query->where('id', $healthPlanId);
             }
-            // If user is super_admin and health_plan_id filter is provided
-            if ($request->health_plan_id) {
+            // For other roles (super_admin, admin, etc.), allow filtering by health_plan_id if provided
+            elseif ($request->has('health_plan_id') && $request->health_plan_id) {
                 $query->where('id', $request->health_plan_id);
             }
             
