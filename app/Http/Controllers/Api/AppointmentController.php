@@ -622,10 +622,12 @@ class AppointmentController extends Controller
             // Validate request
             $validator = Validator::make($request->all(), [
                 'solicitation_id' => 'required|exists:solicitations,id',
-                'provider_type' => 'required|in:App\\Models\\Clinic,App\\Models\\Professional',
+                'provider_type' => 'required|string',
                 'provider_id' => 'required|integer',
-                'scheduled_date' => 'required|date|after:now',
+                'scheduled_date' => 'required|date|after_or_equal:today',
                 'notes' => 'nullable|string',
+                'address_id' => 'nullable|integer|exists:addresses,id',
+                'custom_address' => 'nullable|array',
             ]);
 
             if ($validator->fails()) {
@@ -633,6 +635,20 @@ class AppointmentController extends Controller
                     'success' => false,
                     'message' => 'Validation error',
                     'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Validate provider_type manually to handle escaped backslashes
+            $validProviderTypes = ['App\\Models\\Clinic', 'App\\Models\\Professional'];
+            $normalizedProviderType = str_replace('\\\\', '\\', $request->provider_type);
+            
+            if (!in_array($normalizedProviderType, $validProviderTypes)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => [
+                        'provider_type' => ['The selected provider type is invalid.']
+                    ]
                 ], 422);
             }
 
@@ -661,7 +677,7 @@ class AppointmentController extends Controller
             }
 
             // Verify that the provider exists
-            $providerClass = $request->provider_type;
+            $providerClass = $normalizedProviderType;
             $provider = $providerClass::findOrFail($request->provider_id);
 
             // For clinics, check if they offer the required procedure
@@ -695,13 +711,18 @@ class AppointmentController extends Controller
             // Create the appointment
             $appointment = new Appointment([
                 'solicitation_id' => $solicitation->id,
-                'provider_type' => $request->provider_type,
+                'provider_type' => $normalizedProviderType,
                 'provider_id' => $request->provider_id,
                 'scheduled_date' => $request->scheduled_date,
                 'notes' => $request->notes,
                 'status' => Appointment::STATUS_SCHEDULED,
                 'created_by' => Auth::id(),
             ]);
+
+            // Set address if provided
+            if ($request->address_id) {
+                $appointment->address_id = $request->address_id;
+            }
 
             $appointment->save();
 
@@ -717,7 +738,8 @@ class AppointmentController extends Controller
                 'solicitation.healthPlan',
                 'solicitation.patient',
                 'solicitation.tuss',
-                'provider'
+                'provider',
+                'address'
             ]);
 
             return response()->json([
@@ -911,11 +933,11 @@ class AppointmentController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'solicitation_id' => 'required|exists:solicitations,id',
-            'provider_type' => 'required|in:App\\Models\\Professional,App\\Models\\Clinic',
+            'provider_type' => 'required|string',
             'provider_id' => 'required|integer',
             'reason' => 'required|string|min:10',
             'price' => 'required|numeric|min:0',
-            'scheduled_date' => 'nullable|date_format:Y-m-d H:i:s|after:now',
+            'scheduled_date' => 'nullable|date_format:Y-m-d H:i:s|after_or_equal:today',
         ]);
         
         if ($validator->fails()) {
@@ -923,6 +945,20 @@ class AppointmentController extends Controller
                 'status' => 'error',
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Validate provider_type manually to handle escaped backslashes
+        $validProviderTypes = ['App\\Models\\Clinic', 'App\\Models\\Professional'];
+        $normalizedProviderType = str_replace('\\\\', '\\', $request->provider_type);
+        
+        if (!in_array($normalizedProviderType, $validProviderTypes)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => [
+                    'provider_type' => ['The selected provider type is invalid.']
+                ]
             ], 422);
         }
         
@@ -953,7 +989,7 @@ class AppointmentController extends Controller
             // Request the scheduling exception
             $exception = $this->exceptionService->requestException(
                 $solicitation,
-                $request->provider_type,
+                $normalizedProviderType,
                 $request->provider_id,
                 $request->reason,
                 $request->price,
@@ -1816,11 +1852,13 @@ class AppointmentController extends Controller
             // Validate request
             $validator = Validator::make($request->all(), [
                 'solicitation_id' => 'required|exists:solicitations,id',
-                'provider_type' => 'required|in:App\\Models\\Clinic,App\\Models\\Professional',
+                'provider_type' => 'required|string',
                 'provider_id' => 'required|integer',
-                'scheduled_date' => 'required|date|after:now',
+                'scheduled_date' => 'required|date|after_or_equal:today',
                 'notes' => 'nullable|string',
                 'location' => 'nullable|string',
+                'address_id' => 'nullable|integer|exists:addresses,id',
+                'custom_address' => 'nullable|array',
             ]);
 
             if ($validator->fails()) {
@@ -1828,6 +1866,20 @@ class AppointmentController extends Controller
                     'success' => false,
                     'message' => 'Validation error',
                     'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Validate provider_type manually to handle escaped backslashes
+            $validProviderTypes = ['App\\Models\\Clinic', 'App\\Models\\Professional'];
+            $normalizedProviderType = str_replace('\\\\', '\\', $request->provider_type);
+            
+            if (!in_array($normalizedProviderType, $validProviderTypes)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => [
+                        'provider_type' => ['The selected provider type is invalid.']
+                    ]
                 ], 422);
             }
 
@@ -1856,7 +1908,7 @@ class AppointmentController extends Controller
             }
 
             // Verify that the provider exists
-            $providerClass = $request->provider_type;
+            $providerClass = $normalizedProviderType;
             $provider = $providerClass::findOrFail($request->provider_id);
 
             // For clinics, check if they offer the required procedure
@@ -1892,13 +1944,18 @@ class AppointmentController extends Controller
             // Create the appointment
             $appointment = new Appointment([
                 'solicitation_id' => $solicitation->id,
-                'provider_type' => $request->provider_type,
+                'provider_type' => $normalizedProviderType,
                 'provider_id' => $request->provider_id,
                 'scheduled_date' => $request->scheduled_date,
                 'notes' => $request->notes,
                 'status' => Appointment::STATUS_SCHEDULED,
                 'created_by' => Auth::id(),
             ]);
+
+            // Set address if provided
+            if ($request->address_id) {
+                $appointment->address_id = $request->address_id;
+            }
 
             $appointment->save();
 
@@ -1916,7 +1973,8 @@ class AppointmentController extends Controller
                 'solicitation.healthPlan',
                 'solicitation.patient',
                 'solicitation.tuss',
-                'provider'
+                'provider',
+                'address'
             ]);
 
             return response()->json([
