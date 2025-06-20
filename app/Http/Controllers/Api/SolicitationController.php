@@ -118,6 +118,19 @@ class SolicitationController extends Controller
     }
 
     /**
+     * Check if a solicitation already has pending invites.
+     *
+     * @param int $solicitationId
+     * @return bool
+     */
+    protected function hasPendingInvites(int $solicitationId): bool
+    {
+        return \App\Models\SolicitationInvite::where('solicitation_id', $solicitationId)
+            ->where('status', 'pending')
+            ->exists();
+    }
+
+    /**
      * Store a newly created solicitation in storage.
      *
      * @param Request $request
@@ -575,12 +588,13 @@ class SolicitationController extends Controller
     }
 
     /**
-     * Force automatic scheduling of an existing solicitation.
+     * Force automatic scheduling of an existing solicitation, optionally cancelling pending invites.
      *
+     * @param Request $request
      * @param Solicitation $solicitation
      * @return JsonResponse
      */
-    public function forceSchedule(Solicitation $solicitation): JsonResponse
+    public function forceSchedule(Request $request, Solicitation $solicitation): JsonResponse
     {
         try {
             // Check if user has permission to schedule this solicitation
@@ -600,6 +614,34 @@ class SolicitationController extends Controller
                 ], 422);
             }
 
+            // Check if there are already pending invites for this solicitation
+            $existingInvites = \App\Models\SolicitationInvite::where('solicitation_id', $solicitation->id)
+                ->where('status', 'pending')
+                ->count();
+
+            $cancelPendingInvites = $request->boolean('cancel_pending_invites', false);
+
+            if ($existingInvites > 0) {
+                if (!$cancelPendingInvites) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "A solicitação já possui {$existingInvites} convites pendentes. Use o parâmetro 'cancel_pending_invites=true' para cancelá-los e reprocessar.",
+                        'existing_invites' => $existingInvites
+                    ], 422);
+                }
+
+                // Cancel existing pending invites
+                \App\Models\SolicitationInvite::where('solicitation_id', $solicitation->id)
+                    ->where('status', 'pending')
+                    ->update([
+                        'status' => 'cancelled',
+                        'responded_at' => now(),
+                        'response_notes' => 'Cancelado para reprocessamento da solicitação'
+                    ]);
+
+                Log::info("Cancelados {$existingInvites} convites pendentes para reprocessamento da solicitação #{$solicitation->id}");
+            }
+
             // Mark as processing and dispatch the job
             $solicitation->markAsProcessing();
             ProcessAutomaticScheduling::dispatch($solicitation);
@@ -607,6 +649,7 @@ class SolicitationController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Solicitação enviada para agendamento automático',
+                'cancelled_invites' => $cancelPendingInvites ? $existingInvites : 0,
                 'data' => new SolicitationResource($solicitation->fresh(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments']))
             ]);
         } catch (\Exception $e) {
@@ -633,9 +676,22 @@ class SolicitationController extends Controller
             $processed = 0;
             $scheduled = 0;
             $failed = 0;
+            $skipped = 0;
 
             foreach ($pendingSolicitations as $solicitation) {
                 try {
+                    // Check if there are already pending invites for this solicitation
+                    $existingInvites = \App\Models\SolicitationInvite::where('solicitation_id', $solicitation->id)
+                        ->where('status', 'pending')
+                        ->count();
+
+                    if ($existingInvites > 0) {
+                        Log::info("Solicitação #{$solicitation->id} já possui {$existingInvites} convites pendentes. Pulando processamento.");
+                        $skipped++;
+                        $processed++;
+                        continue;
+                    }
+
                     // Mark as processing
                     $solicitation->markAsProcessing();
 
@@ -659,8 +715,9 @@ class SolicitationController extends Controller
                         $solicitation->markAsScheduled(true);
                         $scheduled++;
                     } else {
-                        // If no provider found, mark as pending
-                        $solicitation->markAsPending();
+                        // If no provider found, dispatch job to send invites
+                        ProcessAutomaticScheduling::dispatch($solicitation);
+                        Log::info("Enviado job de agendamento automático para solicitação #{$solicitation->id}");
                         $failed++;
                     }
 
@@ -675,11 +732,12 @@ class SolicitationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => "Processamento concluído: {$scheduled} agendadas, {$failed} não encontraram profissionais",
+                'message' => "Processamento concluído: {$scheduled} agendadas, {$failed} enviadas para convites, {$skipped} puladas (já possuem convites)",
                 'data' => [
                     'total_processed' => $processed,
                     'scheduled' => $scheduled,
-                    'failed' => $failed
+                    'sent_for_invites' => $failed,
+                    'skipped' => $skipped
                 ]
             ]);
         } catch (\Exception $e) {
@@ -687,6 +745,109 @@ class SolicitationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Falha ao processar solicitações pendentes',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get pending invites for a solicitation.
+     *
+     * @param Solicitation $solicitation
+     * @return JsonResponse
+     */
+    public function pendingInvites(Solicitation $solicitation): JsonResponse
+    {
+        try {
+            // Check if user has permission to view this solicitation
+            if (Auth::user()->hasRole('plan_admin') && 
+                Auth::user()->health_plan_id != $solicitation->health_plan_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Não autorizado a visualizar esta solicitação'
+                ], 403);
+            }
+
+            $pendingInvites = \App\Models\SolicitationInvite::with(['provider'])
+                ->where('solicitation_id', $solicitation->id)
+                ->where('status', 'pending')
+                ->get();
+
+            $invitesSummary = $pendingInvites->map(function ($invite) {
+                $provider = $invite->provider;
+                return [
+                    'id' => $invite->id,
+                    'provider_type' => $invite->provider_type,
+                    'provider_id' => $invite->provider_id,
+                    'provider_name' => $provider ? $provider->name : 'Provider not found',
+                    'price' => $invite->price ?? null,
+                    'created_at' => $invite->created_at,
+                    'status' => $invite->status
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'solicitation_id' => $solicitation->id,
+                    'total_pending_invites' => $pendingInvites->count(),
+                    'invites' => $invitesSummary
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erro ao buscar convites pendentes: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao buscar convites pendentes',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Cancel all pending invites for a solicitation.
+     *
+     * @param Request $request
+     * @param Solicitation $solicitation
+     * @return JsonResponse
+     */
+    public function cancelPendingInvites(Request $request, Solicitation $solicitation): JsonResponse
+    {
+        try {
+            // Check if user has permission to modify this solicitation
+            if (Auth::user()->hasRole('plan_admin') && 
+                Auth::user()->health_plan_id != $solicitation->health_plan_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Não autorizado a modificar esta solicitação'
+                ], 403);
+            }
+
+            $reason = $request->input('reason', 'Cancelado via API');
+
+            $cancelledCount = \App\Models\SolicitationInvite::where('solicitation_id', $solicitation->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'cancelled',
+                    'responded_at' => now(),
+                    'response_notes' => $reason
+                ]);
+
+            Log::info("Cancelados {$cancelledCount} convites pendentes para solicitação #{$solicitation->id}");
+
+            return response()->json([
+                'success' => true,
+                'message' => "Cancelados {$cancelledCount} convites pendentes",
+                'data' => [
+                    'solicitation_id' => $solicitation->id,
+                    'cancelled_invites' => $cancelledCount
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erro ao cancelar convites pendentes: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao cancelar convites pendentes',
                 'error' => $e->getMessage()
             ], 500);
         }

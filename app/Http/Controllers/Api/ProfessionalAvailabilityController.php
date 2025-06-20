@@ -313,9 +313,34 @@ class ProfessionalAvailabilityController extends Controller
 
             ProfessionalAvailability::where('solicitation_id', $solicitation->id)
                 ->where('id', '!=', $availability->id)
+                ->where('status', 'pending')
                 ->update([
-                    'status' => 'rejected'
+                    'status' => 'rejected',
+                    'rejected_at' => now(),
+                    'rejection_reason' => 'Outra disponibilidade foi selecionada'
                 ]);
+
+            // Reject all pending invites for this solicitation
+            $rejectedInvites = \App\Models\SolicitationInvite::where('solicitation_id', $solicitation->id)
+                ->where('status', 'pending')
+                ->get();
+
+            \App\Models\SolicitationInvite::where('solicitation_id', $solicitation->id)
+                ->where('status', 'pending')
+                ->update([
+                    'status' => 'rejected',
+                    'responded_at' => now(),
+                    'response_notes' => 'Disponibilidade selecionada - convites automaticamente rejeitados'
+                ]);
+
+            Log::info("Availability selected and others rejected", [
+                'solicitation_id' => $solicitation->id,
+                'selected_availability_id' => $availability->id,
+                'rejected_availabilities_count' => $rejectedAvailabilities->count(),
+                'rejected_invites_count' => $rejectedInvites->count(),
+                'selected_provider_type' => $availability->professional_id ? 'professional' : 'clinic',
+                'selected_provider_id' => $availability->professional_id ?? $availability->clinic_id
+            ]);
 
             DB::commit();
 
@@ -324,9 +349,45 @@ class ProfessionalAvailabilityController extends Controller
                 // Notify the selected provider
                 $this->notificationService->notifyAvailabilitySelected($availability, $appointment);
                 
-                // Notify rejected providers
+                // Notify rejected providers (both availabilities and invites)
                 if ($rejectedAvailabilities->isNotEmpty()) {
                     $this->notificationService->notifyAvailabilitiesRejected($rejectedAvailabilities);
+                }
+
+                // Notify providers with rejected invites
+                if ($rejectedInvites->isNotEmpty()) {
+                    foreach ($rejectedInvites as $rejectedInvite) {
+                        try {
+                            // Get the provider user
+                            $providerClass = $rejectedInvite->provider_type;
+                            $provider = $providerClass::find($rejectedInvite->provider_id);
+                            
+                            if ($provider && $provider->user) {
+                                // Send generic notification about invite rejection
+                                $this->notificationService->sendToUser($provider->user->id, [
+                                    'title' => 'Convite de Agendamento Rejeitado',
+                                    'body' => "Seu convite para a solicitação #{$rejectedInvite->solicitation_id} foi rejeitado pois outra disponibilidade foi selecionada.",
+                                    'action_link' => "/solicitation-invites/{$rejectedInvite->id}",
+                                    'icon' => 'x-circle',
+                                    'type' => 'invite_rejected',
+                                    'priority' => 'normal'
+                                ]);
+                                
+                                Log::info("Sent invite rejection notification", [
+                                    'invite_id' => $rejectedInvite->id,
+                                    'provider_type' => $rejectedInvite->provider_type,
+                                    'provider_id' => $rejectedInvite->provider_id,
+                                    'user_id' => $provider->user->id
+                                ]);
+                            }
+                        } catch (\Exception $inviteNotificationError) {
+                            Log::error('Failed to send rejection notification for invite: ' . $inviteNotificationError->getMessage(), [
+                                'invite_id' => $rejectedInvite->id,
+                                'provider_type' => $rejectedInvite->provider_type,
+                                'provider_id' => $rejectedInvite->provider_id
+                            ]);
+                        }
+                    }
                 }
                 
                 // Notify about the new appointment (using existing appointment notification)
@@ -341,10 +402,14 @@ class ProfessionalAvailabilityController extends Controller
             }
 
             return response()->json([
+                'success' => true,
                 'message' => 'Disponibilidade selecionada com sucesso',
                 'data' => [
                     'availability' => $availability->load(['professional.addresses', 'clinic.addresses']),
-                    'appointment' => $appointment->load('address')
+                    'appointment' => $appointment->load('address'),
+                    'rejected_availabilities_count' => $rejectedAvailabilities->count(),
+                    'rejected_invites_count' => $rejectedInvites->count(),
+                    'solicitation_status' => $solicitation->status
                 ]
             ]);
 

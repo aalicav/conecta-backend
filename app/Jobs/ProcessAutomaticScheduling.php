@@ -67,11 +67,35 @@ class ProcessAutomaticScheduling implements ShouldQueue
         try {
             Log::info("Iniciando processamento automático para solicitação #{$this->solicitation->id}");
 
+            // Check if there are already pending invites for this solicitation
+            $existingInvites = SolicitationInvite::where('solicitation_id', $this->solicitation->id)
+                ->where('status', 'pending')
+                ->count();
+
+            if ($existingInvites > 0) {
+                Log::info("Solicitação #{$this->solicitation->id} já possui {$existingInvites} convites pendentes. Pulando processamento.");
+                return;
+            }
+
             $scheduler = new AppointmentScheduler();
             $providers = $scheduler->findBestProvider($this->solicitation);
 
             if (!empty($providers)) {
+                $createdInvites = 0;
+                
                 foreach ($providers as $provider) {
+                    // Double-check if invite already exists for this specific provider
+                    $existingProviderInvite = SolicitationInvite::where('solicitation_id', $this->solicitation->id)
+                        ->where('provider_type', $provider['provider_type'])
+                        ->where('provider_id', $provider['provider_id'])
+                        ->where('status', 'pending')
+                        ->exists();
+
+                    if ($existingProviderInvite) {
+                        Log::info("Convite já existe para provider {$provider['provider_type']}#{$provider['provider_id']} na solicitação #{$this->solicitation->id}");
+                        continue;
+                    }
+
                     // Create invite for each provider
                     $invite = SolicitationInvite::create([
                         'solicitation_id' => $this->solicitation->id,
@@ -90,9 +114,11 @@ class ProcessAutomaticScheduling implements ShouldQueue
                         $invite,
                         $providerUser
                     );
+                    
+                    $createdInvites++;
                 }
                 
-                Log::info("Convites criados com sucesso para solicitação #{$this->solicitation->id}");
+                Log::info("Criados {$createdInvites} novos convites para solicitação #{$this->solicitation->id}");
             } else {
                 // If no providers found, mark as pending
                 $this->solicitation->markAsPending();

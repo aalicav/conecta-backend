@@ -646,6 +646,27 @@ class AppointmentScheduler
                     );
                 }
 
+                // Check if invite already exists for this provider
+                $existingInvite = \App\Models\SolicitationInvite::where('solicitation_id', $solicitation->id)
+                    ->where('provider_type', $contract->contractable_type)
+                    ->where('provider_id', $contract->contractable_id)
+                    ->where('status', 'pending')
+                    ->exists();
+
+                if ($existingInvite) {
+                    Log::info("Convite já existe para provider {$contract->contractable_type}#{$contract->contractable_id} na solicitação #{$solicitation->id}");
+                    
+                    // Still add to providers array for response, but don't create new invite
+                    $providers[] = [
+                        'provider_type' => $contract->contractable_type,
+                        'provider_id' => $contract->contractable_id,
+                        'price' => $contract->price,
+                        'distance' => $distance,
+                        'existing_invite' => true
+                    ];
+                    continue;
+                }
+
                 // Create solicitation invite
                 $invite = new \App\Models\SolicitationInvite([
                     'solicitation_id' => $solicitation->id,
@@ -671,7 +692,8 @@ class AppointmentScheduler
                     'provider_type' => $contract->contractable_type,
                     'provider_id' => $contract->contractable_id,
                     'price' => $contract->price,
-                    'distance' => $distance
+                    'distance' => $distance,
+                    'existing_invite' => false
                 ];
             }
 
