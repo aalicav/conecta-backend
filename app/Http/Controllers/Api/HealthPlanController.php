@@ -84,7 +84,7 @@ class HealthPlanController extends Controller
                 $query->where('id', $healthPlanId);
             }
             // If user is super_admin and health_plan_id filter is provided
-            elseif ($request->input('health_plan_id')) {
+            if ($request->input('health_plan_id')) {
                 $query->where('id', $request->input('health_plan_id'));
             }
             
