@@ -134,6 +134,9 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::delete('/{id}', [SolicitationController::class, 'destroy']);
         Route::get('/{id}/availabilities', [ProfessionalAvailabilityController::class, 'getSolicitationAvailabilities']);
         Route::get('/{id}/available-professionals', [SolicitationController::class, 'getAvailableProfessionals']);
+        Route::post('/{id}/cancel', [SolicitationController::class, 'cancel']);
+        Route::post('/{id}/complete', [SolicitationController::class, 'complete']);
+        Route::post('/{id}/force-schedule', [SolicitationController::class, 'forceSchedule']);
     });
     Route::patch('/solicitations/{solicitation}/cancel', [SolicitationController::class, 'cancel']);
     Route::post('/solicitations/{solicitation}/reschedule', [SolicitationController::class, 'reschedule']);

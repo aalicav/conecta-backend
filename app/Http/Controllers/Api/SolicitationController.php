@@ -229,12 +229,26 @@ class SolicitationController extends Controller
     /**
      * Display the specified solicitation.
      *
-     * @param Solicitation $solicitation
-     * @return SolicitationResource|JsonResponse
+     * @param int $id
+     * @return JsonResponse
      */
-    public function show(Solicitation $solicitation)
+    public function show($id): JsonResponse
     {
         try {
+            // Find the solicitation with all necessary relationships
+            $solicitation = Solicitation::with([
+                'healthPlan',
+                'patient',
+                'tuss',
+                'requestedBy',
+                'appointments' => function ($query) {
+                    $query->with(['provider', 'address']);
+                },
+                'invites' => function ($query) {
+                    $query->with(['provider']);
+                }
+            ])->findOrFail($id);
+
             // Check if user has permission to view this solicitation
             if (Auth::user()->hasRole('plan_admin') && 
                 Auth::user()->health_plan_id != $solicitation->health_plan_id) {
@@ -244,15 +258,21 @@ class SolicitationController extends Controller
                 ], 403);
             }
 
-            // Load relationships
-            $solicitation->load(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments.provider']);
-
-            return new SolicitationResource($solicitation);
+            // Return the resource with success wrapper
+            return response()->json([
+                'success' => true,
+                'data' => $solicitation
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Solicitação não encontrada'
+            ], 404);
         } catch (\Exception $e) {
             Log::error('Error retrieving solicitation: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to retrieve solicitation',
+                'message' => 'Erro ao buscar solicitação',
                 'error' => $e->getMessage()
             ], 500);
         }
