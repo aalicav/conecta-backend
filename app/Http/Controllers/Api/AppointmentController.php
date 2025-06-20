@@ -1769,7 +1769,7 @@ class AppointmentController extends Controller
         $validator = Validator::make($request->all(), [
             'solicitation_id' => 'required|exists:solicitations,id',
             'professional_id' => 'required|exists:professionals,id',
-            'available_date' => 'required|date|after:now',
+            'available_date' => 'required|date|after_or_equal:today',
             'available_time' => 'required|date_format:H:i',
             'notes' => 'nullable|string',
         ]);
