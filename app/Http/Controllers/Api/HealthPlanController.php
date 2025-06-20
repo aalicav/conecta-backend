@@ -1662,7 +1662,7 @@ class HealthPlanController extends Controller
             $recentSolicitations = DB::table('solicitations as s')
                 ->join('health_plans as hp', 's.health_plan_id', '=', 'hp.id')
                 ->join('patients as p', 's.patient_id', '=', 'p.id')
-                ->join('tuss_procedures as tp', 's.procedure_id', '=', 'tp.id')
+                ->join('tuss_procedures as tp', 's.tuss_id', '=', 'tp.id')
                 ->select(
                     's.id',
                     'hp.name as health_plan_name',
