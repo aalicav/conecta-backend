@@ -72,8 +72,8 @@ class HealthPlanDashboardController extends Controller
                 $totalProcedures = DB::table('appointments as a')
                     ->join('solicitations as s', 'a.solicitation_id', '=', 's.id')
                     ->where('s.health_plan_id', $healthPlanId)
-                    ->distinct('s.procedure_id')
-                    ->count('s.procedure_id');
+                    ->distinct('s.tuss_id')
+                    ->count('s.tuss_id');
                 
                 $totalSolicitations = DB::table('solicitations')
                     ->where('health_plan_id', $healthPlanId)
@@ -130,8 +130,8 @@ class HealthPlanDashboardController extends Controller
                 $totalProcedures = DB::table('appointments as a')
                     ->join('solicitations as s', 'a.solicitation_id', '=', 's.id')
                     ->whereNotNull('s.health_plan_id')
-                    ->distinct('s.procedure_id')
-                    ->count('s.procedure_id');
+                    ->distinct('s.tuss_id')
+                    ->count('s.tuss_id');
                 
                 $totalSolicitations = DB::table('solicitations')
                     ->whereNotNull('health_plan_id')
@@ -199,7 +199,7 @@ class HealthPlanDashboardController extends Controller
             // Build query to get procedure statistics from appointments
             $query = DB::table('appointments as a')
                 ->join('solicitations as s', 'a.solicitation_id', '=', 's.id')
-                ->join('tuss_procedures as tp', 's.procedure_id', '=', 'tp.id')
+                ->join('tuss_procedures as tp', 's.tuss_id', '=', 'tp.id')
                 ->whereNotNull('s.health_plan_id');
                 
             // Filter by health plan ID for health plan users
@@ -356,7 +356,7 @@ class HealthPlanDashboardController extends Controller
                     'health_plans.name',
                     'health_plans.status',
                     'health_plans.created_at',
-                    DB::raw('(SELECT COUNT(DISTINCT s.procedure_id) FROM solicitations s WHERE s.health_plan_id = health_plans.id) as procedures_count')
+                    DB::raw('(SELECT COUNT(DISTINCT s.tuss_id) FROM solicitations s WHERE s.health_plan_id = health_plans.id) as procedures_count')
                 );
                 
             // Filter by health plan ID for health plan users
@@ -399,7 +399,7 @@ class HealthPlanDashboardController extends Controller
             $query = DB::table('solicitations as s')
                 ->join('health_plans as hp', 's.health_plan_id', '=', 'hp.id')
                 ->join('patients as p', 's.patient_id', '=', 'p.id')
-                ->join('tuss_procedures as tp', 's.procedure_id', '=', 'tp.id')
+                ->join('tuss_procedures as tp', 's.tuss_id', '=', 'tp.id')
                 ->select(
                     's.id',
                     'hp.name as health_plan_name',
