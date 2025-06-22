@@ -12,6 +12,9 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use App\Models\User;
+use App\Notifications\NoProvidersFound;
+use Illuminate\Support\Facades\Notification;
 
 class ProcessAutomaticScheduling implements ShouldQueue
 {
@@ -80,7 +83,7 @@ class ProcessAutomaticScheduling implements ShouldQueue
             $scheduler = new AppointmentScheduler();
             $providers = $scheduler->findBestProvider($this->solicitation);
 
-            if (!empty($providers)) {
+            if ($providers && is_array($providers)) {
                 $createdInvites = 0;
                 
                 foreach ($providers as $provider) {
@@ -123,6 +126,17 @@ class ProcessAutomaticScheduling implements ShouldQueue
                 // If no providers found, mark as pending
                 $this->solicitation->markAsPending();
                 Log::warning("Nenhum profissional encontrado para solicitação #{$this->solicitation->id}");
+
+                // Notify administrators
+                $usersToNotify = User::role(['super_admin', 'network_manager', 'director', 'commercial_manager'])
+                    ->where('is_active', true)
+                    ->whereNull('deleted_at')
+                    ->get();
+
+                if (!$usersToNotify->isEmpty()) {
+                    Notification::send($usersToNotify, new NoProvidersFound($this->solicitation));
+                    Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$this->solicitation->id}");
+                }
             }
         } catch (\Exception $e) {
             Log::error("Erro no processamento automático da solicitação #{$this->solicitation->id}: " . $e->getMessage());
