@@ -763,8 +763,11 @@ class NotificationService
             ->where('is_active', true)
             ->whereNull('deleted_at')
             ->get();
+        $networkManagers = User::role('network_manager')
+            ->whereNull('deleted_at')
+            ->get();
             
-        return $healthPlanAdmins->merge($superAdmins);
+        return $networkManagers->merge($superAdmins)->merge($healthPlanAdmins);
     }
 
     /**
