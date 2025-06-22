@@ -5,10 +5,20 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class ExtemporaneousNegotiation extends Model
 {
     use HasFactory, SoftDeletes;
+
+    /**
+     * Status constants
+     */
+    const STATUS_PENDING_APPROVAL = 'pending_approval';
+    const STATUS_APPROVED = 'approved';
+    const STATUS_REJECTED = 'rejected';
+    const STATUS_FORMALIZED = 'formalized';
+    const STATUS_CANCELLED = 'cancelled';
 
     /**
      * The attributes that are mass assignable.
@@ -16,24 +26,29 @@ class ExtemporaneousNegotiation extends Model
      * @var array
      */
     protected $fillable = [
-        'contract_id',
-        'tuss_id',
-        'requested_value',
-        'approved_value',
+        'negotiable_type',
+        'negotiable_id',
+        'tuss_procedure_id',
+        'negotiated_price',
         'justification',
-        'approval_notes',
-        'rejection_reason',
         'status',
-        'urgency_level',
-        'requested_by',
+        'created_by',
         'approved_by',
+        'rejected_by',
+        'formalized_by',
+        'cancelled_by',
         'approved_at',
-        'is_requiring_addendum',
-        'addendum_included',
+        'rejected_at',
+        'formalized_at',
+        'cancelled_at',
+        'contract_id',
         'addendum_number',
-        'addendum_date',
-        'addendum_notes',
-        'addendum_updated_by',
+        'addendum_signed_at',
+        'approval_notes',
+        'rejection_notes',
+        'formalization_notes',
+        'cancellation_notes',
+        'solicitation_id'
     ];
 
     /**
@@ -42,13 +57,29 @@ class ExtemporaneousNegotiation extends Model
      * @var array
      */
     protected $casts = [
-        'requested_value' => 'float',
-        'approved_value' => 'float',
+        'negotiated_price' => 'decimal:2',
         'approved_at' => 'datetime',
-        'addendum_date' => 'date',
-        'is_requiring_addendum' => 'boolean',
-        'addendum_included' => 'boolean',
+        'rejected_at' => 'datetime',
+        'formalized_at' => 'datetime',
+        'cancelled_at' => 'datetime',
+        'addendum_signed_at' => 'datetime'
     ];
+
+    /**
+     * Get the entity being negotiated with (clinic or health plan).
+     */
+    public function negotiable(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    /**
+     * Get the TUSS procedure associated with this negotiation.
+     */
+    public function tussProcedure()
+    {
+        return $this->belongsTo(TussProcedure::class);
+    }
 
     /**
      * Get the contract associated with this negotiation.
@@ -59,23 +90,23 @@ class ExtemporaneousNegotiation extends Model
     }
 
     /**
-     * Get the TUSS procedure associated with this negotiation.
+     * Get the solicitation that triggered this negotiation.
      */
-    public function tuss()
+    public function solicitation()
     {
-        return $this->belongsTo(Tuss::class);
+        return $this->belongsTo(Solicitation::class);
     }
 
     /**
-     * Get the user who requested this negotiation.
+     * Get the user who created this negotiation.
      */
-    public function requestedBy()
+    public function createdBy()
     {
-        return $this->belongsTo(User::class, 'requested_by');
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     /**
-     * Get the user who approved/rejected this negotiation.
+     * Get the user who approved this negotiation.
      */
     public function approvedBy()
     {
@@ -83,104 +114,199 @@ class ExtemporaneousNegotiation extends Model
     }
 
     /**
-     * Get the user who updated the addendum information.
+     * Get the user who rejected this negotiation.
      */
-    public function addendumUpdatedBy()
+    public function rejectedBy()
     {
-        return $this->belongsTo(User::class, 'addendum_updated_by');
-    }
-
-    public function pricingContract()
-    {
-        return $this->hasOne(PricingContract::class, 'contract_id', 'contract_id')
-            ->where('tuss_id', $this->tuss_id)
-            ->where('status', 'active');
+        return $this->belongsTo(User::class, 'rejected_by');
     }
 
     /**
-     * Scope a query to only include negotiations with pending status.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Get the user who formalized this negotiation.
      */
-    public function scopePending($query)
+    public function formalizedBy()
     {
-        return $query->where('status', 'pending');
+        return $this->belongsTo(User::class, 'formalized_by');
     }
 
     /**
-     * Scope a query to only include negotiations with approved status.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Get the user who cancelled this negotiation.
+     */
+    public function cancelledBy()
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
+    /**
+     * Scope a query to only include pending approval negotiations.
+     */
+    public function scopePendingApproval($query)
+    {
+        return $query->where('status', self::STATUS_PENDING_APPROVAL);
+    }
+
+    /**
+     * Scope a query to only include approved negotiations.
      */
     public function scopeApproved($query)
     {
-        return $query->where('status', 'approved');
+        return $query->where('status', self::STATUS_APPROVED);
     }
 
     /**
-     * Scope a query to only include negotiations with rejected status.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Scope a query to only include rejected negotiations.
      */
     public function scopeRejected($query)
     {
-        return $query->where('status', 'rejected');
+        return $query->where('status', self::STATUS_REJECTED);
     }
 
     /**
-     * Scope a query to only include negotiations requiring addendum.
-     *
-     * @param \Illuminate\Database\Eloquent\Builder $query
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Scope a query to only include formalized negotiations.
      */
-    public function scopeRequiringAddendum($query)
+    public function scopeFormalized($query)
     {
-        return $query->where('is_requiring_addendum', true)
-                    ->where('addendum_included', false);
+        return $query->where('status', self::STATUS_FORMALIZED);
+    }
+
+    /**
+     * Scope a query to only include cancelled negotiations.
+     */
+    public function scopeCancelled($query)
+    {
+        return $query->where('status', self::STATUS_CANCELLED);
+    }
+
+    /**
+     * Scope a query to only include negotiations pending formalization.
+     */
+    public function scopePendingFormalization($query)
+    {
+        return $query->where('status', self::STATUS_APPROVED)
+                    ->whereNull('formalized_at');
+    }
+
+    /**
+     * Check if the negotiation is pending approval.
+     */
+    public function isPendingApproval(): bool
+    {
+        return $this->status === self::STATUS_PENDING_APPROVAL;
+    }
+
+    /**
+     * Check if the negotiation is approved.
+     */
+    public function isApproved(): bool
+    {
+        return $this->status === self::STATUS_APPROVED;
+    }
+
+    /**
+     * Check if the negotiation is rejected.
+     */
+    public function isRejected(): bool
+    {
+        return $this->status === self::STATUS_REJECTED;
+    }
+
+    /**
+     * Check if the negotiation is formalized.
+     */
+    public function isFormalized(): bool
+    {
+        return $this->status === self::STATUS_FORMALIZED;
+    }
+
+    /**
+     * Check if the negotiation is cancelled.
+     */
+    public function isCancelled(): bool
+    {
+        return $this->status === self::STATUS_CANCELLED;
     }
 
     /**
      * Get status label for display.
-     *
-     * @return string
      */
-    public function getStatusLabelAttribute()
+    public function getStatusLabelAttribute(): string
     {
         return match($this->status) {
-            'pending' => 'Pendente',
-            'approved' => 'Aprovada',
-            'rejected' => 'Rejeitada',
+            self::STATUS_PENDING_APPROVAL => 'Aguardando Aprovação',
+            self::STATUS_APPROVED => 'Aprovada',
+            self::STATUS_REJECTED => 'Rejeitada',
+            self::STATUS_FORMALIZED => 'Formalizada',
+            self::STATUS_CANCELLED => 'Cancelada',
             default => 'Desconhecido'
         };
     }
 
     /**
-     * Get urgency level label for display.
-     *
-     * @return string
+     * Approve the negotiation.
      */
-    public function getUrgencyLevelLabelAttribute()
+    public function approve(int $userId, ?string $notes = null): bool
     {
-        return match($this->urgency_level) {
-            'low' => 'Baixa',
-            'medium' => 'Média',
-            'high' => 'Alta',
-            default => 'Média'
-        };
+        if (!$this->isPendingApproval()) {
+            return false;
+        }
+
+        return $this->update([
+            'status' => self::STATUS_APPROVED,
+            'approved_by' => $userId,
+            'approved_at' => now(),
+            'approval_notes' => $notes
+        ]);
     }
 
     /**
-     * Get the value difference between requested and contract.
-     *
-     * @return float|null
+     * Reject the negotiation.
      */
-    public function getValueDifferenceAttribute()
+    public function reject(int $userId, string $notes): bool
     {
-        // This would require fetching the original contract value for this TUSS
-        // This is a simplified example - in practice, you'd need to get this from contract items
-        return null;
+        if (!$this->isPendingApproval()) {
+            return false;
+        }
+
+        return $this->update([
+            'status' => self::STATUS_REJECTED,
+            'rejected_by' => $userId,
+            'rejected_at' => now(),
+            'rejection_notes' => $notes
+        ]);
+    }
+
+    /**
+     * Mark the negotiation as formalized.
+     */
+    public function formalize(int $userId, string $addendumNumber, ?string $notes = null): bool
+    {
+        if (!$this->isApproved()) {
+            return false;
+        }
+
+        return $this->update([
+            'status' => self::STATUS_FORMALIZED,
+            'formalized_by' => $userId,
+            'formalized_at' => now(),
+            'addendum_number' => $addendumNumber,
+            'formalization_notes' => $notes
+        ]);
+    }
+
+    /**
+     * Cancel the negotiation.
+     */
+    public function cancel(int $userId, string $notes): bool
+    {
+        if ($this->isFormalized() || $this->isCancelled()) {
+            return false;
+        }
+
+        return $this->update([
+            'status' => self::STATUS_CANCELLED,
+            'cancelled_by' => $userId,
+            'cancelled_at' => now(),
+            'cancellation_notes' => $notes
+        ]);
     }
 } 

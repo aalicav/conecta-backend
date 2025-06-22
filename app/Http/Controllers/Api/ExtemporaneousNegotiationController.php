@@ -8,8 +8,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Models\ExtemporaneousNegotiation;
-use App\Models\Contract;
-use App\Models\Tuss;
+use App\Models\Clinic;
+use App\Models\HealthPlan;
+use App\Models\TussProcedure;
 use App\Services\NotificationService;
 use Carbon\Carbon;
 
@@ -32,7 +33,12 @@ class ExtemporaneousNegotiationController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = ExtemporaneousNegotiation::with(['contract', 'tuss', 'requestedBy', 'approvedBy']);
+            $query = ExtemporaneousNegotiation::with([
+                'negotiable', 
+                'tussProcedure', 
+                'createdBy', 
+                'approvedBy'
+            ]);
             
             // Filter by status
             if ($request->filled('status')) {
@@ -47,29 +53,39 @@ class ExtemporaneousNegotiationController extends Controller
                 $query->whereDate('created_at', '<=', $request->input('to_date'));
             }
             
+            // Filter by entity type
+            if ($request->filled('entity_type')) {
+                $query->where('negotiable_type', $request->input('entity_type'));
+            }
+            
+            // Filter by entity id
+            if ($request->filled('entity_id')) {
+                $query->where('negotiable_id', $request->input('entity_id'));
+            }
+            
             // Filter by search term
             if ($request->filled('search')) {
                 $search = $request->input('search');
                 $query->where(function($q) use ($search) {
-                    $q->whereHas('contract', function($q2) use ($search) {
-                        $q2->where('contract_number', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('tuss', function($q2) use ($search) {
+                    $q->whereHas('tussProcedure', function($q2) use ($search) {
                         $q2->where('code', 'like', "%{$search}%")
                            ->orWhere('description', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('negotiable', function($q2) use ($search) {
+                        $q2->where('name', 'like', "%{$search}%")
+                           ->orWhere('cnpj', 'like', "%{$search}%");
                     });
                 });
             }
             
             // Role-based access
             $user = Auth::user();
-            
             if (!$user->hasRole(['admin', 'super_admin', 'director'])) {
                 if ($user->hasRole('commercial')) {
                     // Commercial team can see all
                 } else {
                     // Others can only see their own requests
-                    $query->where('requested_by', $user->id);
+                    $query->where('created_by', $user->id);
                 }
             }
             
@@ -106,69 +122,46 @@ class ExtemporaneousNegotiationController extends Controller
     {
         try {
             $validated = $request->validate([
-                'contract_id' => 'required|exists:contracts,id',
-                'tuss_id' => 'required|exists:tuss_procedures,id',
-                'requested_value' => 'required|numeric|min:0',
+                'negotiable_type' => 'required|in:App\\Models\\Clinic,App\\Models\\HealthPlan',
+                'negotiable_id' => 'required|integer',
+                'tuss_procedure_id' => 'required|exists:tuss_procedures,id',
+                'negotiated_price' => 'required|numeric|min:0',
                 'justification' => 'required|string|min:10',
-                'urgency_level' => 'nullable|in:low,medium,high',
+                'solicitation_id' => 'nullable|exists:solicitations,id'
             ]);
             
-            // Check if contract exists and is active
-            $contract = Contract::findOrFail($validated['contract_id']);
-            
-            if ($contract->status !== 'active' && $contract->status !== 'approved') {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Extemporaneous negotiations can only be created for active contracts'
-                ], 422);
-            }
+            // Check if entity exists
+            $entityClass = $validated['negotiable_type'];
+            $entity = $entityClass::findOrFail($validated['negotiable_id']);
             
             DB::beginTransaction();
             
             $negotiation = ExtemporaneousNegotiation::create([
-                'contract_id' => $validated['contract_id'],
-                'tuss_id' => $validated['tuss_id'],
-                'requested_value' => $validated['requested_value'],
+                'negotiable_type' => $validated['negotiable_type'],
+                'negotiable_id' => $validated['negotiable_id'],
+                'tuss_procedure_id' => $validated['tuss_procedure_id'],
+                'negotiated_price' => $validated['negotiated_price'],
                 'justification' => $validated['justification'],
-                'urgency_level' => $validated['urgency_level'] ?? 'medium',
-                'status' => 'pending',
-                'requested_by' => Auth::id(),
+                'status' => ExtemporaneousNegotiation::STATUS_PENDING_APPROVAL,
+                'created_by' => Auth::id(),
+                'solicitation_id' => $validated['solicitation_id'] ?? null
             ]);
             
-            // Send notification to the commercial team (specifically Adla as mentioned in requirements)
-            $this->notificationService->sendToRole('commercial', [
+            // Send notification to network managers
+            $this->notificationService->sendToRole('network_manager', [
                 'title' => 'Nova negociação extemporânea',
-                'body' => "Foi solicitada uma negociação extemporânea para o contrato #{$contract->contract_number}.",
-                'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
+                'body' => "Foi solicitada uma negociação extemporânea para {$entity->name}.",
+                'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
                 'icon' => 'alert-circle',
                 'priority' => 'high'
             ]);
-            
-            // Find specific user "Adla" if they exist (as mentioned in requirements)
-            $adla = \App\Models\User::where('name', 'like', '%adla%')
-                ->orWhere('email', 'like', '%adla%')
-                ->first();
-                
-            if ($adla) {
-                $this->notificationService->sendToUser($adla->id, [
-                    'title' => 'URGENTE: Nova negociação extemporânea',
-                    'body' => "Adla, foi solicitada uma negociação extemporânea para o contrato #{$contract->contract_number} que requer seu acompanhamento imediato.",
-                    'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
-                    'icon' => 'alert-circle',
-                    'priority' => 'high'
-                ]);
-            }
-            
-            // Set a flag to indicate this negotiation requires an addendum
-            $negotiation->is_requiring_addendum = true;
-            $negotiation->save();
             
             DB::commit();
             
             return response()->json([
                 'status' => 'success',
                 'message' => 'Extemporaneous negotiation created successfully',
-                'data' => $negotiation->load(['contract', 'tuss', 'requestedBy'])
+                'data' => $negotiation->load(['negotiable', 'tussProcedure', 'createdBy'])
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -197,7 +190,14 @@ class ExtemporaneousNegotiationController extends Controller
     {
         try {
             $negotiation = ExtemporaneousNegotiation::with([
-                'contract', 'tuss', 'requestedBy', 'approvedBy'
+                'negotiable', 
+                'tussProcedure', 
+                'createdBy', 
+                'approvedBy',
+                'rejectedBy',
+                'formalizedBy',
+                'cancelledBy',
+                'solicitation'
             ])->findOrFail($id);
             
             return response()->json([
@@ -229,145 +229,42 @@ class ExtemporaneousNegotiationController extends Controller
     public function approve(Request $request, $id)
     {
         try {
-            // Only commercial team or director can approve
             $user = Auth::user();
-            if (!$user->hasRole(['commercial', 'director', 'admin', 'super_admin'])) {
+            if (!$user->hasRole(['network_manager', 'admin', 'super_admin'])) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'You do not have permission to approve extemporaneous negotiations'
                 ], 403);
             }
             
-            $negotiation = ExtemporaneousNegotiation::with(['contract', 'tuss'])->findOrFail($id);
-            
-            if ($negotiation->status !== 'pending') {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Only pending negotiations can be approved'
-                ], 422);
-            }
+            $negotiation = ExtemporaneousNegotiation::findOrFail($id);
             
             $validated = $request->validate([
-                'approved_value' => 'required|numeric|min:0',
-                'approval_notes' => 'nullable|string',
-                'is_requiring_addendum' => 'boolean',
+                'approval_notes' => 'nullable|string'
             ]);
             
             DB::beginTransaction();
             
-            // Atualizar a negociação
-            $negotiation->update([
-                'approved_value' => $validated['approved_value'],
-                'approval_notes' => $validated['approval_notes'] ?? null,
-                'status' => 'approved',
-                'approved_by' => Auth::id(),
-                'approved_at' => now(),
-                'is_requiring_addendum' => $validated['is_requiring_addendum'] ?? true,
-            ]);
-
-            // Criar ou atualizar o pricing contract
-            $pricingContract = \App\Models\PricingContract::updateOrCreate(
-                [
-                    'contract_id' => $negotiation->contract_id,
-                    'tuss_id' => $negotiation->tuss_id,
-                    'status' => 'active'
-                ],
-                [
-                    'price' => $validated['approved_value'],
-                    'notes' => "Valor aprovado via negociação extemporânea #{$negotiation->id}",
-                    'start_date' => now(),
-                    'end_date' => null,
-                    'created_by' => Auth::id(),
-                    'updated_by' => Auth::id(),
-                ]
-            );
-
-            // Registrar histórico do pricing contract
-            $pricingContract->history()->create([
-                'price' => $validated['approved_value'],
-                'notes' => "Valor atualizado via negociação extemporânea #{$negotiation->id}",
-                'created_by' => Auth::id(),
-                'created_at' => now()
-            ]);
+            if (!$negotiation->approve($user->id, $validated['approval_notes'] ?? null)) {
+                throw new \Exception('Failed to approve negotiation');
+            }
             
-            // Send notification to the requester
-            $this->notificationService->sendToUser($negotiation->requested_by, [
+            // Notify the requester
+            $this->notificationService->sendToUser($negotiation->created_by, [
                 'title' => 'Negociação extemporânea aprovada',
                 'body' => "Sua solicitação de negociação extemporânea foi aprovada.",
-                'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
+                'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
                 'icon' => 'check-circle',
-                'channels' => ['system', 'whatsapp', 'email'],
                 'priority' => 'high'
             ]);
             
-            // Obter detalhes do contrato e procedimento para mensagens mais informativas
-            $contractNumber = $negotiation->contract->contract_number;
-            $tussCode = $negotiation->tuss->code;
-            $tussDescription = $negotiation->tuss->description;
-            $approvedValue = number_format($validated['approved_value'], 2, ',', '.');
-            
-            // Notificar Adla na equipe comercial (responsável pelos aditivos)
-            $commercialAdla = \App\Models\User::where('name', 'like', '%Adla%')
-                ->whereHas('roles', function($q) {
-                    $q->where('name', 'commercial');
-                })
-                ->first();
-                
-            if ($commercialAdla) {
-                $this->notificationService->sendToUser($commercialAdla->id, [
-                    'title' => 'Ação Necessária: Aditivo Contratual',
-                    'body' => "Uma negociação extemporânea para o procedimento {$tussCode} - {$tussDescription} foi aprovada no contrato #{$contractNumber} no valor de R$ {$approvedValue}. É necessário formalizar via aditivo contratual.",
-                    'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
-                    'icon' => 'file-plus',
-                    'priority' => 'high',
-                    'channels' => ['system', 'whatsapp', 'email'],
-                ]);
-            } else {
-                // Se Adla não for encontrada, envia para toda a equipe comercial
-                $this->notificationService->sendToRole('commercial', [
-                    'title' => 'Ação Necessária: Aditivo Contratual',
-                    'body' => "Uma negociação extemporânea para o procedimento {$tussCode} - {$tussDescription} foi aprovada no contrato #{$contractNumber} no valor de R$ {$approvedValue}. É necessário formalizar via aditivo contratual.",
-                    'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
-                    'icon' => 'file-plus',
-                    'priority' => 'high',
-                    'channels' => ['system', 'whatsapp', 'email'],
-                ]);
-            }
-            
-            // Se requer aditivo, notificar equipe jurídica
-            if ($negotiation->is_requiring_addendum) {
-                $this->notificationService->sendToRole('legal', [
-                    'title' => 'Novo aditivo contratual necessário',
-                    'body' => "Foi aprovada uma negociação extemporânea para o contrato #{$contractNumber} que requer aditivo contratual. Procedimento: {$tussCode} - {$tussDescription}. Valor aprovado: R$ {$approvedValue}.",
-                    'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
-                    'icon' => 'file-plus',
-                    'priority' => 'high',
-                    'channels' => ['system', 'email'],
-                ]);
-            }
-            
-            // Criar registro de verificação para dupla checagem dos valores
-            $verification = new \App\Models\ValueVerification([
-                'entity_type' => 'extemporaneous_negotiation',
-                'entity_id' => $negotiation->id,
-                'value_type' => 'approved_value',
-                'original_value' => $validated['approved_value'],
-                'verified_value' => null,
-                'status' => 'pending',
-                'requester_id' => Auth::id(),
-                'verifier_id' => null,
-                'notes' => "Valor aprovado para procedimento {$tussCode} no contrato #{$contractNumber}",
-            ]);
-            $verification->save();
-            
-            // Notificar diretores (Dr. Ítalo) para confirmar o valor (dupla checagem)
-            $this->notificationService->sendToRole('director', [
-                'title' => 'Confirmação de valor necessária',
-                'body' => "Um valor de R$ {$approvedValue} foi aprovado para o procedimento {$tussCode} - {$tussDescription} no contrato #{$contractNumber}. Por favor, confirme este valor.",
-                'action_link' => "/value-verifications/{$verification->id}",
-                'icon' => 'alert-triangle',
-                'priority' => 'high',
-                'channels' => ['system', 'whatsapp', 'email'],
+            // Notify commercial team for formalization
+            $this->notificationService->sendToRole('commercial', [
+                'title' => 'Negociação extemporânea requer formalização',
+                'body' => "Uma negociação extemporânea foi aprovada e requer formalização via aditivo.",
+                'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
+                'icon' => 'file-text',
+                'priority' => 'high'
             ]);
             
             DB::commit();
@@ -375,7 +272,12 @@ class ExtemporaneousNegotiationController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Extemporaneous negotiation approved successfully',
-                'data' => $negotiation->fresh(['contract', 'tuss', 'requestedBy', 'approvedBy'])
+                'data' => $negotiation->fresh([
+                    'negotiable', 
+                    'tussProcedure', 
+                    'createdBy', 
+                    'approvedBy'
+                ])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -405,9 +307,8 @@ class ExtemporaneousNegotiationController extends Controller
     public function reject(Request $request, $id)
     {
         try {
-            // Only commercial team or director can reject
             $user = Auth::user();
-            if (!$user->hasRole(['commercial', 'director', 'admin', 'super_admin'])) {
+            if (!$user->hasRole(['network_manager', 'admin', 'super_admin'])) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'You do not have permission to reject extemporaneous negotiations'
@@ -416,32 +317,23 @@ class ExtemporaneousNegotiationController extends Controller
             
             $negotiation = ExtemporaneousNegotiation::findOrFail($id);
             
-            if ($negotiation->status !== 'pending') {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Only pending negotiations can be rejected'
-                ], 422);
-            }
-            
             $validated = $request->validate([
-                'rejection_reason' => 'required|string|min:5',
+                'rejection_notes' => 'required|string|min:10'
             ]);
             
             DB::beginTransaction();
             
-            $negotiation->update([
-                'status' => 'rejected',
-                'approved_by' => Auth::id(),
-                'approved_at' => now(),
-                'rejection_reason' => $validated['rejection_reason'],
-            ]);
+            if (!$negotiation->reject($user->id, $validated['rejection_notes'])) {
+                throw new \Exception('Failed to reject negotiation');
+            }
             
-            // Send notification to the requester
-            $this->notificationService->sendToUser($negotiation->requested_by, [
+            // Notify the requester
+            $this->notificationService->sendToUser($negotiation->created_by, [
                 'title' => 'Negociação extemporânea rejeitada',
                 'body' => "Sua solicitação de negociação extemporânea foi rejeitada.",
-                'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
+                'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
                 'icon' => 'x-circle',
+                'priority' => 'high'
             ]);
             
             DB::commit();
@@ -449,7 +341,12 @@ class ExtemporaneousNegotiationController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Extemporaneous negotiation rejected successfully',
-                'data' => $negotiation->fresh(['contract', 'tuss', 'requestedBy', 'approvedBy'])
+                'data' => $negotiation->fresh([
+                    'negotiable', 
+                    'tussProcedure', 
+                    'createdBy', 
+                    'rejectedBy'
+                ])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -470,75 +367,65 @@ class ExtemporaneousNegotiationController extends Controller
     }
 
     /**
-     * Mark an extemporaneous negotiation as included in an addendum.
+     * Formalize an extemporaneous negotiation.
      *
      * @param Request $request
      * @param int $id
      * @return \Illuminate\Http\JsonResponse
      */
-    public function markAsAddendumIncluded(Request $request, $id)
+    public function formalize(Request $request, $id)
     {
         try {
-            // Only legal or commercial team can mark as included in addendum
             $user = Auth::user();
-            if (!$user->hasRole(['legal', 'commercial', 'admin', 'super_admin'])) {
+            if (!$user->hasRole(['commercial', 'admin', 'super_admin'])) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'You do not have permission to update addendum status'
+                    'message' => 'You do not have permission to formalize extemporaneous negotiations'
                 ], 403);
             }
             
             $negotiation = ExtemporaneousNegotiation::findOrFail($id);
             
-            if ($negotiation->status !== 'approved') {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Only approved negotiations can be marked as included in addendum'
-                ], 422);
-            }
-            
-            if (!$negotiation->is_requiring_addendum) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'This negotiation does not require an addendum'
-                ], 422);
-            }
-            
             $validated = $request->validate([
                 'addendum_number' => 'required|string',
-                'addendum_date' => 'required|date',
-                'notes' => 'nullable|string',
+                'formalization_notes' => 'nullable|string'
             ]);
             
             DB::beginTransaction();
             
-            $negotiation->update([
-                'addendum_included' => true,
-                'addendum_number' => $validated['addendum_number'],
-                'addendum_date' => $validated['addendum_date'],
-                'addendum_notes' => $validated['notes'] ?? null,
-                'addendum_updated_by' => Auth::id(),
-            ]);
+            if (!$negotiation->formalize(
+                $user->id, 
+                $validated['addendum_number'],
+                $validated['formalization_notes'] ?? null
+            )) {
+                throw new \Exception('Failed to formalize negotiation');
+            }
             
-            // Send notification to the commercial team
-            $this->notificationService->sendToRole('commercial', [
-                'title' => 'Aditivo contratual registrado',
-                'body' => "A negociação extemporânea foi incluída no aditivo contratual {$validated['addendum_number']}.",
-                'action_link' => "/extemporaneous-negotiations/{$negotiation->id}",
+            // Notify the requester
+            $this->notificationService->sendToUser($negotiation->created_by, [
+                'title' => 'Negociação extemporânea formalizada',
+                'body' => "Sua negociação extemporânea foi formalizada via aditivo.",
+                'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
                 'icon' => 'check-circle',
+                'priority' => 'normal'
             ]);
             
             DB::commit();
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Negotiation marked as included in addendum successfully',
-                'data' => $negotiation->fresh(['contract', 'tuss', 'requestedBy', 'approvedBy'])
+                'message' => 'Extemporaneous negotiation formalized successfully',
+                'data' => $negotiation->fresh([
+                    'negotiable', 
+                    'tussProcedure', 
+                    'createdBy', 
+                    'formalizedBy'
+                ])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             
-            Log::error('Failed to mark negotiation as included in addendum: ' . $e->getMessage(), [
+            Log::error('Failed to formalize extemporaneous negotiation: ' . $e->getMessage(), [
                 'exception' => $e,
                 'user_id' => Auth::id(),
                 'negotiation_id' => $id,
@@ -547,44 +434,78 @@ class ExtemporaneousNegotiationController extends Controller
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to mark negotiation as included in addendum',
+                'message' => 'Failed to formalize extemporaneous negotiation',
                 'error' => $e->getMessage()
-            ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
+            ], 500);
         }
     }
 
     /**
-     * List extemporaneous negotiations for a specific contract.
+     * Cancel an extemporaneous negotiation.
      *
-     * @param int $contractId
+     * @param Request $request
+     * @param int $id
      * @return \Illuminate\Http\JsonResponse
      */
-    public function listByContract($contractId)
+    public function cancel(Request $request, $id)
     {
         try {
-            $contract = Contract::findOrFail($contractId);
+            $user = Auth::user();
+            if (!$user->hasRole(['network_manager', 'commercial', 'admin', 'super_admin'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have permission to cancel extemporaneous negotiations'
+                ], 403);
+            }
             
-            $negotiations = ExtemporaneousNegotiation::with(['tuss', 'requestedBy', 'approvedBy'])
-                ->where('contract_id', $contractId)
-                ->orderBy('created_at', 'desc')
-                ->get();
+            $negotiation = ExtemporaneousNegotiation::findOrFail($id);
+            
+            $validated = $request->validate([
+                'cancellation_notes' => 'required|string|min:10'
+            ]);
+            
+            DB::beginTransaction();
+            
+            if (!$negotiation->cancel($user->id, $validated['cancellation_notes'])) {
+                throw new \Exception('Failed to cancel negotiation');
+            }
+            
+            // Notify relevant parties
+            $this->notificationService->sendToUser($negotiation->created_by, [
+                'title' => 'Negociação extemporânea cancelada',
+                'body' => "A negociação extemporânea foi cancelada.",
+                'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
+                'icon' => 'x-circle',
+                'priority' => 'normal'
+            ]);
+            
+            DB::commit();
             
             return response()->json([
                 'status' => 'success',
-                'data' => $negotiations
+                'message' => 'Extemporaneous negotiation cancelled successfully',
+                'data' => $negotiation->fresh([
+                    'negotiable', 
+                    'tussProcedure', 
+                    'createdBy', 
+                    'cancelledBy'
+                ])
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to list negotiations by contract: ' . $e->getMessage(), [
+            DB::rollBack();
+            
+            Log::error('Failed to cancel extemporaneous negotiation: ' . $e->getMessage(), [
                 'exception' => $e,
                 'user_id' => Auth::id(),
-                'contract_id' => $contractId
+                'negotiation_id' => $id,
+                'request_data' => $request->all()
             ]);
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to list negotiations by contract',
+                'message' => 'Failed to cancel extemporaneous negotiation',
                 'error' => $e->getMessage()
-            ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
+            ], 500);
         }
     }
 } 

@@ -166,6 +166,14 @@ class Clinic extends Model
     }
 
     /**
+     * Get the extemporaneous negotiations for this clinic.
+     */
+    public function extemporaneousNegotiations()
+    {
+        return $this->morphMany(ExtemporaneousNegotiation::class, 'negotiable');
+    }
+
+    /**
      * Scope a query to only include pending clinics.
      */
     public function scopePending($query)

@@ -374,4 +374,12 @@ class HealthPlan extends Model implements Auditable
     {
         return $this->hasMany(Appointment::class);
     }
+
+    /**
+     * Get the extemporaneous negotiations for this health plan.
+     */
+    public function extemporaneousNegotiations()
+    {
+        return $this->morphMany(ExtemporaneousNegotiation::class, 'negotiable');
+    }
 } 
