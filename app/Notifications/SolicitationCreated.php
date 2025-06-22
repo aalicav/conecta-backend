@@ -8,6 +8,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use App\Notifications\Messages\WhatsAppMessage;
 
 class SolicitationCreated extends Notification implements ShouldQueue
 {
@@ -78,18 +79,25 @@ class SolicitationCreated extends Notification implements ShouldQueue
      * Get the WhatsApp representation of the notification.
      *
      * @param  mixed  $notifiable
-     * @return string|array
+     * @return \App\Notifications\Messages\WhatsAppMessage
      */
     public function toWhatsApp($notifiable)
     {
         $patient = $this->solicitation->patient;
         $tuss = $this->solicitation->tuss;
         
-        return "Nova solicitação criada para o paciente {$patient->name}.\n" .
-               "Procedimento: {$tuss->code} - {$tuss->description}\n" .
-               "Prioridade: " . ucfirst($this->solicitation->priority) . "\n" .
-               "Período: " . $this->solicitation->preferred_date_start->format('d/m/Y') . 
-               " até " . $this->solicitation->preferred_date_end->format('d/m/Y');
+        return (new WhatsAppMessage)
+            ->template('solicitation_created')
+            ->parameters([
+                'patient_name' => $patient->name,
+                'tuss_code' => $tuss->code,
+                'tuss_description' => $tuss->description,
+                'priority' => ucfirst($this->solicitation->priority),
+                'start_date' => $this->solicitation->preferred_date_start->format('d/m/Y'),
+                'end_date' => $this->solicitation->preferred_date_end->format('d/m/Y'),
+                'solicitation_url' => url('/solicitations/' . $this->solicitation->id)
+            ])
+            ->to($notifiable->whatsapp);
     }
 
     /**
