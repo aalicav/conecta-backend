@@ -115,9 +115,9 @@ return new class extends Migration
             }
             
             // Add indexes if they don't exist
-            $table->index(['negotiable_type', 'negotiable_id', 'tuss_procedure_id']);
-            $table->index('status');
-            $table->index('created_at');
+            $table->index(['negotiable_type', 'negotiable_id', 'tuss_procedure_id'], 'extemp_negotiables_idx');
+            $table->index('status', 'extemp_status_idx');
+            $table->index('created_at', 'extemp_created_idx');
         });
     }
 
@@ -128,9 +128,9 @@ return new class extends Migration
     {
         Schema::table('extemporaneous_negotiations', function (Blueprint $table) {
             // Drop indexes
-            $table->dropIndex(['negotiable_type', 'negotiable_id', 'tuss_procedure_id']);
-            $table->dropIndex(['status']);
-            $table->dropIndex(['created_at']);
+            $table->dropIndex('extemp_negotiables_idx');
+            $table->dropIndex('extemp_status_idx');
+            $table->dropIndex('extemp_created_idx');
             
             // Drop foreign keys
             $table->dropForeign(['tuss_procedure_id']);
