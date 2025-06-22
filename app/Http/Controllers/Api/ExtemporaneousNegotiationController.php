@@ -13,6 +13,7 @@ use App\Models\HealthPlan;
 use App\Models\TussProcedure;
 use App\Services\NotificationService;
 use Carbon\Carbon;
+use App\Models\Solicitation;
 
 class ExtemporaneousNegotiationController extends Controller
 {
@@ -122,9 +123,8 @@ class ExtemporaneousNegotiationController extends Controller
     {
         try {
             $validated = $request->validate([
-                'negotiable_type' => 'required|in:App\\Models\\Clinic,App\\Models\\HealthPlan',
+                'negotiable_type' => 'required|in:App\\Models\\Clinic,App\\Models\\Professional',
                 'negotiable_id' => 'required|integer',
-                'tuss_procedure_id' => 'required|exists:tuss_procedures,id',
                 'negotiated_price' => 'required|numeric|min:0',
                 'justification' => 'required|string|min:10',
                 'solicitation_id' => 'nullable|exists:solicitations,id'
@@ -133,13 +133,14 @@ class ExtemporaneousNegotiationController extends Controller
             // Check if entity exists
             $entityClass = $validated['negotiable_type'];
             $entity = $entityClass::findOrFail($validated['negotiable_id']);
+            $solicitation = Solicitation::findOrFail($validated['solicitation_id']);
             
             DB::beginTransaction();
             
             $negotiation = ExtemporaneousNegotiation::create([
                 'negotiable_type' => $validated['negotiable_type'],
                 'negotiable_id' => $validated['negotiable_id'],
-                'tuss_procedure_id' => $validated['tuss_procedure_id'],
+                'tuss_procedure_id' => $solicitation->tuss_procedure_id,
                 'negotiated_price' => $validated['negotiated_price'],
                 'justification' => $validated['justification'],
                 'status' => ExtemporaneousNegotiation::STATUS_PENDING_APPROVAL,
