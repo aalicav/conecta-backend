@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ExtemporaneousNegotiation extends Model
 {
@@ -33,22 +34,15 @@ class ExtemporaneousNegotiation extends Model
         'justification',
         'status',
         'created_by',
+        'solicitation_id',
         'approved_by',
-        'rejected_by',
-        'formalized_by',
-        'cancelled_by',
         'approved_at',
+        'rejected_by',
         'rejected_at',
+        'formalized_by',
         'formalized_at',
-        'cancelled_at',
-        'contract_id',
-        'addendum_number',
-        'addendum_signed_at',
-        'approval_notes',
-        'rejection_notes',
-        'formalization_notes',
-        'cancellation_notes',
-        'solicitation_id'
+        'cancelled_by',
+        'cancelled_at'
     ];
 
     /**
@@ -61,8 +55,7 @@ class ExtemporaneousNegotiation extends Model
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
         'formalized_at' => 'datetime',
-        'cancelled_at' => 'datetime',
-        'addendum_signed_at' => 'datetime'
+        'cancelled_at' => 'datetime'
     ];
 
     /**
@@ -76,23 +69,15 @@ class ExtemporaneousNegotiation extends Model
     /**
      * Get the TUSS procedure associated with this negotiation.
      */
-    public function tussProcedure()
+    public function tussProcedure(): BelongsTo
     {
-        return $this->belongsTo(TussProcedure::class);
-    }
-
-    /**
-     * Get the contract associated with this negotiation.
-     */
-    public function contract()
-    {
-        return $this->belongsTo(Contract::class);
+        return $this->belongsTo(TussProcedure::class, 'tuss_procedure_id');
     }
 
     /**
      * Get the solicitation that triggered this negotiation.
      */
-    public function solicitation()
+    public function solicitation(): BelongsTo
     {
         return $this->belongsTo(Solicitation::class);
     }
@@ -100,7 +85,7 @@ class ExtemporaneousNegotiation extends Model
     /**
      * Get the user who created this negotiation.
      */
-    public function createdBy()
+    public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
@@ -108,7 +93,7 @@ class ExtemporaneousNegotiation extends Model
     /**
      * Get the user who approved this negotiation.
      */
-    public function approvedBy()
+    public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
@@ -116,7 +101,7 @@ class ExtemporaneousNegotiation extends Model
     /**
      * Get the user who rejected this negotiation.
      */
-    public function rejectedBy()
+    public function rejectedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'rejected_by');
     }
@@ -124,7 +109,7 @@ class ExtemporaneousNegotiation extends Model
     /**
      * Get the user who formalized this negotiation.
      */
-    public function formalizedBy()
+    public function formalizedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'formalized_by');
     }
@@ -132,7 +117,7 @@ class ExtemporaneousNegotiation extends Model
     /**
      * Get the user who cancelled this negotiation.
      */
-    public function cancelledBy()
+    public function cancelledBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cancelled_by');
     }

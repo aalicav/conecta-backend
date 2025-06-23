@@ -123,35 +123,44 @@ class ExtemporaneousNegotiationController extends Controller
     {
         try {
             $validated = $request->validate([
-                'negotiable_type' => 'required|in:App\\Models\\Clinic,App\\Models\\Professional',
-                'negotiable_id' => 'required|integer',
+                'negotiable_type' => 'required|string|in:App\\Models\\Clinic,App\\Models\\Professional',
+                'negotiable_id' => 'required|integer|exists:' . strtolower(class_basename($request->negotiable_type)) . 's,id',
+                'solicitation_id' => 'required|exists:solicitations,id',
                 'negotiated_price' => 'required|numeric|min:0',
-                'justification' => 'required|string|min:10',
-                'solicitation_id' => 'nullable|exists:solicitations,id'
+                'justification' => 'required|string|min:10'
+            ], [
+                'negotiable_type.required' => 'O tipo da entidade é obrigatório',
+                'negotiable_type.in' => 'O tipo da entidade deve ser Clinic ou Professional',
+                'negotiable_id.required' => 'O ID da entidade é obrigatório',
+                'negotiable_id.exists' => 'A entidade selecionada não existe',
+                'solicitation_id.required' => 'A solicitação é obrigatória',
+                'solicitation_id.exists' => 'A solicitação selecionada não existe',
+                'negotiated_price.required' => 'O valor negociado é obrigatório',
+                'negotiated_price.min' => 'O valor negociado deve ser maior que zero',
+                'justification.required' => 'A justificativa é obrigatória',
+                'justification.min' => 'A justificativa deve ter pelo menos 10 caracteres'
             ]);
             
-            // Check if entity exists
-            $entityClass = $validated['negotiable_type'];
-            $entity = $entityClass::findOrFail($validated['negotiable_id']);
-            $solicitation = Solicitation::findOrFail($validated['solicitation_id']);
+            // Get the solicitation to get the TUSS procedure
+            $solicitation = Solicitation::with('tuss')->findOrFail($validated['solicitation_id']);
             
             DB::beginTransaction();
             
             $negotiation = ExtemporaneousNegotiation::create([
                 'negotiable_type' => $validated['negotiable_type'],
                 'negotiable_id' => $validated['negotiable_id'],
-                'tuss_procedure_id' => $solicitation->tuss_procedure_id,
+                'tuss_procedure_id' => $solicitation->tuss->id,
                 'negotiated_price' => $validated['negotiated_price'],
                 'justification' => $validated['justification'],
-                'status' => ExtemporaneousNegotiation::STATUS_PENDING_APPROVAL,
+                'status' => 'pending',
                 'created_by' => Auth::id(),
-                'solicitation_id' => $validated['solicitation_id'] ?? null
+                'solicitation_id' => $validated['solicitation_id']
             ]);
             
             // Send notification to network managers
             $this->notificationService->sendToRole('network_manager', [
                 'title' => 'Nova negociação extemporânea',
-                'body' => "Foi solicitada uma negociação extemporânea para {$entity->name}.",
+                'body' => "Foi solicitada uma negociação extemporânea para " . $negotiation->negotiable->name,
                 'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
                 'icon' => 'alert-circle',
                 'priority' => 'high'
@@ -161,13 +170,19 @@ class ExtemporaneousNegotiationController extends Controller
             
             return response()->json([
                 'status' => 'success',
-                'message' => 'Extemporaneous negotiation created successfully',
-                'data' => $negotiation->load(['negotiable', 'tussProcedure', 'createdBy'])
+                'message' => 'Negociação extemporânea criada com sucesso',
+                'data' => $negotiation->load(['negotiable', 'tussProcedure', 'createdBy', 'solicitation'])
             ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Erro de validação',
+                'errors' => $e->errors()
+            ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             
-            Log::error('Failed to create extemporaneous negotiation: ' . $e->getMessage(), [
+            Log::error('Erro ao criar negociação extemporânea: ' . $e->getMessage(), [
                 'exception' => $e,
                 'user_id' => Auth::id(),
                 'request_data' => $request->all()
@@ -175,7 +190,7 @@ class ExtemporaneousNegotiationController extends Controller
             
             return response()->json([
                 'status' => 'error',
-                'message' => 'Failed to create extemporaneous negotiation',
+                'message' => 'Erro ao criar negociação extemporânea',
                 'error' => $e->getMessage()
             ], 500);
         }
