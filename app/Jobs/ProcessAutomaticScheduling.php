@@ -86,7 +86,7 @@ class ProcessAutomaticScheduling implements ShouldQueue
             // Log the providers data for debugging
             Log::info("Providers found for solicitation #{$this->solicitation->id}:", ['providers' => $providers]);
 
-            if (!empty($providers['providers'])) {
+            if (!empty($providers)) {
                 $createdInvites = 0;
                 
                 foreach ($providers as $provider) {
