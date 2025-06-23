@@ -289,7 +289,7 @@ class ExtemporaneousNegotiationController extends Controller
                     'status' => ExtemporaneousNegotiation::STATUS_APPROVED,
                     'approved_by' => $user->id,
                     'approved_at' => now(),
-                    'approval_notes' => $validated['approval_notes'],
+                    'approval_notes' => $validated['approval_notes'] ?? null,
                     'approved_value' => $negotiation->requested_value,
                     'negotiated_price' => $negotiation->requested_value
                 ]);
