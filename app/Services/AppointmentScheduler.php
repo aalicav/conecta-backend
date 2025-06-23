@@ -704,8 +704,6 @@ class AppointmentScheduler
             if (empty($providers)) {
                 Log::warning("No providers found for solicitation #{$solicitation->id}");
                 return [
-                    'success' => false,
-                    'message' => 'No suitable providers found'
                 ];
             }
 
@@ -738,8 +736,6 @@ class AppointmentScheduler
         } catch (\Exception $e) {
             Log::error("Error finding providers for solicitation #{$solicitation->id}: " . $e->getMessage());
             return [
-                'success' => false,
-                'message' => 'Error finding providers: ' . $e->getMessage()
             ];
         }
     }
