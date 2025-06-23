@@ -619,6 +619,14 @@ class AppointmentScheduler
                 'total_contracts' => $pricingContracts->count()
             ]);
 
+            if ($pricingContracts->isEmpty()) {
+                Log::warning("No active pricing contracts found for TUSS #{$tussId}");
+                return [
+                    'success' => false,
+                    'message' => 'No active pricing contracts found'
+                ];
+            }
+
             foreach ($pricingContracts as $contract) {
                 // Get the contractable (clinic or professional)
                 $contractable = $contract->contractable;
@@ -646,63 +654,16 @@ class AppointmentScheduler
                     );
                 }
 
-                // Check if invite already exists for this provider
-                $existingInvite = \App\Models\SolicitationInvite::where('solicitation_id', $solicitation->id)
-                    ->where('provider_type', $contract->contractable_type)
-                    ->where('provider_id', $contract->contractable_id)
-                    ->where('status', 'pending')
-                    ->exists();
-
-                if ($existingInvite) {
-                    Log::info("Convite já existe para provider {$contract->contractable_type}#{$contract->contractable_id} na solicitação #{$solicitation->id}");
-                    
-                    // Still add to providers array for response, but don't create new invite
-                    $providers[] = [
-                        'provider_type' => $contract->contractable_type,
-                        'provider_id' => $contract->contractable_id,
-                        'price' => $contract->price,
-                        'distance' => $distance,
-                        'existing_invite' => true
-                    ];
-                    continue;
-                }
-
-                // Create solicitation invite
-                $invite = new \App\Models\SolicitationInvite([
-                    'solicitation_id' => $solicitation->id,
-                    'provider_type' => $contract->contractable_type,
-                    'provider_id' => $contract->contractable_id,
-                    'price' => $contract->price,
-                    'status' => 'pending'
-                ]);
-                $invite->save();
-
-                // Send notification using NotificationService
-                $this->notificationService->sendSolicitationInviteNotification($solicitation, $invite, $contractable->user);
-
-                Log::info("Created invite for provider", [
-                    'invite_id' => $invite->id,
-                    'provider_type' => $contract->contractable_type,
-                    'provider_id' => $contract->contractable_id,
-                    'price' => $contract->price,
-                    'distance' => $distance
-                ]);
-
                 $providers[] = [
                     'provider_type' => $contract->contractable_type,
                     'provider_id' => $contract->contractable_id,
                     'price' => $contract->price,
-                    'distance' => $distance,
-                    'existing_invite' => false
+                    'distance' => $distance
                 ];
             }
 
-            Log::info("Total providers found", [
-                'count' => count($providers)
-            ]);
-
             if (empty($providers)) {
-                Log::warning("No providers found for solicitation #{$solicitation->id}");
+                Log::warning("No suitable providers found for solicitation #{$solicitation->id}");
                 return [
                     'success' => false,
                     'message' => 'No suitable providers found'
