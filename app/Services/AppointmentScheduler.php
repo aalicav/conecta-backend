@@ -612,6 +612,16 @@ class AppointmentScheduler
     {
         try {
             $tussId = $solicitation->tuss_id;
+            
+            if (!$tussId) {
+                Log::error("Invalid TUSS ID for solicitation #{$solicitation->id}");
+                return [
+                    'success' => false,
+                    'message' => 'Invalid TUSS ID',
+                    'data' => []
+                ];
+            }
+
             $providers = [];
 
             Log::info("Starting provider search for solicitation #{$solicitation->id}", [
@@ -619,13 +629,22 @@ class AppointmentScheduler
             ]);
 
             // Get all active pricing contracts for this TUSS
-            $pricingContracts = PricingContract::where('tuss_procedure_id', $tussId)
-                ->where('is_active', true)
-                ->where(function ($q) {
-                    $q->whereNull('end_date')
-                      ->orWhere('end_date', '>=', now());
-                })
-                ->get();
+            try {
+                $pricingContracts = PricingContract::where('tuss_procedure_id', $tussId)
+                    ->where('is_active', true)
+                    ->where(function ($q) {
+                        $q->whereNull('end_date')
+                          ->orWhere('end_date', '>=', now());
+                    })
+                    ->get();
+            } catch (\Exception $e) {
+                Log::error("Error querying pricing contracts: " . $e->getMessage());
+                return [
+                    'success' => false,
+                    'message' => 'Error querying pricing contracts: ' . $e->getMessage(),
+                    'data' => []
+                ];
+            }
 
             Log::info("Found pricing contracts", [
                 'tuss_id' => $tussId,
@@ -660,12 +679,17 @@ class AppointmentScheduler
                 $distance = null;
                 if ($solicitation->preferred_location_lat && $solicitation->preferred_location_lng && 
                     $contractable->latitude && $contractable->longitude) {
-                    $distance = $this->calculateDistance(
-                        $solicitation->preferred_location_lat,
-                        $solicitation->preferred_location_lng,
-                        $contractable->latitude,
-                        $contractable->longitude
-                    );
+                    try {
+                        $distance = $this->calculateDistance(
+                            $solicitation->preferred_location_lat,
+                            $solicitation->preferred_location_lng,
+                            $contractable->latitude,
+                            $contractable->longitude
+                        );
+                    } catch (\Exception $e) {
+                        Log::warning("Error calculating distance: " . $e->getMessage());
+                        // Continue without distance if calculation fails
+                    }
                 }
 
                 $providers[] = [
@@ -713,7 +737,9 @@ class AppointmentScheduler
             ];
 
         } catch (\Exception $e) {
-            Log::error("Error finding providers for solicitation #{$solicitation->id}: " . $e->getMessage());
+            Log::error("Error finding providers for solicitation #{$solicitation->id}: " . $e->getMessage(), [
+                'exception' => $e
+            ]);
             return [
                 'success' => false,
                 'message' => 'Error finding providers: ' . $e->getMessage(),
@@ -797,14 +823,59 @@ class AppointmentScheduler
     protected function findMostAffordableProvider(Solicitation $solicitation, TussProcedure $procedure): array
     {
         try {
-            // Get all clinics and professionals that offer this procedure
-            $clinicProviders = $this->getClinicsForProcedure($solicitation, $procedure);
-            $professionalProviders = $this->getProfessionalsForProcedure($solicitation, $procedure);
+            if (!$procedure || !$procedure->id) {
+                Log::error("Invalid procedure for solicitation #{$solicitation->id}");
+                return [
+                    'success' => false,
+                    'message' => 'Invalid procedure',
+                    'data' => []
+                ];
+            }
 
-            // Combine all providers
-            $allProviders = array_merge($clinicProviders, $professionalProviders);
+            // Get all clinics and professionals that offer this procedure
+            try {
+                $clinicProviders = $this->getClinicsForProcedure($solicitation, $procedure);
+                $professionalProviders = $this->getProfessionalsForProcedure($solicitation, $procedure);
+            } catch (\Exception $e) {
+                Log::error("Error querying providers: " . $e->getMessage());
+                return [
+                    'success' => false,
+                    'message' => 'Error querying providers: ' . $e->getMessage(),
+                    'data' => []
+                ];
+            }
+
+            // Format providers with price information
+            $allProviders = [];
+
+            // Process clinic providers
+            foreach ($clinicProviders as $clinic) {
+                $price = $this->getPriceFromPricingContract($clinic->pricingContracts, $procedure->id);
+                if ($price !== null) {
+                    $allProviders[] = [
+                        'provider_type' => get_class($clinic),
+                        'provider_id' => $clinic->id,
+                        'price' => $price,
+                        'distance' => null
+                    ];
+                }
+            }
+
+            // Process professional providers
+            foreach ($professionalProviders as $professional) {
+                $price = $this->getPriceFromPricingContract($professional->pricingContracts, $procedure->id);
+                if ($price !== null) {
+                    $allProviders[] = [
+                        'provider_type' => get_class($professional),
+                        'provider_id' => $professional->id,
+                        'price' => $price,
+                        'distance' => null
+                    ];
+                }
+            }
 
             if (empty($allProviders)) {
+                Log::warning("No providers found for solicitation #{$solicitation->id}");
                 return [
                     'success' => false,
                     'message' => 'No providers found for this procedure',
@@ -817,14 +888,16 @@ class AppointmentScheduler
                 return $a['price'] <=> $b['price'];
             });
 
-            // Return the most affordable provider
             return [
                 'success' => true,
                 'message' => 'Provider found successfully',
                 'data' => [$allProviders[0]] // Wrap in array to match findBestProvider structure
             ];
+
         } catch (\Exception $e) {
-            Log::error("Error finding most affordable provider for solicitation #{$solicitation->id}: " . $e->getMessage());
+            Log::error("Error finding most affordable provider for solicitation #{$solicitation->id}: " . $e->getMessage(), [
+                'exception' => $e
+            ]);
             return [
                 'success' => false,
                 'message' => 'Error finding providers: ' . $e->getMessage(),

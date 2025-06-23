@@ -46,7 +46,7 @@ class SolicitationCreated extends Notification implements ShouldQueue
             $channels[] = 'mail';
         }
         
-        if ($notifiable->notificationChannelEnabled('whatsapp')) {
+        if ($notifiable->notificationChannelEnabled('whatsapp') && $notifiable->whatsapp) {
             $channels[] = WhatsAppChannel::class;
         }
         
