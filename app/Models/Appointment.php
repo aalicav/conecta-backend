@@ -82,10 +82,12 @@ class Appointment extends Model
 
             if ($settingPayOnSchedule) {
                 Payment::create([
-                    'appointment_id' => $appointment->id,
-                    'original_amount' => $appointment->price,
-                    'final_amount' => $appointment->price,
+                    'payable_type' => Appointment::class,
+                    'payable_id' => $appointment->id,
+                    'amount' => 0, // Will be calculated when needed
+                    'total_amount' => 0, // Will be calculated when needed
                     'status' => 'pending',
+                    'created_by' => $appointment->created_by,
                 ]);
             }
         });
@@ -99,10 +101,12 @@ class Appointment extends Model
                 // Create a payment if one doesn't exist yet
                 if (!$appointment->payment) {
                     Payment::create([
-                        'appointment_id' => $appointment->id,
-                        'original_amount' => $appointment->price,
-                        'final_amount' => $appointment->price,
+                        'payable_type' => Appointment::class,
+                        'payable_id' => $appointment->id,
+                        'amount' => 0, // Will be calculated when needed
+                        'total_amount' => 0, // Will be calculated when needed
                         'status' => 'pending',
+                        'created_by' => $appointment->created_by,
                     ]);
                 }
             }
@@ -180,7 +184,7 @@ class Appointment extends Model
      */
     public function payment(): HasOne
     {
-        return $this->hasOne(Payment::class);
+        return $this->morphOne(Payment::class, 'payable');
     }
 
     /**
