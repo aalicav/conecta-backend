@@ -270,11 +270,8 @@ class ExtemporaneousNegotiationController extends Controller
             }
             
             $validated = $request->validate([
-                'negotiated_price' => 'required|numeric|min:0',
                 'approval_notes' => 'nullable|string'
             ], [
-                'negotiated_price.required' => 'O valor negociado é obrigatório para aprovar',
-                'negotiated_price.min' => 'O valor negociado deve ser maior que zero'
             ]);
             
             $negotiation = ExtemporaneousNegotiation::findOrFail($id);
@@ -286,7 +283,7 @@ class ExtemporaneousNegotiationController extends Controller
                 'approved_by' => $user->id,
                 'approved_at' => now(),
                 'approval_notes' => $validated['approval_notes'],
-                'negotiated_price' => $validated['negotiated_price']
+                'negotiated_price' => $negotiation->requested_value
             ]);
             
             // Notify the requester
