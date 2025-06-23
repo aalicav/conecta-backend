@@ -15,7 +15,6 @@ use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use App\Notifications\NoProvidersFound;
 use Illuminate\Support\Facades\Notification;
-use function PHPUnit\Framework\isEmpty;
 
 class ProcessAutomaticScheduling implements ShouldQueue
 {
@@ -84,21 +83,10 @@ class ProcessAutomaticScheduling implements ShouldQueue
             $scheduler = new AppointmentScheduler();
             $providers = $scheduler->findBestProvider($this->solicitation);
 
-            // Log the providers data for debugging
-            Log::info("Providers found for solicitation #{$this->solicitation->id}:", ['providers' => $providers]);
-
-            if (!empty($providers)) {
+            if ($providers['success'] && !empty($providers['providers'])) {
                 $createdInvites = 0;
                 
                 foreach ($providers as $provider) {
-                    // Validate provider data structure
-                    if (!is_array($provider) || 
-                        !isset($provider['provider_type']) || 
-                        !isset($provider['provider_id'])) {
-                        Log::warning("Invalid provider data structure:", ['provider' => $provider]);
-                        continue;
-                    }
-
                     // Double-check if invite already exists for this specific provider
                     $existingProviderInvite = SolicitationInvite::where('solicitation_id', $this->solicitation->id)
                         ->where('provider_type', $provider['provider_type'])
@@ -111,27 +99,6 @@ class ProcessAutomaticScheduling implements ShouldQueue
                         continue;
                     }
 
-                    // Get the provider model
-                    $providerModel = null;
-                    try {
-                        $providerModel = $provider['provider_type']::find($provider['provider_id']);
-                    } catch (\Exception $e) {
-                        Log::warning("Error finding provider model:", [
-                            'provider_type' => $provider['provider_type'],
-                            'provider_id' => $provider['provider_id'],
-                            'error' => $e->getMessage()
-                        ]);
-                        continue;
-                    }
-
-                    if (!$providerModel || !$providerModel->user) {
-                        Log::warning("Provider or user not found:", [
-                            'provider_type' => $provider['provider_type'],
-                            'provider_id' => $provider['provider_id']
-                        ]);
-                        continue;
-                    }
-
                     // Create invite for each provider
                     $invite = SolicitationInvite::create([
                         'solicitation_id' => $this->solicitation->id,
@@ -140,12 +107,15 @@ class ProcessAutomaticScheduling implements ShouldQueue
                         'status' => 'pending',
                         'created_by' => $this->solicitation->requested_by
                     ]);
+
+                    // Get the provider's user
+                    $providerUser = $provider['provider_type']::find($provider['provider_id'])->user;
                     
                     // Send notification using NotificationService
                     $this->notificationService->sendSolicitationInviteNotification(
                         $this->solicitation,
                         $invite,
-                        $providerModel->user
+                        $providerUser
                     );
                     
                     $createdInvites++;
@@ -162,6 +132,11 @@ class ProcessAutomaticScheduling implements ShouldQueue
                     ->where('is_active', true)
                     ->whereNull('deleted_at')
                     ->get();
+
+                if (!$usersToNotify->isEmpty()) {
+                    Notification::send($usersToNotify, new NoProvidersFound($this->solicitation));
+                    Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$this->solicitation->id}");
+                }
             }
         } catch (\Exception $e) {
             Log::error("Erro no processamento automático da solicitação #{$this->solicitation->id}: " . $e->getMessage());
