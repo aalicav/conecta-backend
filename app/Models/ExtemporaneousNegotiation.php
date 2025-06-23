@@ -22,27 +22,51 @@ class ExtemporaneousNegotiation extends Model
     const STATUS_CANCELLED = 'cancelled';
 
     /**
+     * Urgency level constants
+     */
+    const URGENCY_LOW = 'low';
+    const URGENCY_MEDIUM = 'medium';
+    const URGENCY_HIGH = 'high';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array
      */
     protected $fillable = [
-        'negotiable_type',
-        'negotiable_id',
         'tuss_id',
-        'negotiated_price',
+        'requested_value',
+        'approved_value',
         'justification',
-        'status',
-        'created_by',
-        'solicitation_id',
+        'approval_notes',
+        'rejection_reason',
+        'urgency_level',
+        'requested_by',
         'approved_by',
         'approved_at',
+        'is_requiring_addendum',
+        'addendum_included',
+        'addendum_number',
+        'addendum_date',
+        'addendum_notes',
+        'addendum_updated_by',
+        'negotiable_type',
+        'negotiable_id',
+        'tuss_procedure_id',
+        'negotiated_price',
+        'created_by',
         'rejected_by',
-        'rejected_at',
         'formalized_by',
-        'formalized_at',
         'cancelled_by',
-        'cancelled_at'
+        'rejected_at',
+        'formalized_at',
+        'cancelled_at',
+        'addendum_signed_at',
+        'rejection_notes',
+        'formalization_notes',
+        'cancellation_notes',
+        'solicitation_id',
+        'status'
     ];
 
     /**
@@ -51,15 +75,24 @@ class ExtemporaneousNegotiation extends Model
      * @var array
      */
     protected $casts = [
+        'requested_value' => 'decimal:2',
+        'approved_value' => 'decimal:2',
         'negotiated_price' => 'decimal:2',
+        'is_requiring_addendum' => 'boolean',
+        'addendum_included' => 'boolean',
         'approved_at' => 'datetime',
+        'addendum_date' => 'date',
         'rejected_at' => 'datetime',
         'formalized_at' => 'datetime',
-        'cancelled_at' => 'datetime'
+        'cancelled_at' => 'datetime',
+        'addendum_signed_at' => 'datetime',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'deleted_at' => 'datetime'
     ];
 
     /**
-     * Get the entity being negotiated with (clinic or health plan).
+     * Get the entity being negotiated with (clinic or professional).
      */
     public function negotiable(): MorphTo
     {
@@ -80,6 +113,14 @@ class ExtemporaneousNegotiation extends Model
     public function solicitation(): BelongsTo
     {
         return $this->belongsTo(Solicitation::class);
+    }
+
+    /**
+     * Get the user who requested this negotiation.
+     */
+    public function requestedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'requested_by');
     }
 
     /**
@@ -120,6 +161,14 @@ class ExtemporaneousNegotiation extends Model
     public function cancelledBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
+    /**
+     * Get the user who updated the addendum.
+     */
+    public function addendumUpdatedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'addendum_updated_by');
     }
 
     /**

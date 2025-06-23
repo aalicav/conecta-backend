@@ -125,34 +125,50 @@ class ExtemporaneousNegotiationController extends Controller
             $validated = $request->validate([
                 'negotiable_type' => 'required|string|in:App\\Models\\Clinic,App\\Models\\Professional',
                 'negotiable_id' => 'required|integer|exists:' . strtolower(class_basename($request->negotiable_type)) . 's,id',
-                'solicitation_id' => 'required|exists:solicitations,id',
-                'negotiated_price' => 'required|numeric|min:0',
-                'justification' => 'required|string|min:10'
+                'solicitation_id' => 'nullable|exists:solicitations,id',
+                'requested_value' => 'required|numeric|min:0',
+                'justification' => 'required|string|min:10',
+                'urgency_level' => 'required|in:low,medium,high',
+                'is_requiring_addendum' => 'boolean|nullable',
+                'addendum_included' => 'boolean|nullable'
             ], [
                 'negotiable_type.required' => 'O tipo da entidade é obrigatório',
                 'negotiable_type.in' => 'O tipo da entidade deve ser Clinic ou Professional',
                 'negotiable_id.required' => 'O ID da entidade é obrigatório',
                 'negotiable_id.exists' => 'A entidade selecionada não existe',
-                'solicitation_id.required' => 'A solicitação é obrigatória',
                 'solicitation_id.exists' => 'A solicitação selecionada não existe',
-                'negotiated_price.required' => 'O valor negociado é obrigatório',
-                'negotiated_price.min' => 'O valor negociado deve ser maior que zero',
+                'requested_value.required' => 'O valor solicitado é obrigatório',
+                'requested_value.min' => 'O valor solicitado deve ser maior que zero',
                 'justification.required' => 'A justificativa é obrigatória',
-                'justification.min' => 'A justificativa deve ter pelo menos 10 caracteres'
+                'justification.min' => 'A justificativa deve ter pelo menos 10 caracteres',
+                'urgency_level.required' => 'O nível de urgência é obrigatório',
+                'urgency_level.in' => 'O nível de urgência deve ser baixo, médio ou alto'
             ]);
             
             // Get the solicitation to get the TUSS procedure
-            $solicitation = Solicitation::with('tuss')->findOrFail($validated['solicitation_id']);
+            $tussId = null;
+            $tussProcedureId = null;
+            
+            if (!empty($validated['solicitation_id'])) {
+                $solicitation = Solicitation::with('tuss')->findOrFail($validated['solicitation_id']);
+                $tussId = $solicitation->tuss->id;
+                $tussProcedureId = $solicitation->tuss->id;
+            }
             
             DB::beginTransaction();
             
             $negotiation = ExtemporaneousNegotiation::create([
                 'negotiable_type' => $validated['negotiable_type'],
                 'negotiable_id' => $validated['negotiable_id'],
-                'tuss_id' => $solicitation->tuss->id,
-                'negotiated_price' => $validated['negotiated_price'],
+                'tuss_id' => $tussId,
+                'tuss_procedure_id' => $tussProcedureId,
+                'requested_value' => $validated['requested_value'],
                 'justification' => $validated['justification'],
-                'status' => 'pending',
+                'urgency_level' => $validated['urgency_level'],
+                'is_requiring_addendum' => $validated['is_requiring_addendum'] ?? true,
+                'addendum_included' => $validated['addendum_included'] ?? false,
+                'status' => ExtemporaneousNegotiation::STATUS_PENDING_APPROVAL,
+                'requested_by' => Auth::id(),
                 'created_by' => Auth::id(),
                 'solicitation_id' => $validated['solicitation_id']
             ]);
@@ -163,7 +179,7 @@ class ExtemporaneousNegotiationController extends Controller
                 'body' => "Foi solicitada uma negociação extemporânea para " . $negotiation->negotiable->name,
                 'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
                 'icon' => 'alert-circle',
-                'priority' => 'high'
+                'priority' => $validated['urgency_level'] === 'high' ? 'high' : 'normal'
             ]);
             
             DB::commit();
@@ -171,7 +187,7 @@ class ExtemporaneousNegotiationController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Negociação extemporânea criada com sucesso',
-                'data' => $negotiation->load(['negotiable', 'tussProcedure', 'createdBy', 'solicitation'])
+                'data' => $negotiation->load(['negotiable', 'tussProcedure', 'requestedBy', 'solicitation'])
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
@@ -253,17 +269,25 @@ class ExtemporaneousNegotiationController extends Controller
                 ], 403);
             }
             
-            $negotiation = ExtemporaneousNegotiation::findOrFail($id);
-            
             $validated = $request->validate([
+                'negotiated_price' => 'required|numeric|min:0',
                 'approval_notes' => 'nullable|string'
+            ], [
+                'negotiated_price.required' => 'O valor negociado é obrigatório para aprovar',
+                'negotiated_price.min' => 'O valor negociado deve ser maior que zero'
             ]);
+            
+            $negotiation = ExtemporaneousNegotiation::findOrFail($id);
             
             DB::beginTransaction();
             
-            if (!$negotiation->approve($user->id, $validated['approval_notes'] ?? null)) {
-                throw new \Exception('Failed to approve negotiation');
-            }
+            $negotiation->update([
+                'status' => ExtemporaneousNegotiation::STATUS_APPROVED,
+                'approved_by' => $user->id,
+                'approved_at' => now(),
+                'approval_notes' => $validated['approval_notes'],
+                'negotiated_price' => $validated['negotiated_price']
+            ]);
             
             // Notify the requester
             $this->notificationService->sendToUser($negotiation->created_by, [
