@@ -63,9 +63,7 @@ class SolicitationController extends Controller
                   ->orWhere('city', 'like', "%{$searchTerm}%")
                   // Search in related patient
                   ->orWhereHas('patient', function($query) use ($searchTerm) {
-                      $query->where('name', 'like', "%{$searchTerm}%")
-                            ->orWhere('document', 'like', "%{$searchTerm}%");
-                  })
+                      $query->where('name', 'like', "%{$searchTerm}%");                  })
                   // Search in related TUSS
                   ->orWhereHas('tuss', function($query) use ($searchTerm) {
                       $query->where('code', 'like', "%{$searchTerm}%")
@@ -73,8 +71,7 @@ class SolicitationController extends Controller
                   })
                   // Search in related health plan
                   ->orWhereHas('healthPlan', function($query) use ($searchTerm) {
-                      $query->where('name', 'like', "%{$searchTerm}%")
-                            ->orWhere('document', 'like', "%{$searchTerm}%");
+                      $query->where('name', 'like', "%{$searchTerm}%");
                   });
             });
         }
