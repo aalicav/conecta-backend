@@ -270,84 +270,104 @@ class ExtemporaneousNegotiationController extends Controller
             }
             
             $validated = $request->validate([
+                'approved_value' => 'required|numeric|min:0',
                 'approval_notes' => 'nullable|string'
-            ], [
             ]);
             
-            $negotiation = ExtemporaneousNegotiation::findOrFail($id);
+            $negotiation = ExtemporaneousNegotiation::with(['negotiable', 'tussProcedure'])->findOrFail($id);
+            
+            if ($negotiation->status !== ExtemporaneousNegotiation::STATUS_PENDING_APPROVAL) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Negotiation is not in pending approval status'
+                ], 422);
+            }
             
             DB::beginTransaction();
             
-            $negotiation->update([
-                'status' => ExtemporaneousNegotiation::STATUS_APPROVED,
-                'approved_by' => $user->id,
-                'approved_at' => now(),
-                'approval_notes' => $validated['approval_notes'],
-                'negotiated_price' => $negotiation->requested_value
-            ]);
-
-            // Desativar contratos de preço anteriores para a mesma entidade e código TUSS
-            \App\Models\PricingContract::where('contractable_type', $negotiation->negotiable_type)
-                ->where('contractable_id', $negotiation->negotiable_id)
-                ->where('tuss_procedure_id', $negotiation->tuss_id)
-                ->where('is_active', true)
-                ->update([
-                    'is_active' => false,
-                    'end_date' => now(),
-                    'notes' => 'Desativado pela negociação extemporânea #' . $negotiation->id
+            try {
+                $negotiation->update([
+                    'status' => ExtemporaneousNegotiation::STATUS_APPROVED,
+                    'approved_by' => $user->id,
+                    'approved_at' => now(),
+                    'approval_notes' => $validated['approval_notes'],
+                    'approved_value' => $validated['approved_value']
                 ]);
 
-            // Criar novo contrato de preço
-            \App\Models\PricingContract::create([
-                'tuss_procedure_id' => $negotiation->tuss_id,
-                'contractable_type' => $negotiation->negotiable_type,
-                'contractable_id' => $negotiation->negotiable_id,
-                'price' => $negotiation->requested_value,
-                'is_active' => true,
-                'start_date' => now(),
-                'end_date' => null, // Sem data de término para negociações extemporâneas
-                'created_by' => $user->id,
-                'medical_specialty_id' => $negotiation->medical_specialty_id,
-                'notes' => 'Criado a partir da negociação extemporânea #' . $negotiation->id
-            ]);
-            
-            // Notify the requester
-            $this->notificationService->sendToUser($negotiation->created_by, [
-                'title' => 'Negociação extemporânea aprovada',
-                'body' => "Sua solicitação de negociação extemporânea foi aprovada.",
-                'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
-                'icon' => 'check-circle',
-                'priority' => 'high'
-            ]);
-            
-            // Notify commercial team for formalization
-            $this->notificationService->sendToRole('commercial', [
-                'title' => 'Negociação extemporânea requer formalização',
-                'body' => "Uma negociação extemporânea foi aprovada e requer formalização via aditivo.",
-                'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
-                'icon' => 'file-text',
-                'priority' => 'high'
-            ]);
-            
-            DB::commit();
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Extemporaneous negotiation approved successfully',
-                'data' => $negotiation->fresh([
-                    'negotiable', 
-                    'tussProcedure', 
-                    'createdBy', 
-                    'approvedBy'
-                ])
-            ]);
+                // Desativar contratos de preço anteriores para a mesma entidade e código TUSS
+                if ($negotiation->tussProcedure) {
+                    \App\Models\PricingContract::where('contractable_type', $negotiation->negotiable_type)
+                        ->where('contractable_id', $negotiation->negotiable_id)
+                        ->where('tuss_procedure_id', $negotiation->tussProcedure->id)
+                        ->where('is_active', true)
+                        ->update([
+                            'is_active' => false,
+                            'end_date' => now(),
+                            'notes' => 'Desativado pela negociação extemporânea #' . $negotiation->id
+                        ]);
+
+                    // Criar novo contrato de preço
+                    \App\Models\PricingContract::create([
+                        'tuss_procedure_id' => $negotiation->tussProcedure->id,
+                        'contractable_type' => $negotiation->negotiable_type,
+                        'contractable_id' => $negotiation->negotiable_id,
+                        'price' => $validated['approved_value'],
+                        'is_active' => true,
+                        'start_date' => now(),
+                        'end_date' => null, // Sem data de término para negociações extemporâneas
+                        'created_by' => $user->id,
+                        'medical_specialty_id' => $negotiation->medical_specialty_id,
+                        'notes' => 'Criado a partir da negociação extemporânea #' . $negotiation->id
+                    ]);
+                } else {
+                    Log::warning('ExtemporaneousNegotiation #' . $negotiation->id . ' has no TUSS procedure associated.');
+                }
+                
+                // Notify the requester
+                $this->notificationService->sendToUser($negotiation->created_by, [
+                    'title' => 'Negociação extemporânea aprovada',
+                    'body' => "Sua solicitação de negociação extemporânea foi aprovada.",
+                    'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
+                    'icon' => 'check-circle',
+                    'priority' => 'high'
+                ]);
+                
+                // Notify commercial team for formalization
+                $this->notificationService->sendToRole('commercial', [
+                    'title' => 'Negociação extemporânea requer formalização',
+                    'body' => "Uma negociação extemporânea foi aprovada e requer formalização via aditivo.",
+                    'action_link' => "/negotiations/extemporaneous/{$negotiation->id}",
+                    'icon' => 'file-text',
+                    'priority' => 'high'
+                ]);
+                
+                DB::commit();
+                
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Extemporaneous negotiation approved successfully',
+                    'data' => $negotiation->fresh([
+                        'negotiable', 
+                        'tussProcedure', 
+                        'createdBy', 
+                        'approvedBy'
+                    ])
+                ]);
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Failed to approve extemporaneous negotiation: ' . $e->getMessage(), [
+                    'exception' => $e,
+                    'negotiation_id' => $id,
+                    'user_id' => $user->id,
+                    'request_data' => $request->all()
+                ]);
+                throw $e;
+            }
         } catch (\Exception $e) {
-            DB::rollBack();
-            
-            Log::error('Failed to approve extemporaneous negotiation: ' . $e->getMessage(), [
+            Log::error('Error in approve extemporaneous negotiation: ' . $e->getMessage(), [
                 'exception' => $e,
-                'user_id' => Auth::id(),
                 'negotiation_id' => $id,
+                'user_id' => Auth::id(),
                 'request_data' => $request->all()
             ]);
             
@@ -355,7 +375,7 @@ class ExtemporaneousNegotiationController extends Controller
                 'status' => 'error',
                 'message' => 'Failed to approve extemporaneous negotiation',
                 'error' => $e->getMessage()
-            ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
+            ], 500);
         }
     }
 
