@@ -194,7 +194,7 @@ class AppointmentScheduler
             if ($patientLat && $patientLng) {
                 // If we have location data, find the nearest and most affordable provider
                 $result = $this->findBestProvider($solicitation);
-                if ($result['success']) {
+                if ($result['success'] && !empty($result['data'])) {
                     $provider = $result['data'][0] ?? null;
                     Log::info("Found provider with location data", [
                         'provider_type' => $provider['provider_type'] ?? null,
@@ -202,15 +202,28 @@ class AppointmentScheduler
                         'price' => $provider['price'] ?? null,
                         'distance' => $provider['distance'] ?? null
                     ]);
+                } else {
+                    Log::warning("No providers found with location data", [
+                        'message' => $result['message'] ?? 'Unknown error'
+                    ]);
+                    $provider = null;
                 }
             } else {
                 // Fallback: just find the most affordable provider
-                $provider = $this->findMostAffordableProvider($solicitation, $procedure);
-                Log::info("Found provider without location data", [
-                    'provider_type' => $provider['provider_type'] ?? null,
-                    'provider_id' => $provider['provider_id'] ?? null,
-                    'price' => $provider['price'] ?? null
-                ]);
+                $result = $this->findMostAffordableProvider($solicitation, $procedure);
+                if ($result['success'] && !empty($result['data'])) {
+                    $provider = $result['data'][0];
+                    Log::info("Found provider without location data", [
+                        'provider_type' => $provider['provider_type'] ?? null,
+                        'provider_id' => $provider['provider_id'] ?? null,
+                        'price' => $provider['price'] ?? null
+                    ]);
+                } else {
+                    Log::warning("No providers found without location data", [
+                        'message' => $result['message'] ?? 'Unknown error'
+                    ]);
+                    $provider = null;
+                }
             }
 
             if (!$provider) {
@@ -779,34 +792,45 @@ class AppointmentScheduler
      *
      * @param Solicitation $solicitation
      * @param TussProcedure $procedure
-     * @return array|null Provider info or null if none found
+     * @return array Provider info with success, message and data
      */
-    protected function findMostAffordableProvider(Solicitation $solicitation, TussProcedure $procedure): ?array
+    protected function findMostAffordableProvider(Solicitation $solicitation, TussProcedure $procedure): array
     {
-        // Get all clinics and professionals that offer this procedure
-        $clinicProviders = $this->getClinicsForProcedure($solicitation, $procedure);
-        $professionalProviders = $this->getProfessionalsForProcedure($solicitation, $procedure);
+        try {
+            // Get all clinics and professionals that offer this procedure
+            $clinicProviders = $this->getClinicsForProcedure($solicitation, $procedure);
+            $professionalProviders = $this->getProfessionalsForProcedure($solicitation, $procedure);
 
-        // Combine all providers
-        $allProviders = array_merge($clinicProviders, $professionalProviders);
+            // Combine all providers
+            $allProviders = array_merge($clinicProviders, $professionalProviders);
 
-        if (empty($allProviders)) {
+            if (empty($allProviders)) {
+                return [
+                    'success' => false,
+                    'message' => 'No providers found for this procedure',
+                    'data' => []
+                ];
+            }
+
+            // Sort by price (lowest first)
+            usort($allProviders, function ($a, $b) {
+                return $a['price'] <=> $b['price'];
+            });
+
+            // Return the most affordable provider
+            return [
+                'success' => true,
+                'message' => 'Provider found successfully',
+                'data' => [$allProviders[0]] // Wrap in array to match findBestProvider structure
+            ];
+        } catch (\Exception $e) {
+            Log::error("Error finding most affordable provider for solicitation #{$solicitation->id}: " . $e->getMessage());
             return [
                 'success' => false,
-                'message' => 'No providers found for this procedure'
+                'message' => 'Error finding providers: ' . $e->getMessage(),
+                'data' => []
             ];
         }
-
-        // Sort by price (lowest first)
-        usort($allProviders, function ($a, $b) {
-            return $a['price'] <=> $b['price'];
-        });
-
-        // Return the most affordable provider
-        return [
-            'success' => true,
-            'data' => $allProviders[0]
-        ];
     }
 
     /**
