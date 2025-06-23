@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use App\Notifications\NoProvidersFound;
 use Illuminate\Support\Facades\Notification;
+use function PHPUnit\Framework\isEmpty;
 
 class ProcessAutomaticScheduling implements ShouldQueue
 {
@@ -86,7 +87,7 @@ class ProcessAutomaticScheduling implements ShouldQueue
             // Log the providers data for debugging
             Log::info("Providers found for solicitation #{$this->solicitation->id}:", ['providers' => $providers]);
 
-            if (!empty($providers)) {
+            if (count($providers) > 0) {
                 $createdInvites = 0;
                 
                 foreach ($providers as $provider) {
