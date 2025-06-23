@@ -58,6 +58,11 @@ class Kernel extends ConsoleKernel
             ->dailyAt('01:00')
             ->withoutOverlapping()
             ->appendOutputTo(storage_path('logs/billing.log'));
+
+        // Process appointment attendance daily
+        $schedule->command('appointments:process-attendance')
+            ->dailyAt('23:00')
+            ->withoutOverlapping();
     }
 
     /**

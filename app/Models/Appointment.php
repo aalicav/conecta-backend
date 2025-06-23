@@ -34,6 +34,12 @@ class Appointment extends Model
         'cancelled_by',
         'created_by',
         'address_id',
+        'patient_attended',
+        'attendance_confirmed_at',
+        'attendance_confirmed_by',
+        'attendance_notes',
+        'eligible_for_billing',
+        'billing_batch_id',
     ];
 
     /**
@@ -46,6 +52,9 @@ class Appointment extends Model
         'confirmed_date' => 'datetime',
         'completed_date' => 'datetime',
         'cancelled_date' => 'datetime',
+        'attendance_confirmed_at' => 'datetime',
+        'patient_attended' => 'boolean',
+        'eligible_for_billing' => 'boolean',
     ];
 
     /**
@@ -210,6 +219,22 @@ class Appointment extends Model
     public function address(): BelongsTo
     {
         return $this->belongsTo(Address::class);
+    }
+
+    /**
+     * Get the user who confirmed attendance.
+     */
+    public function attendanceConfirmedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'attendance_confirmed_by');
+    }
+
+    /**
+     * Get the billing batch for this appointment.
+     */
+    public function billingBatch(): BelongsTo
+    {
+        return $this->belongsTo(BillingBatch::class);
     }
 
     /**
@@ -409,5 +434,107 @@ class Appointment extends Model
     public function isPast(): bool
     {
         return $this->scheduled_date->isPast();
+    }
+
+    /**
+     * Scope a query to only include appointments eligible for billing.
+     */
+    public function scopeEligibleForBilling($query)
+    {
+        return $query->where('eligible_for_billing', true);
+    }
+
+    /**
+     * Scope a query to only include attended appointments.
+     */
+    public function scopeAttended($query)
+    {
+        return $query->where('patient_attended', true);
+    }
+
+    /**
+     * Scope a query to only include missed appointments.
+     */
+    public function scopeMissedAttendance($query)
+    {
+        return $query->where('patient_attended', false);
+    }
+
+    /**
+     * Scope a query to only include appointments without attendance marked.
+     */
+    public function scopePendingAttendance($query)
+    {
+        return $query->whereNull('patient_attended');
+    }
+
+    /**
+     * Check if the patient attended the appointment.
+     */
+    public function hasPatientAttended(): bool
+    {
+        return $this->patient_attended === true;
+    }
+
+    /**
+     * Check if the patient missed the appointment.
+     */
+    public function hasPatientMissed(): bool
+    {
+        return $this->patient_attended === false;
+    }
+
+    /**
+     * Check if attendance is pending.
+     */
+    public function isAttendancePending(): bool
+    {
+        return is_null($this->patient_attended);
+    }
+
+    /**
+     * Check if the appointment is eligible for billing.
+     */
+    public function isEligibleForBilling(): bool
+    {
+        return $this->eligible_for_billing === true;
+    }
+
+    /**
+     * Mark patient as attended.
+     */
+    public function markAsAttended(int $userId, ?string $notes = null): bool
+    {
+        return $this->update([
+            'patient_attended' => true,
+            'attendance_confirmed_at' => now(),
+            'attendance_confirmed_by' => $userId,
+            'attendance_notes' => $notes,
+            'status' => self::STATUS_COMPLETED
+        ]);
+    }
+
+    /**
+     * Mark patient as missed.
+     */
+    public function markAsMissedAttendance(int $userId, ?string $notes = null): bool
+    {
+        return $this->update([
+            'patient_attended' => false,
+            'attendance_confirmed_at' => now(),
+            'attendance_confirmed_by' => $userId,
+            'attendance_notes' => $notes,
+            'status' => self::STATUS_MISSED
+        ]);
+    }
+
+    /**
+     * Mark appointment as eligible for billing.
+     */
+    public function markAsEligibleForBilling(): bool
+    {
+        return $this->update([
+            'eligible_for_billing' => true
+        ]);
     }
 } 

@@ -28,6 +28,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\AppointmentGuide;
 use Barryvdh\DomPDF\Facade\Pdf;
+use App\Models\BillingRule;
+use App\Models\BillingBatch;
 
 class AppointmentController extends Controller
 {
@@ -112,6 +114,23 @@ class AppointmentController extends Controller
                   ->where('provider_id', $request->provider_id);
         }
 
+        // Filter by attendance status if provided
+        if ($request->has('patient_attended')) {
+            if ($request->patient_attended === 'true') {
+                $query->attended();
+            } elseif ($request->patient_attended === 'false') {
+                $query->missedAttendance();
+            } else {
+                $query->pendingAttendance();
+            }
+        }
+
+        // Filter by billing eligibility if provided
+        if ($request->has('eligible_for_billing')) {
+            $isEligible = $request->eligible_for_billing === 'true';
+            $query->where('eligible_for_billing', $isEligible);
+        }
+
         // Apply user-specific filters based on roles
         $user = Auth::user();
         
@@ -168,7 +187,9 @@ class AppointmentController extends Controller
                 'address',
                 'confirmedBy',
                 'completedBy',
-                'cancelledBy'
+                'cancelledBy',
+                'attendanceConfirmedBy',
+                'billingBatch.billingItems'
             ]);
 
             return new AppointmentResource($appointment);
@@ -341,6 +362,7 @@ class AppointmentController extends Controller
             // Validate request
             $validator = Validator::make($request->all(), [
                 'notes' => 'nullable|string',
+                'patient_attended' => 'required|boolean',
             ]);
 
             if ($validator->fails()) {
@@ -351,22 +373,40 @@ class AppointmentController extends Controller
                 ], 422);
             }
 
-            // Update notes if provided
-            if ($request->has('notes')) {
-                $appointment->notes = $request->notes;
-                $appointment->save();
-            }
+            // Mark attendance based on request
+            if ($request->patient_attended) {
+                if (!$appointment->markAsAttended(Auth::id(), $request->notes)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to mark appointment as attended'
+                    ], 500);
+                }
 
-            // Complete the appointment
-            if (!$appointment->complete(Auth::id())) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to complete appointment'
-                ], 500);
-            }
+                // Check if appointment is eligible for billing
+                if ($this->isEligibleForBilling($appointment)) {
+                    $appointment->markAsEligibleForBilling();
+                    
+                    // Get applicable billing rule
+                    $billingRule = $this->getApplicableBillingRule($appointment);
+                    
+                    if ($billingRule && $billingRule->rule_type === 'per_appointment') {
+                        $this->createBillingBatch($appointment, $billingRule);
+                    }
+                }
 
-            // Send completed notification - will also send NPS survey via WhatsApp
-            $this->notificationService->notifyAppointmentCompleted($appointment);
+                // Send completion notification
+                $this->notificationService->notifyAppointmentCompleted($appointment);
+            } else {
+                if (!$appointment->markAsMissedAttendance(Auth::id(), $request->notes)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to mark appointment as missed'
+                    ], 500);
+                }
+
+                // Send missed notification
+                $this->notificationService->notifyAppointmentMissed($appointment);
+            }
 
             // Check if all appointments for this solicitation are completed
             $pendingAppointments = Appointment::where('solicitation_id', $appointment->solicitation_id)
@@ -384,12 +424,13 @@ class AppointmentController extends Controller
                 'solicitation.patient',
                 'solicitation.tuss',
                 'provider',
-                'completedBy'
+                'attendanceConfirmedBy',
+                'billingBatch'
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Appointment completed successfully',
+                'message' => $request->patient_attended ? 'Appointment completed successfully' : 'Appointment marked as missed',
                 'data' => new AppointmentResource($appointment)
             ]);
         } catch (\Exception $e) {
@@ -2140,5 +2181,383 @@ class AppointmentController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Mark patient as attended for the appointment.
+     *
+     * @param Request $request
+     * @param Appointment $appointment
+     * @return JsonResponse
+     */
+    public function markAsAttended(Request $request, Appointment $appointment): JsonResponse
+    {
+        try {
+            // Check if user has permission to manage this appointment
+            if (!$this->canManageAppointment($appointment)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to mark attendance for this appointment'
+                ], 403);
+            }
+
+            // Check if appointment can be marked as attended
+            if (!$appointment->isConfirmed() && !$appointment->isScheduled()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only confirmed or scheduled appointments can be marked as attended'
+                ], 422);
+            }
+
+            // Validate request
+            $validator = Validator::make($request->all(), [
+                'notes' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Mark as attended
+            if (!$appointment->markAsAttended(Auth::id(), $request->notes)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to mark appointment as attended'
+                ], 500);
+            }
+
+            // Check if appointment is eligible for billing
+            if ($this->isEligibleForBilling($appointment)) {
+                $appointment->markAsEligibleForBilling();
+                
+                // Get applicable billing rule
+                $billingRule = $this->getApplicableBillingRule($appointment);
+                
+                if ($billingRule && $billingRule->rule_type === 'per_appointment') {
+                    $this->createBillingBatch($appointment, $billingRule);
+                }
+            }
+
+            // Send completion notification
+            $this->notificationService->notifyAppointmentCompleted($appointment);
+
+            // Check if all appointments for this solicitation are completed
+            $pendingAppointments = Appointment::where('solicitation_id', $appointment->solicitation_id)
+                ->whereNotIn('status', [Appointment::STATUS_COMPLETED, Appointment::STATUS_CANCELLED])
+                ->exists();
+
+            // If no pending appointments, mark the solicitation as completed
+            if (!$pendingAppointments) {
+                $appointment->solicitation->markAsCompleted();
+            }
+
+            // Reload relationships
+            $appointment->load([
+                'solicitation.healthPlan',
+                'solicitation.patient',
+                'solicitation.tuss',
+                'provider',
+                'attendanceConfirmedBy',
+                'billingBatch'
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Patient marked as attended successfully',
+                'data' => new AppointmentResource($appointment)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error marking appointment as attended: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to mark appointment as attended',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Mark patient as missed for the appointment.
+     *
+     * @param Request $request
+     * @param Appointment $appointment
+     * @return JsonResponse
+     */
+    public function markAsMissedAttendance(Request $request, Appointment $appointment): JsonResponse
+    {
+        try {
+            // Check if user has permission to manage this appointment
+            if (!$this->canManageAppointment($appointment)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized to mark attendance for this appointment'
+                ], 403);
+            }
+
+            // Check if appointment can be marked as missed
+            if (!$appointment->isConfirmed() && !$appointment->isScheduled()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only confirmed or scheduled appointments can be marked as missed'
+                ], 422);
+            }
+
+            // Validate request
+            $validator = Validator::make($request->all(), [
+                'notes' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Mark as missed
+            if (!$appointment->markAsMissedAttendance(Auth::id(), $request->notes)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to mark appointment as missed'
+                ], 500);
+            }
+
+            // Send missed notification
+            $this->notificationService->notifyAppointmentMissed($appointment);
+
+            // Reload relationships
+            $appointment->load([
+                'solicitation.healthPlan',
+                'solicitation.patient',
+                'solicitation.tuss',
+                'provider',
+                'attendanceConfirmedBy'
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Patient marked as missed successfully',
+                'data' => new AppointmentResource($appointment)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error marking appointment as missed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to mark appointment as missed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get appointments pending attendance confirmation.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function getPendingAttendance(Request $request): JsonResponse
+    {
+        try {
+            $query = Appointment::with([
+                'solicitation.patient',
+                'solicitation.healthPlan',
+                'solicitation.tuss',
+                'provider'
+            ])
+            ->pendingAttendance()
+            ->where('scheduled_date', '<=', now())
+            ->whereIn('status', ['confirmed', 'scheduled']);
+
+            // Apply user-specific filters based on roles
+            $user = Auth::user();
+            
+            if ($user->hasRole('plan_admin')) {
+                $query->whereHas('solicitation.healthPlan', function ($q) use ($user) {
+                    $q->where('id', $user->health_plan_id);
+                });
+            } elseif ($user->hasRole('clinic_admin')) {
+                $query->where(function ($q) use ($user) {
+                    $q->where('provider_type', Clinic::class)
+                      ->where('provider_id', $user->clinic_id);
+                });
+            } elseif ($user->hasRole('professional')) {
+                $query->where(function ($q) use ($user) {
+                    $q->where('provider_type', Professional::class)
+                      ->where('provider_id', $user->professional_id);
+                });
+            }
+
+            $appointments = $query->orderBy('scheduled_date', 'desc')
+                ->paginate($request->per_page ?? 15);
+
+            return response()->json([
+                'success' => true,
+                'data' => AppointmentResource::collection($appointments)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting pending attendance: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get pending attendance',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Check if appointment is eligible for billing
+     */
+    private function isEligibleForBilling(Appointment $appointment): bool
+    {
+        return $appointment->patient_confirmed &&
+               $appointment->professional_confirmed &&
+               $appointment->patient_attended === true &&
+               $appointment->guide_status === 'approved';
+    }
+
+    /**
+     * Get applicable billing rule for the appointment
+     */
+    private function getApplicableBillingRule(Appointment $appointment): ?BillingRule
+    {
+        // Try to get specific rule for the provider
+        $rule = BillingRule::where('entity_type', get_class($appointment->provider))
+            ->where('entity_id', $appointment->provider_id)
+            ->where('is_active', true)
+            ->orderBy('priority', 'desc')
+            ->first();
+
+        if ($rule) {
+            return $rule;
+        }
+
+        // Try to get global rule for the provider type
+        $rule = BillingRule::where('entity_type', get_class($appointment->provider))
+            ->whereNull('entity_id')
+            ->where('is_active', true)
+            ->orderBy('priority', 'desc')
+            ->first();
+
+        if ($rule) {
+            return $rule;
+        }
+
+        // Try to get rule for the health plan
+        $rule = BillingRule::where('entity_type', 'App\\Models\\HealthPlan')
+            ->where('entity_id', $appointment->solicitation->health_plan_id)
+            ->where('is_active', true)
+            ->orderBy('priority', 'desc')
+            ->first();
+
+        if ($rule) {
+            return $rule;
+        }
+
+        // Try to get global rule for health plans
+        return BillingRule::where('entity_type', 'App\\Models\\HealthPlan')
+            ->whereNull('entity_id')
+            ->where('is_active', true)
+            ->orderBy('priority', 'desc')
+            ->first();
+    }
+
+    /**
+     * Create a billing batch for the appointment
+     */
+    private function createBillingBatch(Appointment $appointment, BillingRule $rule): void
+    {
+        // Create billing batch
+        $batch = BillingBatch::create([
+            'billing_rule_id' => $rule->id,
+            'entity_type' => 'health_plan',
+            'entity_id' => $appointment->solicitation->health_plan_id,
+            'reference_period_start' => $appointment->scheduled_date->startOfDay(),
+            'reference_period_end' => $appointment->scheduled_date->endOfDay(),
+            'billing_date' => now(),
+            'due_date' => now()->addDays($rule->payment_term_days ?? 30),
+            'status' => 'pending',
+            'items_count' => 1,
+            'total_amount' => $this->calculateAppointmentPrice($appointment),
+            'created_by' => Auth::id()
+        ]);
+
+        // Create billing item
+        $batch->billingItems()->create([
+            'item_type' => 'appointment',
+            'item_id' => $appointment->id,
+            'description' => "Atendimento {$appointment->provider->specialty} - {$appointment->scheduled_date}",
+            'unit_price' => $this->calculateAppointmentPrice($appointment),
+            'total_amount' => $this->calculateAppointmentPrice($appointment),
+            'tuss_code' => $appointment->procedure_code,
+            'tuss_description' => $appointment->procedure_description,
+            'professional_name' => $appointment->provider->name,
+            'professional_specialty' => $appointment->provider->specialty,
+            'patient_name' => $appointment->solicitation->patient->name,
+            'patient_document' => $appointment->solicitation->patient->document,
+            'patient_journey_data' => [
+                'scheduled_at' => $appointment->scheduled_date,
+                'pre_confirmation' => $appointment->pre_confirmation_response,
+                'patient_confirmed' => $appointment->patient_confirmed,
+                'professional_confirmed' => $appointment->professional_confirmed,
+                'guide_status' => $appointment->guide_status,
+                'patient_attended' => $appointment->patient_attended
+            ]
+        ]);
+
+        // Update appointment with batch reference
+        $appointment->billing_batch_id = $batch->id;
+        $appointment->save();
+    }
+
+    /**
+     * Calculate appointment price based on rules and contracts
+     */
+    private function calculateAppointmentPrice(Appointment $appointment): float
+    {
+        // If not a consultation (10101012), return standard procedure price
+        if ($appointment->procedure_code !== '10101012') {
+            return $appointment->procedure_price;
+        }
+
+        // Check for specialty-specific pricing
+        if ($appointment->provider->medical_specialty_id) {
+            $specialty = $appointment->provider->medicalSpecialty;
+            
+            // Try to get price in order:
+            // 1. Professional specific price
+            $price = $specialty->getPriceForEntity('professional', $appointment->provider_id);
+            if ($price) {
+                return $price;
+            }
+
+            // 2. Clinic specific price
+            if ($appointment->clinic_id) {
+                $price = $specialty->getPriceForEntity('clinic', $appointment->clinic_id);
+                if ($price) {
+                    return $price;
+                }
+            }
+
+            // 3. Health plan specific price
+            if ($appointment->solicitation->health_plan_id) {
+                $price = $specialty->getPriceForEntity('health_plan', $appointment->solicitation->health_plan_id);
+                if ($price) {
+                    return $price;
+                }
+            }
+
+            // 4. Specialty default price
+            if ($specialty->default_price) {
+                return $specialty->default_price;
+            }
+        }
+
+        // Return standard procedure price if no specialty pricing found
+        return $appointment->procedure_price;
     }
 } 
