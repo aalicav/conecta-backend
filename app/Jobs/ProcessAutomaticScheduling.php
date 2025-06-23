@@ -163,7 +163,10 @@ class ProcessAutomaticScheduling implements ShouldQueue
                     ->get();
 
                 if (!$usersToNotify->isEmpty()) {
-                    Notification::send($usersToNotify, new NoProvidersFound($this->solicitation));
+                    Notification::send($usersToNotify, new NoProvidersFound($this->solicitation, [
+                        'reason' => 'automatic_scheduling',
+                        'timestamp' => now()->toIso8601String()
+                    ]));
                     Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$this->solicitation->id}");
                 }
             }
