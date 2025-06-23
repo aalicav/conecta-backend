@@ -30,6 +30,7 @@ use App\Mail\AppointmentGuide;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\BillingRule;
 use App\Models\BillingBatch;
+use App\Models\BillingItem;
 
 class AppointmentController extends Controller
 {
@@ -2559,5 +2560,141 @@ class AppointmentController extends Controller
 
         // Return standard procedure price if no specialty pricing found
         return $appointment->procedure_price;
+    }
+
+    /**
+     * Generate billing for a specific appointment
+     */
+    public function generateBilling(Appointment $appointment)
+    {
+        try {
+            // Check if appointment is eligible for billing
+            if (!$this->isAppointmentEligibleForBilling($appointment)) {
+                return response()->json([
+                    'message' => 'Agendamento não é elegível para faturamento. Verifique se o paciente compareceu e o agendamento foi concluído.'
+                ], 400);
+            }
+
+            // Check if billing already exists
+            if ($appointment->billing_batch_id) {
+                return response()->json([
+                    'message' => 'Já existe uma cobrança para este agendamento',
+                    'billing_batch_id' => $appointment->billing_batch_id
+                ], 400);
+            }
+
+            DB::beginTransaction();
+
+            // Get or create billing rule for the health plan
+            $billingRule = BillingRule::where('entity_type', 'App\\Models\\HealthPlan')
+                ->where('entity_id', $appointment->solicitation->health_plan_id)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$billingRule) {
+                // Create a default billing rule if none exists
+                $billingRule = BillingRule::create([
+                    'name' => 'Regra Padrão - ' . $appointment->solicitation->healthPlan->name,
+                    'description' => 'Regra de faturamento padrão criada automaticamente',
+                    'entity_type' => 'App\\Models\\HealthPlan',
+                    'entity_id' => $appointment->solicitation->health_plan_id,
+                    'rule_type' => 'per_appointment',
+                    'payment_term_days' => 30,
+                    'is_active' => true,
+                    'priority' => 1,
+                    'created_by' => auth()->id()
+                ]);
+            }
+
+            // Create billing batch
+            $batch = BillingBatch::create([
+                'billing_rule_id' => $billingRule->id,
+                'entity_type' => 'App\\Models\\HealthPlan',
+                'entity_id' => $appointment->solicitation->health_plan_id,
+                'reference_period_start' => $appointment->scheduled_date->startOfDay(),
+                'reference_period_end' => $appointment->scheduled_date->endOfDay(),
+                'billing_date' => now(),
+                'due_date' => now()->addDays($billingRule->payment_term_days ?? 30),
+                'status' => 'pending',
+                'items_count' => 1,
+                'total_amount' => $this->calculateAppointmentPrice($appointment),
+                'created_by' => auth()->id()
+            ]);
+
+            // Create billing item
+            $billingItem = BillingItem::create([
+                'billing_batch_id'        => $batch->id,
+                'item_type'               => 'appointment',
+                'item_id'                 => $appointment->id,
+                'description'             => "Atendimento {$appointment->provider->specialty} - {$appointment->scheduled_date}",
+                'quantity'                => 1,
+                'unit_price'              => $this->calculateAppointmentPrice($appointment),
+                'discount_amount'         => 0,
+                'tax_amount'              => 0,
+                'total_amount'            => $this->calculateAppointmentPrice($appointment),
+                'status'                  => 'pending',
+                'notes'                   => null,
+                'reference_type'          => null,
+                'reference_id'            => null,
+                'verified_by_operator'    => false,
+                'verified_at'             => null,
+                'verification_user'       => null,
+                'verification_notes'      => null,
+                'patient_journey_data'    => [
+                    'scheduled_at'         => $appointment->scheduled_date,
+                    'pre_confirmation'     => $appointment->pre_confirmation_response,
+                    'patient_confirmed'    => $appointment->patient_confirmed,
+                    'professional_confirmed'=> $appointment->professional_confirmed,
+                    'guide_status'         => $appointment->guide_status,
+                    'patient_attended'     => $appointment->patient_attended
+                ],
+                'tuss_code'               => $appointment->solicitation->tuss->code,
+                'tuss_description'        => $appointment->solicitation->tuss->description,
+                'professional_name'       => $appointment->provider->name,
+                'professional_specialty'  => $appointment->provider->specialty,
+                'patient_name'            => $appointment->solicitation->patient->name,
+                'patient_document'        => $appointment->solicitation->patient->cpf,
+            ]);
+
+            // Update appointment with billing batch ID
+            $appointment->update([
+                'billing_batch_id' => $batch->id,
+                'eligible_for_billing' => true
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Cobrança gerada com sucesso',
+                'billing_batch_id' => $batch->id,
+                'billing_item_id' => $billingItem->id,
+                'total_amount' => $batch->total_amount
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Error generating billing for appointment: ' . $e->getMessage(), [
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Erro ao gerar cobrança',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Check if appointment is eligible for billing
+     */
+    private function isAppointmentEligibleForBilling(Appointment $appointment): bool
+    {
+        return $appointment->patient_confirmed &&
+               $appointment->professional_confirmed &&
+               $appointment->patient_attended === true &&
+               $appointment->guide_status === 'approved';
     }
 } 

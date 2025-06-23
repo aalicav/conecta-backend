@@ -617,4 +617,5 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/billing/nfe/{id}/xml', [NFeController::class, 'downloadXML']);
     Route::post('/billing/nfe/{id}/cancel', [NFeController::class, 'cancel']);
     Route::post('/appointments/{appointment}/generate-nfe', [NFeController::class, 'generateFromAppointment']);
+    Route::post('/appointments/{appointment}/generate-billing', [AppointmentController::class, 'generateBilling']);
 }); 
