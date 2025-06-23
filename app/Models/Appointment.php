@@ -40,6 +40,11 @@ class Appointment extends Model
         'attendance_notes',
         'eligible_for_billing',
         'billing_batch_id',
+        'patient_confirmed',
+        'professional_confirmed',
+        'guide_status',
+        'pre_confirmation_response',
+        'pre_confirmation_response_at',
     ];
 
     /**
@@ -55,6 +60,10 @@ class Appointment extends Model
         'attendance_confirmed_at' => 'datetime',
         'patient_attended' => 'boolean',
         'eligible_for_billing' => 'boolean',
+        'patient_confirmed' => 'boolean',
+        'professional_confirmed' => 'boolean',
+        'pre_confirmation_response' => 'boolean',
+        'pre_confirmation_response_at' => 'datetime',
     ];
 
     /**
@@ -74,22 +83,6 @@ class Appointment extends Model
         static::created(function ($appointment) {
             // Update solicitation status to scheduled
             $appointment->solicitation()->update(['status' => 'scheduled']);
-
-            // Create a pending payment if needed
-            $settingPayOnSchedule = SystemSetting::where('key', 'payment_on_schedule')
-                ->where('value', 'true')
-                ->first();
-
-            if ($settingPayOnSchedule) {
-                Payment::create([
-                    'payable_type' => Appointment::class,
-                    'payable_id' => $appointment->id,
-                    'amount' => 0, // Will be calculated when needed
-                    'total_amount' => 0, // Will be calculated when needed
-                    'status' => 'pending',
-                    'created_by' => $appointment->created_by,
-                ]);
-            }
         });
 
         static::updated(function ($appointment) {
@@ -97,18 +90,6 @@ class Appointment extends Model
             if ($appointment->isDirty('status') && $appointment->status === 'completed' && $appointment->patient_attended) {
                 // Update solicitation status
                 $appointment->solicitation()->update(['status' => 'completed']);
-
-                // Create a payment if one doesn't exist yet
-                if (!$appointment->payment) {
-                    Payment::create([
-                        'payable_type' => Appointment::class,
-                        'payable_id' => $appointment->id,
-                        'amount' => 0, // Will be calculated when needed
-                        'total_amount' => 0, // Will be calculated when needed
-                        'status' => 'pending',
-                        'created_by' => $appointment->created_by,
-                    ]);
-                }
             }
 
             // If the appointment status changed to cancelled
@@ -121,11 +102,6 @@ class Appointment extends Model
 
                 if (!$otherAppointments) {
                     $appointment->solicitation()->update(['status' => 'pending']);
-                }
-
-                // Cancel any pending payment
-                if ($appointment->payment && $appointment->payment->status === 'pending') {
-                    $appointment->payment->update(['status' => 'cancelled']);
                 }
             }
         });
@@ -177,14 +153,6 @@ class Appointment extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
-    }
-
-    /**
-     * Get the payment associated with this appointment.
-     */
-    public function payment(): HasOne
-    {
-        return $this->morphOne(Payment::class, 'payable');
     }
 
     /**

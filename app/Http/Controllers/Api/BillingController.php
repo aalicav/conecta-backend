@@ -19,6 +19,7 @@ use Carbon\Carbon;
 use App\Models\User;
 use App\Models\SpecialtyPrice;
 use App\Models\MedicalSpecialty;
+use App\Models\PricingContract;
 
 class BillingController extends Controller
 {
@@ -61,11 +62,13 @@ class BillingController extends Controller
 
             // Busca atendimentos elegíveis para faturamento
             $appointments = Appointment::where('eligible_for_billing', true)
-                ->whereBetween('date', [
+                ->whereBetween('scheduled_date', [
                     $request->reference_period_start,
                     $request->reference_period_end
                 ])
-                ->where('health_plan_id', $request->operator_id)
+                ->whereHas('solicitation', function($query) use ($request) {
+                    $query->where('health_plan_id', $request->operator_id);
+                })
                 ->whereNull('billing_batch_id')
                 ->where('patient_confirmed', true)
                 ->where('professional_confirmed', true)
@@ -99,26 +102,37 @@ class BillingController extends Controller
                 $procedurePrice = $this->getProcedurePrice($appointment);
                 
                 BillingItem::create([
-                    'billing_batch_id' => $batch->id,
-                    'item_type' => 'appointment',
-                    'item_id' => $appointment->id,
-                    'description' => "Atendimento {$appointment->professional->specialty} - {$appointment->date}",
-                    'unit_price' => $procedurePrice,
-                    'total_amount' => $procedurePrice,
-                    'tuss_code' => $appointment->procedure_code,
-                    'tuss_description' => $appointment->procedure_description,
-                    'professional_name' => $appointment->professional->name,
-                    'professional_specialty' => $appointment->professional->specialty,
-                    'patient_name' => $appointment->patient->name,
-                    'patient_document' => $appointment->patient->document,
-                    'patient_journey_data' => [
-                        'scheduled_at' => $appointment->scheduled_at,
-                        'pre_confirmation' => $appointment->pre_confirmation_response,
-                        'patient_confirmed' => $appointment->patient_confirmed,
-                        'professional_confirmed' => $appointment->professional_confirmed,
-                        'guide_status' => $appointment->guide_status,
-                        'patient_attended' => $appointment->patient_attended
-                    ]
+                    'billing_batch_id'        => $batch->id,
+                    'item_type'               => 'appointment',
+                    'item_id'                 => $appointment->id,
+                    'description'             => "Atendimento {$appointment->provider->specialty} - {$appointment->scheduled_date}",
+                    'quantity'                => 1,
+                    'unit_price'              => $procedurePrice,
+                    'discount_amount'         => 0,
+                    'tax_amount'              => 0,
+                    'total_amount'            => $procedurePrice,
+                    'status'                  => 'pending',
+                    'notes'                   => null,
+                    'reference_type'          => null,
+                    'reference_id'            => null,
+                    'verified_by_operator'    => false,
+                    'verified_at'             => null,
+                    'verification_user'       => null,
+                    'verification_notes'      => null,
+                    'patient_journey_data'    => [
+                        'scheduled_at'         => $appointment->scheduled_date,
+                        'pre_confirmation'     => $appointment->pre_confirmation_response,
+                        'patient_confirmed'    => $appointment->patient_confirmed,
+                        'professional_confirmed'=> $appointment->professional_confirmed,
+                        'guide_status'         => $appointment->guide_status,
+                        'patient_attended'     => $appointment->patient_attended
+                    ],
+                    'tuss_code'               => $appointment->solicitation->tuss->code,
+                    'tuss_description'        => $appointment->solicitation->tuss->description,
+                    'professional_name'       => $appointment->provider->name,
+                    'professional_specialty'  => $appointment->provider->specialty,
+                    'patient_name'            => $appointment->solicitation->patient->name,
+                    'patient_document'        => $appointment->solicitation->patient->cpf,
                 ]);
 
                 $appointment->update(['billing_batch_id' => $batch->id]);
@@ -416,9 +430,11 @@ class BillingController extends Controller
                     DB::raw('COUNT(CASE WHEN eligible_for_billing = true THEN 1 END) as billable_appointments')
                 )
                 ->when($request->operator_id, function ($q, $operatorId) {
-                    return $q->where('health_plan_id', $operatorId);
+                    return $q->whereHas('solicitation', function($query) use ($operatorId) {
+                        $query->where('health_plan_id', $operatorId);
+                    });
                 })
-                ->where('date', '>=', now()->subMonths(6))
+                ->where('scheduled_date', '>=', now()->subMonths(6))
                 ->first();
 
             return response()->json([
@@ -460,44 +476,93 @@ class BillingController extends Controller
     private function getProcedurePrice($appointment)
     {
         // Se não for consulta (10101012), retorna o preço padrão do procedimento
-        if ($appointment->procedure_code !== '10101012') {
-            return $appointment->procedure_price;
+        if ($appointment->solicitation->tuss->code !== '10101012') {
+            // Busca o preço através dos contratos de preços
+            $pricingContract = PricingContract::where('tuss_procedure_id', $appointment->solicitation->tuss_id)
+                ->where('contractable_type', get_class($appointment->provider))
+                ->where('contractable_id', $appointment->provider_id)
+                ->where('is_active', true)
+                ->where(function ($query) {
+                    $query->whereNull('end_date')
+                        ->orWhere('end_date', '>=', now());
+                })
+                ->first();
+            
+            return $pricingContract ? $pricingContract->price : 0;
         }
 
         // Verifica se o profissional tem especialidade definida
-        if (!$appointment->professional->medical_specialty_id) {
-            return $appointment->procedure_price;
+        if (!$appointment->provider->specialty) {
+            // Busca o preço através dos contratos de preços
+            $pricingContract = PricingContract::where('tuss_procedure_id', $appointment->solicitation->tuss_id)
+                ->where('contractable_type', get_class($appointment->provider))
+                ->where('contractable_id', $appointment->provider_id)
+                ->where('is_active', true)
+                ->where(function ($query) {
+                    $query->whereNull('end_date')
+                        ->orWhere('end_date', '>=', now());
+                })
+                ->first();
+            
+            return $pricingContract ? $pricingContract->price : 0;
         }
 
-        $specialty = MedicalSpecialty::find($appointment->professional->medical_specialty_id);
+        // Busca a especialidade pelo nome
+        $specialty = MedicalSpecialty::where('name', $appointment->provider->specialty)->first();
         if (!$specialty) {
-            return $appointment->procedure_price;
+            // Busca o preço através dos contratos de preços
+            $pricingContract = PricingContract::where('tuss_procedure_id', $appointment->solicitation->tuss_id)
+                ->where('contractable_type', get_class($appointment->provider))
+                ->where('contractable_id', $appointment->provider_id)
+                ->where('is_active', true)
+                ->where(function ($query) {
+                    $query->whereNull('end_date')
+                        ->orWhere('end_date', '>=', now());
+                })
+                ->first();
+            
+            return $pricingContract ? $pricingContract->price : 0;
         }
 
         // Tenta obter o preço na seguinte ordem:
         // 1. Preço específico do profissional
-        $price = $specialty->getPriceForEntity('professional', $appointment->professional_id);
+        $price = $specialty->getPriceForEntity('professional', $appointment->provider_id);
         if ($price) {
             return $price;
         }
 
         // 2. Preço específico da clínica
-        if ($appointment->clinic_id) {
-            $price = $specialty->getPriceForEntity('clinic', $appointment->clinic_id);
+        if ($appointment->provider->clinic_id) {
+            $price = $specialty->getPriceForEntity('clinic', $appointment->provider->clinic_id);
             if ($price) {
                 return $price;
             }
         }
 
         // 3. Preço específico do plano de saúde
-        if ($appointment->health_plan_id) {
-            $price = $specialty->getPriceForEntity('health_plan', $appointment->health_plan_id);
+        if ($appointment->solicitation->health_plan_id) {
+            $price = $specialty->getPriceForEntity('health_plan', $appointment->solicitation->health_plan_id);
             if ($price) {
                 return $price;
             }
         }
 
         // 4. Preço padrão da especialidade
-        return $specialty->default_price ?? $appointment->procedure_price;
+        if ($specialty->default_price) {
+            return $specialty->default_price;
+        }
+
+        // 5. Busca o preço através dos contratos de preços
+        $pricingContract = PricingContract::where('tuss_procedure_id', $appointment->solicitation->tuss_id)
+            ->where('contractable_type', get_class($appointment->provider))
+            ->where('contractable_id', $appointment->provider_id)
+            ->where('is_active', true)
+            ->where(function ($query) {
+                $query->whereNull('end_date')
+                    ->orWhere('end_date', '>=', now());
+            })
+            ->first();
+        
+        return $pricingContract ? $pricingContract->price : 0;
     }
 } 

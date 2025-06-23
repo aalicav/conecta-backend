@@ -19,8 +19,29 @@ class BillingItem extends Model
      */
     protected $fillable = [
         'billing_batch_id',
-        'appointment_id',
-        'amount'
+        'item_type',
+        'item_id',
+        'reference_type',
+        'reference_id',
+        'description',
+        'quantity',
+        'unit_price',
+        'discount_amount',
+        'tax_amount',
+        'total_amount',
+        'status',
+        'notes',
+        'verified_by_operator',
+        'verified_at',
+        'verification_user',
+        'verification_notes',
+        'patient_journey_data',
+        'tuss_code',
+        'tuss_description',
+        'professional_name',
+        'professional_specialty',
+        'patient_name',
+        'patient_document',
     ];
 
     /**
@@ -29,7 +50,14 @@ class BillingItem extends Model
      * @var array
      */
     protected $casts = [
-        'amount' => 'decimal:2'
+        'quantity' => 'integer',
+        'unit_price' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'tax_amount' => 'decimal:2',
+        'total_amount' => 'decimal:2',
+        'verified_by_operator' => 'boolean',
+        'verified_at' => 'datetime',
+        'patient_journey_data' => 'array',
     ];
 
     /**
