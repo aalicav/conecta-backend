@@ -128,16 +128,6 @@ class ProcessAutomaticScheduling implements ShouldQueue
                 $this->solicitation->markAsPending();
                 Log::warning("Nenhum profissional encontrado para solicitação #{$this->solicitation->id}");
 
-                // Notify administrators
-                $usersToNotify = User::role(['super_admin', 'network_manager', 'director', 'commercial_manager'])
-                    ->where('is_active', true)
-                    ->whereNull('deleted_at')
-                    ->get();
-
-                if (!$usersToNotify->isEmpty()) {
-                    Notification::send($usersToNotify, new NoProvidersFound($this->solicitation));
-                    Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$this->solicitation->id}");
-                }
             }
         } catch (\Exception $e) {
             Log::error("Erro no processamento automático da solicitação #{$this->solicitation->id}: " . $e->getMessage());
