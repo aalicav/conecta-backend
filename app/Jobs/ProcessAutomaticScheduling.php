@@ -83,10 +83,21 @@ class ProcessAutomaticScheduling implements ShouldQueue
             $scheduler = new AppointmentScheduler();
             $providers = $scheduler->findBestProvider($this->solicitation);
 
+            // Log the providers data for debugging
+            Log::info("Providers found for solicitation #{$this->solicitation->id}:", ['providers' => $providers]);
+
             if (!empty($providers) && is_array($providers)) {
                 $createdInvites = 0;
                 
                 foreach ($providers as $provider) {
+                    // Validate provider data structure
+                    if (!is_array($provider) || 
+                        !isset($provider['provider_type']) || 
+                        !isset($provider['provider_id'])) {
+                        Log::warning("Invalid provider data structure:", ['provider' => $provider]);
+                        continue;
+                    }
+
                     // Double-check if invite already exists for this specific provider
                     $existingProviderInvite = SolicitationInvite::where('solicitation_id', $this->solicitation->id)
                         ->where('provider_type', $provider['provider_type'])
@@ -99,6 +110,27 @@ class ProcessAutomaticScheduling implements ShouldQueue
                         continue;
                     }
 
+                    // Get the provider model
+                    $providerModel = null;
+                    try {
+                        $providerModel = $provider['provider_type']::find($provider['provider_id']);
+                    } catch (\Exception $e) {
+                        Log::warning("Error finding provider model:", [
+                            'provider_type' => $provider['provider_type'],
+                            'provider_id' => $provider['provider_id'],
+                            'error' => $e->getMessage()
+                        ]);
+                        continue;
+                    }
+
+                    if (!$providerModel || !$providerModel->user) {
+                        Log::warning("Provider or user not found:", [
+                            'provider_type' => $provider['provider_type'],
+                            'provider_id' => $provider['provider_id']
+                        ]);
+                        continue;
+                    }
+
                     // Create invite for each provider
                     $invite = SolicitationInvite::create([
                         'solicitation_id' => $this->solicitation->id,
@@ -107,15 +139,12 @@ class ProcessAutomaticScheduling implements ShouldQueue
                         'status' => 'pending',
                         'created_by' => $this->solicitation->requested_by
                     ]);
-
-                    // Get the provider's user
-                    $providerUser = $provider['provider_type']::find($provider['provider_id'])->user;
                     
                     // Send notification using NotificationService
                     $this->notificationService->sendSolicitationInviteNotification(
                         $this->solicitation,
                         $invite,
-                        $providerUser
+                        $providerModel->user
                     );
                     
                     $createdInvites++;
