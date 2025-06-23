@@ -83,11 +83,10 @@ class ProcessAutomaticScheduling implements ShouldQueue
             $scheduler = new AppointmentScheduler();
             $providers = $scheduler->findBestProvider($this->solicitation);
 
-            Log::info("Providers found for solicitation #{$this->solicitation->id}:", ['providers' => $providers['success']]);
-            if ($providers['success'] && !empty($providers['providers'])) {
+            if ($providers['success'] && !empty($providers['data'])) {
                 $createdInvites = 0;
                 
-                foreach ($providers['providers'] as $provider) {
+                foreach ($providers['data'] as $provider) {
                     // Double-check if invite already exists for this specific provider
                     $existingProviderInvite = SolicitationInvite::where('solicitation_id', $this->solicitation->id)
                         ->where('provider_type', $provider['provider_type'])
@@ -128,6 +127,16 @@ class ProcessAutomaticScheduling implements ShouldQueue
                 $this->solicitation->markAsPending();
                 Log::warning("Nenhum profissional encontrado para solicitação #{$this->solicitation->id}");
 
+                // Notify administrators
+                $usersToNotify = User::role(['super_admin', 'network_manager', 'director', 'commercial_manager'])
+                    ->where('is_active', true)
+                    ->whereNull('deleted_at')
+                    ->get();
+
+                if (!$usersToNotify->isEmpty()) {
+                    Notification::send($usersToNotify, new NoProvidersFound($this->solicitation));
+                    Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$this->solicitation->id}");
+                }
             }
         } catch (\Exception $e) {
             Log::error("Erro no processamento automático da solicitação #{$this->solicitation->id}: " . $e->getMessage());
