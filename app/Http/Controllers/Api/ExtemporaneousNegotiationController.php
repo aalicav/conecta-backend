@@ -270,7 +270,6 @@ class ExtemporaneousNegotiationController extends Controller
             }
             
             $validated = $request->validate([
-                'approved_value' => 'required|numeric|min:0',
                 'approval_notes' => 'nullable|string'
             ]);
             
@@ -291,7 +290,8 @@ class ExtemporaneousNegotiationController extends Controller
                     'approved_by' => $user->id,
                     'approved_at' => now(),
                     'approval_notes' => $validated['approval_notes'],
-                    'approved_value' => $validated['approved_value']
+                    'approved_value' => $negotiation->requested_value,
+                    'negotiated_price' => $negotiation->requested_value
                 ]);
 
                 // Desativar contratos de preço anteriores para a mesma entidade e código TUSS
@@ -311,7 +311,7 @@ class ExtemporaneousNegotiationController extends Controller
                         'tuss_procedure_id' => $negotiation->tussProcedure->id,
                         'contractable_type' => $negotiation->negotiable_type,
                         'contractable_id' => $negotiation->negotiable_id,
-                        'price' => $validated['approved_value'],
+                        'price' => $negotiation->requested_value,
                         'is_active' => true,
                         'start_date' => now(),
                         'end_date' => null, // Sem data de término para negociações extemporâneas
