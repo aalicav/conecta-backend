@@ -89,7 +89,33 @@ class ProcessAutomaticScheduling implements ShouldQueue
                 'providers_data' => $providers
             ]);
 
-            if (is_array($providers) && isset($providers['success']) && $providers['success'] === true && isset($providers['data']) && is_array($providers['data'])) {
+            // Check if we got a valid response
+            if (!is_array($providers)) {
+                Log::error("Invalid response from findBestProvider for solicitation #{$this->solicitation->id}");
+                throw new \Exception("Invalid response from findBestProvider");
+            }
+
+            // Handle the no providers found case
+            if (!isset($providers['success']) || $providers['success'] === false) {
+                // If no providers found, mark as pending
+                $this->solicitation->markAsPending();
+                Log::warning("Nenhum profissional encontrado para solicitação #{$this->solicitation->id}");
+
+                // Notify administrators
+                $usersToNotify = User::role(['super_admin', 'network_manager', 'director', 'commercial_manager'])
+                    ->where('is_active', true)
+                    ->whereNull('deleted_at')
+                    ->get();
+
+                if (!$usersToNotify->isEmpty()) {
+                    Notification::send($usersToNotify, new NoProvidersFound($this->solicitation));
+                    Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$this->solicitation->id}");
+                }
+                return;
+            }
+
+            // Handle the success case
+            if (isset($providers['data']) && is_array($providers['data'])) {
                 $createdInvites = 0;
                 
                 foreach ($providers['data'] as $provider) {
@@ -128,21 +154,6 @@ class ProcessAutomaticScheduling implements ShouldQueue
                 }
                 
                 Log::info("Criados {$createdInvites} novos convites para solicitação #{$this->solicitation->id}");
-            } else {
-                // If no providers found, mark as pending
-                $this->solicitation->markAsPending();
-                Log::warning("Nenhum profissional encontrado para solicitação #{$this->solicitation->id}");
-
-                // Notify administrators
-                $usersToNotify = User::role(['super_admin', 'network_manager', 'director', 'commercial_manager'])
-                    ->where('is_active', true)
-                    ->whereNull('deleted_at')
-                    ->get();
-
-                if (!$usersToNotify->isEmpty()) {
-                    Notification::send($usersToNotify, new NoProvidersFound($this->solicitation));
-                    Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$this->solicitation->id}");
-                }
             }
         } catch (\Exception $e) {
             Log::error("Erro no processamento automático da solicitação #{$this->solicitation->id}: " . $e->getMessage());
