@@ -149,7 +149,7 @@ class ExtemporaneousNegotiationController extends Controller
             $negotiation = ExtemporaneousNegotiation::create([
                 'negotiable_type' => $validated['negotiable_type'],
                 'negotiable_id' => $validated['negotiable_id'],
-                'tuss_procedure_id' => $solicitation->tuss->id,
+                'tuss_id' => $solicitation->tuss->id,
                 'negotiated_price' => $validated['negotiated_price'],
                 'justification' => $validated['justification'],
                 'status' => 'pending',

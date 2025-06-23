@@ -29,7 +29,7 @@ class ExtemporaneousNegotiation extends Model
     protected $fillable = [
         'negotiable_type',
         'negotiable_id',
-        'tuss_procedure_id',
+        'tuss_id',
         'negotiated_price',
         'justification',
         'status',
@@ -71,7 +71,7 @@ class ExtemporaneousNegotiation extends Model
      */
     public function tussProcedure(): BelongsTo
     {
-        return $this->belongsTo(TussProcedure::class, 'tuss_procedure_id');
+        return $this->belongsTo(TussProcedure::class, 'tuss_id');
     }
 
     /**
