@@ -51,6 +51,34 @@ class SolicitationController extends Controller
     {
         $query = Solicitation::with(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments']);
         
+        // Search functionality
+        if ($request->has('search')) {
+            $searchTerm = $request->search;
+            $query->where(function($q) use ($searchTerm) {
+                // Search in solicitation fields
+                $q->where('id', 'like', "%{$searchTerm}%")
+                  ->orWhere('description', 'like', "%{$searchTerm}%")
+                  ->orWhere('priority', 'like', "%{$searchTerm}%")
+                  ->orWhere('state', 'like', "%{$searchTerm}%")
+                  ->orWhere('city', 'like', "%{$searchTerm}%")
+                  // Search in related patient
+                  ->orWhereHas('patient', function($query) use ($searchTerm) {
+                      $query->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('document', 'like', "%{$searchTerm}%");
+                  })
+                  // Search in related TUSS
+                  ->orWhereHas('tuss', function($query) use ($searchTerm) {
+                      $query->where('code', 'like', "%{$searchTerm}%")
+                            ->orWhere('description', 'like', "%{$searchTerm}%");
+                  })
+                  // Search in related health plan
+                  ->orWhereHas('healthPlan', function($query) use ($searchTerm) {
+                      $query->where('name', 'like', "%{$searchTerm}%")
+                            ->orWhere('document', 'like', "%{$searchTerm}%");
+                  });
+            });
+        }
+        
         // Filter by status if provided
         if ($request->has('status')) {
             $query->where('status', $request->status);
