@@ -81,7 +81,25 @@ class ProcessAutomaticScheduling implements ShouldQueue
             }
 
             $scheduler = new AppointmentScheduler();
-            $result = $scheduler->findBestProvider($this->solicitation);
+            
+            // Debug logging before findBestProvider
+            Log::info("Calling findBestProvider for solicitation #{$this->solicitation->id}");
+            
+            try {
+                $result = $scheduler->findBestProvider($this->solicitation);
+            } catch (\Exception $e) {
+                Log::error("Error calling findBestProvider: " . $e->getMessage());
+                throw $e;
+            }
+            
+            // Validate result type
+            if (!is_array($result)) {
+                Log::error("Invalid result type from findBestProvider", [
+                    'type' => gettype($result),
+                    'value' => $result
+                ]);
+                throw new \Exception("Invalid result type from findBestProvider: " . gettype($result));
+            }
 
             // Debug logging
             Log::info("Provider search result for solicitation #{$this->solicitation->id}:", [
