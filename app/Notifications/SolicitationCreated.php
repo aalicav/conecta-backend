@@ -83,6 +83,11 @@ class SolicitationCreated extends Notification implements ShouldQueue
      */
     public function toWhatsApp($notifiable)
     {
+        // Skip if no WhatsApp number
+        if (empty($notifiable->whatsapp)) {
+            return null;
+        }
+
         $patient = $this->solicitation->patient;
         $tuss = $this->solicitation->tuss;
         
