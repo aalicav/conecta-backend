@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\MedicalSpecialtyController;
 use App\Http\Controllers\Api\ProfessionalAvailabilityController;
 use App\Http\Controllers\Api\SolicitationInviteController;
 use App\Http\Controllers\Billing\NFeController;
+use App\Http\Controllers\Api\ExtemporaneousNegotiationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -462,15 +463,15 @@ Route::prefix('contract-approvals')->group(function () {
     Route::get('/{id}/history', 'Api\ContractApprovalController@approvalHistory');
 });
 
-// Extemporaneous Negotiation routes
-Route::prefix('extemporaneous-negotiations')->group(function () {
-    Route::get('/', 'Api\ExtemporaneousNegotiationController@index');
-    Route::post('/', 'Api\ExtemporaneousNegotiationController@store');
-    Route::get('/{id}', 'Api\ExtemporaneousNegotiationController@show');
-    Route::post('/{id}/approve', 'Api\ExtemporaneousNegotiationController@approve');
-    Route::post('/{id}/reject', 'Api\ExtemporaneousNegotiationController@reject');
-    Route::post('/{id}/addendum', 'Api\ExtemporaneousNegotiationController@markAsAddendumIncluded');
-    Route::get('/contract/{contractId}', 'Api\ExtemporaneousNegotiationController@listByContract');
+// Extemporaneous Negotiations
+Route::prefix('extemporaneous-negotiations')->middleware(['auth:sanctum'])->group(function () {
+    Route::get('/', [ExtemporaneousNegotiationController::class, 'index']);
+    Route::post('/', [ExtemporaneousNegotiationController::class, 'store'])->middleware('permission:create negotiations');
+    Route::get('/{id}', [ExtemporaneousNegotiationController::class, 'show']);
+    Route::post('/{id}/approve', [ExtemporaneousNegotiationController::class, 'approve'])->middleware('permission:approve negotiations');
+    Route::post('/{id}/reject', [ExtemporaneousNegotiationController::class, 'reject'])->middleware('permission:approve negotiations');
+    Route::post('/{id}/addendum', [ExtemporaneousNegotiationController::class, 'markAsAddendumIncluded'])->middleware('permission:edit negotiations');
+    Route::get('/contract/{contractId}', [ExtemporaneousNegotiationController::class, 'listByContract']);
 });
 
 // Specialty Negotiation routes
