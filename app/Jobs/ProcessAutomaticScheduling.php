@@ -87,7 +87,7 @@ class ProcessAutomaticScheduling implements ShouldQueue
             // Log the providers data for debugging
             Log::info("Providers found for solicitation #{$this->solicitation->id}:", ['providers' => $providers]);
 
-            if (false) {
+            if (!empty($providers)) {
                 $createdInvites = 0;
                 
                 foreach ($providers as $provider) {
@@ -162,14 +162,6 @@ class ProcessAutomaticScheduling implements ShouldQueue
                     ->where('is_active', true)
                     ->whereNull('deleted_at')
                     ->get();
-
-                if ($usersToNotify->count() > 0) {
-                    Notification::send($usersToNotify, new NoProvidersFound($this->solicitation, [
-                        'reason' => 'automatic_scheduling',
-                        'timestamp' => now()->toIso8601String()
-                    ]));
-                    Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$this->solicitation->id}");
-                }
             }
         } catch (\Exception $e) {
             Log::error("Erro no processamento automático da solicitação #{$this->solicitation->id}: " . $e->getMessage());
