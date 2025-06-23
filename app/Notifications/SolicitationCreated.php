@@ -3,12 +3,10 @@
 namespace App\Notifications;
 
 use App\Models\Solicitation;
-use App\Notifications\Channels\WhatsAppChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-use App\Notifications\Messages\WhatsAppMessage;
 
 class SolicitationCreated extends Notification implements ShouldQueue
 {
@@ -46,10 +44,6 @@ class SolicitationCreated extends Notification implements ShouldQueue
             $channels[] = 'mail';
         }
         
-        if ($notifiable->notificationChannelEnabled('whatsapp') && $notifiable->whatsapp) {
-            $channels[] = WhatsAppChannel::class;
-        }
-        
         return $channels;
     }
 
@@ -73,36 +67,6 @@ class SolicitationCreated extends Notification implements ShouldQueue
             ->line('Período: ' . $this->solicitation->preferred_date_start->format('d/m/Y') . ' até ' . $this->solicitation->preferred_date_end->format('d/m/Y'))
             ->action('Ver Detalhes', url('/solicitations/' . $this->solicitation->id))
             ->line('Obrigado por usar nossa plataforma!');
-    }
-
-    /**
-     * Get the WhatsApp representation of the notification.
-     *
-     * @param  mixed  $notifiable
-     * @return \App\Notifications\Messages\WhatsAppMessage
-     */
-    public function toWhatsApp($notifiable)
-    {
-        // Skip if no WhatsApp number
-        if (empty($notifiable->whatsapp)) {
-            return null;
-        }
-
-        $patient = $this->solicitation->patient;
-        $tuss = $this->solicitation->tuss;
-        
-        return (new WhatsAppMessage)
-            ->template('solicitation_created')
-            ->parameters([
-                'patient_name' => $patient->name,
-                'tuss_code' => $tuss->code,
-                'tuss_description' => $tuss->description,
-                'priority' => ucfirst($this->solicitation->priority),
-                'start_date' => $this->solicitation->preferred_date_start->format('d/m/Y'),
-                'end_date' => $this->solicitation->preferred_date_end->format('d/m/Y'),
-                'solicitation_url' => url('/solicitations/' . $this->solicitation->id)
-            ])
-            ->to($notifiable->whatsapp);
     }
 
     /**

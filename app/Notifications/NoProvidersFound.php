@@ -8,6 +8,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 
 class NoProvidersFound extends Notification implements ShouldQueue
 {
@@ -54,10 +55,6 @@ class NoProvidersFound extends Notification implements ShouldQueue
             $channels[] = 'mail';
         }
         
-        if ($notifiable->notificationChannelEnabled('whatsapp')) {
-            $channels[] = WhatsAppChannel::class;
-        }
-        
         return $channels;
     }
 
@@ -70,13 +67,13 @@ class NoProvidersFound extends Notification implements ShouldQueue
     public function toMail($notifiable)
     {
         $patient = $this->solicitation->patient;
-        $procedure = $this->solicitation->procedure;
+        $tuss = $this->solicitation->tuss;
 
         return (new MailMessage)
             ->subject('Nenhum Profissional Encontrado para Solicitação')
             ->line("Não foi possível encontrar profissionais disponíveis para a solicitação #{$this->solicitation->id}.")
             ->line("Paciente: {$patient->name}")
-            ->line("Procedimento: {$procedure->name}")
+            ->line("Procedimento: {$tuss->code} - {$tuss->description}")
             ->action('Ver Solicitação', url("/solicitations/{$this->solicitation->id}"))
             ->line('Esta solicitação requer atenção imediata.');
     }
@@ -89,13 +86,19 @@ class NoProvidersFound extends Notification implements ShouldQueue
      */
     public function toArray($notifiable)
     {
+        $patient = $this->solicitation->patient;
+        $tuss = $this->solicitation->tuss;
+        
         return [
             'title' => 'Nenhum Profissional Encontrado',
             'body' => "Não foi possível encontrar profissionais disponíveis para a solicitação #{$this->solicitation->id}.",
             'action_link' => "/solicitations/{$this->solicitation->id}",
             'icon' => 'alert-triangle',
             'priority' => 'high',
-            'solicitation_id' => $this->solicitation->id
+            'solicitation_id' => $this->solicitation->id,
+            'patient_name' => $patient->name,
+            'procedure_code' => $tuss->code,
+            'procedure_description' => $tuss->description
         ];
     }
 
@@ -104,8 +107,20 @@ class NoProvidersFound extends Notification implements ShouldQueue
      */
     public function toWhatsApp($notifiable)
     {
+        if (empty($notifiable->whatsapp)) {
+            return null;
+        }
+
         $patient = $this->solicitation->patient;
-        $procedure = $this->solicitation->procedure;
+        $tuss = $this->solicitation->tuss;
+
+        if (!$patient || !$tuss) {
+            Log::warning("Missing patient or TUSS data for solicitation #{$this->solicitation->id}", [
+                'has_patient' => !is_null($patient),
+                'has_tuss' => !is_null($tuss)
+            ]);
+            return null;
+        }
 
         return [
             'template_name' => 'no_providers_found',
@@ -126,7 +141,7 @@ class NoProvidersFound extends Notification implements ShouldQueue
                         ],
                         [
                             'type' => 'text',
-                            'text' => $procedure->name
+                            'text' => "{$tuss->code} - {$tuss->description}"
                         ]
                     ]
                 ]
