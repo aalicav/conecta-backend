@@ -18,15 +18,21 @@ use App\Models\HealthPlan;
 use App\Models\Professional;
 use App\Models\Clinic;
 use Carbon\Carbon;
+use App\Services\ReportGenerationService;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\JsonResponse;
+use App\Jobs\GenerateReport;
 
 class ReportController extends Controller
 {
     protected $reportService;
+    protected $reportGenerationService;
 
-    public function __construct(ReportService $reportService)
+    public function __construct(ReportService $reportService, ReportGenerationService $reportGenerationService)
     {
         $this->middleware('auth:sanctum');
         $this->reportService = $reportService;
+        $this->reportGenerationService = $reportGenerationService;
     }
 
     /**
@@ -335,59 +341,75 @@ class ReportController extends Controller
     }
 
     /**
-     * Generate a report.
+     * Generate and download a report.
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param Request $request
+     * @return JsonResponse
      */
-    public function generate(Request $request, $id)
+    public function generate(Request $request)
     {
         try {
-            $report = Report::findOrFail($id);
-            
-            // Access control - only admins and the creator can generate reports
-            if (!Auth::user()->hasRole('admin') && $report->created_by !== Auth::id()) {
+            $validator = Validator::make($request->all(), [
+                'type' => 'required|string|in:appointments,professionals,clinics,financial,billing',
+                'format' => 'required|string|in:pdf,csv,xlsx',
+                'filters' => 'nullable|array',
+                'filters.start_date' => 'nullable|date',
+                'filters.end_date' => 'nullable|date|after_or_equal:filters.start_date',
+                'filters.status' => 'nullable|string',
+                'filters.city' => 'nullable|string',
+                'filters.state' => 'nullable|string',
+                'filters.health_plan_id' => 'nullable|integer|exists:health_plans,id',
+                'filters.professional_id' => 'nullable|integer|exists:professionals,id',
+                'filters.clinic_id' => 'nullable|integer|exists:clinics,id',
+                'filters.specialty' => 'nullable|string',
+            ]);
+
+            if ($validator->fails()) {
                 return response()->json([
-                    'status' => 'error',
-                    'message' => 'You do not have permission to generate this report'
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Check if user has permission to generate this type of report
+            $user = Auth::user();
+            $reportConfig = config('reports');
+            
+            if (!$user->hasRole('super_admin') && 
+                !array_intersect($user->getRoleNames()->toArray(), $reportConfig['permissions'][$request->type])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to generate this type of report'
                 ], 403);
             }
-            
-            $validated = $request->validate([
-                'parameters' => 'nullable|array',
-                'format' => 'nullable|string|in:pdf,csv,xlsx',
-            ]);
-            
-            // Generate the report
-            $generation = $this->reportService->generateReport(
-                $report, 
-                $validated, 
-                Auth::id(), 
-                false
+
+            // Dispatch job to generate report
+            GenerateReport::dispatch(
+                $request->type,
+                $request->filters ?? [],
+                $request->format,
+                Auth::id()
             );
-            
+
+            $reportName = $reportConfig['types'][$request->type]['name'] ?? 'Relatório';
+
             return response()->json([
-                'status' => 'success',
-                'message' => 'Report generated successfully',
+                'success' => true,
+                'message' => "A geração do {$reportName} foi iniciada. Você receberá uma notificação quando estiver pronto.",
                 'data' => [
-                    'generation' => $generation,
-                    'download_url' => url("/api/reports/generations/{$generation->id}/download")
+                    'type' => $request->type,
+                    'format' => $request->format,
+                    'filters' => $request->filters
                 ]
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to generate report: ' . $e->getMessage(), [
-                'exception' => $e,
-                'user_id' => Auth::id(),
-                'report_id' => $id,
-                'request_data' => $request->all()
-            ]);
-            
+            Log::error('Error generating report: ' . $e->getMessage());
             return response()->json([
-                'status' => 'error',
+                'success' => false,
                 'message' => 'Failed to generate report',
                 'error' => $e->getMessage()
-            ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
+            ], 500);
         }
     }
 
@@ -985,6 +1007,332 @@ class ReportController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erro ao gerar relatório de planos de saúde',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get report configuration.
+     *
+     * @return JsonResponse
+     */
+    public function config()
+    {
+        try {
+            $user = Auth::user();
+            $config = config('reports');
+            
+            // Filter report types based on user permissions
+            $config['types'] = collect($config['types'])
+                ->filter(function ($type, $key) use ($config, $user) {
+                    return $user->hasRole('super_admin') || 
+                           array_intersect($user->getRoleNames()->toArray(), $config['permissions'][$key]);
+                })
+                ->toArray();
+
+            // Get options for dynamic selects
+            foreach ($config['types'] as &$type) {
+                foreach ($type['filters'] as &$filter) {
+                    if (isset($filter['options_from'])) {
+                        switch ($filter['options_from']) {
+                            case 'health_plans':
+                                $filter['options'] = \App\Models\HealthPlan::select('id', 'name')
+                                    ->where('status', 'approved')
+                                    ->orderBy('name')
+                                    ->get()
+                                    ->mapWithKeys(function ($item) {
+                                        return [$item->id => $item->name];
+                                    })
+                                    ->toArray();
+                                break;
+                            case 'professionals':
+                                $query = \App\Models\Professional::select('id', 'name')
+                                    ->where('status', 'approved')
+                                    ->orderBy('name');
+                                
+                                if ($user->hasRole('clinic_admin')) {
+                                    $query->where('clinic_id', $user->clinic_id);
+                                }
+                                
+                                $filter['options'] = $query->get()
+                                    ->mapWithKeys(function ($item) {
+                                        return [$item->id => $item->name];
+                                    })
+                                    ->toArray();
+                                break;
+                            case 'clinics':
+                                $query = \App\Models\Clinic::select('id', 'name')
+                                    ->where('status', 'approved')
+                                    ->orderBy('name');
+                                
+                                if ($user->hasRole('clinic_admin')) {
+                                    $query->where('id', $user->clinic_id);
+                                }
+                                
+                                $filter['options'] = $query->get()
+                                    ->mapWithKeys(function ($item) {
+                                        return [$item->id => $item->name];
+                                    })
+                                    ->toArray();
+                                break;
+                        }
+                        unset($filter['options_from']);
+                    }
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $config
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting report configuration: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get report configuration',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get scheduled reports.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function scheduled(Request $request): JsonResponse
+    {
+        try {
+            $query = Report::where('is_scheduled', true);
+            
+            // Apply filters
+            if ($request->has('type')) {
+                $query->where('type', $request->type);
+            }
+            
+            if ($request->has('is_active')) {
+                $query->where('is_active', $request->boolean('is_active'));
+            }
+            
+            if ($request->has('frequency')) {
+                $query->where('schedule_frequency', $request->frequency);
+            }
+            
+            // Apply user-specific filters
+            $user = Auth::user();
+            if (!$user->hasRole('super_admin')) {
+                $query->where('created_by', $user->id);
+            }
+            
+            // Get reports
+            $reports = $query->orderBy('created_at', 'desc')
+                ->paginate($request->per_page ?? 15);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $reports
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get scheduled reports',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a scheduled report.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function scheduleReport(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'name' => 'required|string|max:255',
+                'type' => 'required|string|in:appointments,professionals,clinics,financial,billing',
+                'description' => 'nullable|string',
+                'parameters' => 'nullable|array',
+                'file_format' => 'required|string|in:pdf,csv,xlsx',
+                'schedule_frequency' => 'required|string|in:daily,weekly,monthly,quarterly',
+                'recipients' => 'nullable|array',
+                'recipients.*' => 'email',
+                'is_active' => 'boolean'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Check if user has permission to create this type of report
+            $user = Auth::user();
+            $reportConfig = config('reports');
+            
+            if (!$user->hasRole('super_admin') && 
+                !array_intersect($user->getRoleNames()->toArray(), $reportConfig['permissions'][$request->type])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to create this type of report'
+                ], 403);
+            }
+
+            // Create report
+            $report = Report::create([
+                'name' => $request->name,
+                'type' => $request->type,
+                'description' => $request->description,
+                'parameters' => $request->parameters,
+                'file_format' => $request->file_format,
+                'is_scheduled' => true,
+                'schedule_frequency' => $request->schedule_frequency,
+                'recipients' => $request->recipients,
+                'is_active' => $request->is_active ?? true,
+                'created_by' => Auth::id()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Scheduled report created successfully',
+                'data' => $report
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create scheduled report',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update a scheduled report.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function updateScheduledReport(Request $request, int $id): JsonResponse
+    {
+        try {
+            $report = Report::findOrFail($id);
+
+            // Check if user can update this report
+            if (!Auth::user()->hasRole('super_admin') && $report->created_by !== Auth::id()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to update this report'
+                ], 403);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'name' => 'sometimes|string|max:255',
+                'description' => 'nullable|string',
+                'parameters' => 'nullable|array',
+                'file_format' => 'sometimes|string|in:pdf,csv,xlsx',
+                'schedule_frequency' => 'sometimes|string|in:daily,weekly,monthly,quarterly',
+                'recipients' => 'nullable|array',
+                'recipients.*' => 'email',
+                'is_active' => 'boolean'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Update report
+            $report->update($request->all());
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Scheduled report updated successfully',
+                'data' => $report
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update scheduled report',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a scheduled report.
+     *
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function deleteScheduledReport(int $id): JsonResponse
+    {
+        try {
+            $report = Report::findOrFail($id);
+
+            // Check if user can delete this report
+            if (!Auth::user()->hasRole('super_admin') && $report->created_by !== Auth::id()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to delete this report'
+                ], 403);
+            }
+
+            $report->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Scheduled report deleted successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete scheduled report',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Toggle scheduled report status.
+     *
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function toggleScheduledReport(int $id): JsonResponse
+    {
+        try {
+            $report = Report::findOrFail($id);
+
+            // Check if user can update this report
+            if (!Auth::user()->hasRole('super_admin') && $report->created_by !== Auth::id()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to update this report'
+                ], 403);
+            }
+
+            $report->is_active = !$report->is_active;
+            $report->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Scheduled report ' . ($report->is_active ? 'activated' : 'deactivated') . ' successfully',
+                'data' => $report
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to toggle scheduled report',
                 'error' => $e->getMessage()
             ], 500);
         }

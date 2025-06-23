@@ -15,38 +15,34 @@ class Report extends Model
     /**
      * The attributes that are mass assignable.
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected $fillable = [
         'name',
         'type',
         'description',
         'parameters',
-        'file_path',
         'file_format',
-        'created_by',
-        'last_generated_at',
+        'is_template',
         'is_scheduled',
         'schedule_frequency',
-        'next_scheduled_at',
         'recipients',
-        'is_public',
-        'is_template'
+        'is_active',
+        'created_by'
     ];
 
     /**
      * The attributes that should be cast.
      *
-     * @var array
+     * @var array<string, string>
      */
     protected $casts = [
         'parameters' => 'array',
-        'last_generated_at' => 'datetime',
-        'next_scheduled_at' => 'datetime',
         'recipients' => 'array',
+        'is_template' => 'boolean',
         'is_scheduled' => 'boolean',
-        'is_public' => 'boolean',
-        'is_template' => 'boolean'
+        'is_active' => 'boolean',
+        'last_generated_at' => 'datetime'
     ];
 
     /**

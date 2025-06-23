@@ -189,17 +189,22 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/payments/{payment}/glosses/{gloss}/revert', [PaymentController::class, 'revertGloss'])->middleware('permission:manage financials');
     
     // Reports
-    Route::get('/reports', [ReportController::class, 'index']);
-    Route::get('/reports/solicitations', [ReportController::class, 'solicitations']);
-    Route::get('/reports/appointments', [ReportController::class, 'appointments']);
-    Route::get('/reports/providers', [ReportController::class, 'providers']);
-    Route::get('/reports/health-plans', [ReportController::class, 'healthPlans']);
-    Route::get('/reports/financials', [ReportController::class, 'financials'])->middleware('permission:view financial reports');
-    Route::get('/reports/performance', [ReportController::class, 'performance']);
-    Route::post('/reports/export', [ReportController::class, 'export']);
-    Route::get('/reports/generations/{id}/download', [ReportController::class, 'download']);
-    Route::post('/reports/{id}/generate', [ReportController::class, 'generate']);
-    Route::get('/reports/{id}', [ReportController::class, 'show']);
+    Route::prefix('reports')->group(function () {
+        Route::get('config', [ReportController::class, 'config']);
+        Route::post('generate', [ReportController::class, 'generate']);
+        Route::get('appointments', [ReportController::class, 'appointments']);
+        Route::get('professionals', [ReportController::class, 'professionals']);
+        Route::get('clinics', [ReportController::class, 'clinics']);
+        Route::get('financial', [ReportController::class, 'financial']);
+        Route::get('billing', [ReportController::class, 'billing']);
+        
+        // Scheduled reports
+        Route::get('scheduled', [ReportController::class, 'scheduled']);
+        Route::post('scheduled', [ReportController::class, 'scheduleReport']);
+        Route::put('scheduled/{id}', [ReportController::class, 'updateScheduledReport']);
+        Route::delete('scheduled/{id}', [ReportController::class, 'deleteScheduledReport']);
+        Route::post('scheduled/{id}/toggle', [ReportController::class, 'toggleScheduledReport']);
+    });
     
     // System Settings
     Route::get('/system-settings', [SystemSettingController::class, 'index']);
@@ -214,11 +219,10 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     // Notifications
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
-        Route::get('/unread', [NotificationController::class, 'unread']);
-        Route::get('/{id}', [NotificationController::class, 'show']);
-        Route::patch('/{id}/read', [NotificationController::class, 'markAsRead']);
-        Route::patch('/read-all', [NotificationController::class, 'markAllAsRead']);
-        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+        Route::post('{id}/read', [NotificationController::class, 'markAsRead']);
+        Route::post('read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::delete('{id}', [NotificationController::class, 'destroy']);
+        Route::delete('/', [NotificationController::class, 'destroyAll']);
         Route::post('/settings', [NotificationController::class, 'updateSettings']);
         Route::get('/settings', [NotificationController::class, 'getSettings']);
         Route::post('/role', [NotificationController::class, 'sendToRole']);

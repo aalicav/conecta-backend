@@ -63,6 +63,18 @@ class Kernel extends ConsoleKernel
         $schedule->command('appointments:process-attendance')
             ->dailyAt('23:00')
             ->withoutOverlapping();
+
+        // Clean up old reports daily at midnight
+        $schedule->command('reports:cleanup')->daily();
+
+        // Clean up old notifications daily at 1 AM
+        $schedule->command('notifications:cleanup')->dailyAt('01:00');
+
+        // Generate scheduled reports daily at 2 AM
+        $schedule->command('reports:generate-scheduled')->dailyAt('02:00');
+
+        // Send notifications for scheduled reports daily at 2:30 AM
+        $schedule->command('reports:send-notifications')->dailyAt('02:30');
     }
 
     /**
