@@ -83,10 +83,11 @@ class ProcessAutomaticScheduling implements ShouldQueue
             $scheduler = new AppointmentScheduler();
             $providers = $scheduler->findBestProvider($this->solicitation);
 
+            Log::info("Providers found for solicitation #{$this->solicitation->id}:", ['providers' => $providers['success']]);
             if ($providers['success'] && !empty($providers['providers'])) {
                 $createdInvites = 0;
                 
-                foreach ($providers as $provider) {
+                foreach ($providers['providers'] as $provider) {
                     // Double-check if invite already exists for this specific provider
                     $existingProviderInvite = SolicitationInvite::where('solicitation_id', $this->solicitation->id)
                         ->where('provider_type', $provider['provider_type'])
