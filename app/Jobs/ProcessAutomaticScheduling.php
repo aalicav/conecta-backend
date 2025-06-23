@@ -163,7 +163,7 @@ class ProcessAutomaticScheduling implements ShouldQueue
                     ->whereNull('deleted_at')
                     ->get();
 
-                if (!$usersToNotify->isEmpty()) {
+                if ($usersToNotify->count() > 0) {
                     Notification::send($usersToNotify, new NoProvidersFound($this->solicitation, [
                         'reason' => 'automatic_scheduling',
                         'timestamp' => now()->toIso8601String()
