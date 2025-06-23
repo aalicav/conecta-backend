@@ -83,7 +83,13 @@ class ProcessAutomaticScheduling implements ShouldQueue
             $scheduler = new AppointmentScheduler();
             $providers = $scheduler->findBestProvider($this->solicitation);
 
-            if ($providers['success'] && !empty($providers['data'])) {
+            // Debug logging
+            Log::info("Provider search result for solicitation #{$this->solicitation->id}:", [
+                'providers_type' => gettype($providers),
+                'providers_data' => $providers
+            ]);
+
+            if (is_array($providers) && isset($providers['success']) && $providers['success'] === true && isset($providers['data']) && is_array($providers['data'])) {
                 $createdInvites = 0;
                 
                 foreach ($providers['data'] as $provider) {
