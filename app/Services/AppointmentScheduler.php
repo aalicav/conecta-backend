@@ -623,7 +623,8 @@ class AppointmentScheduler
                 Log::warning("No active pricing contracts found for TUSS #{$tussId}");
                 return [
                     'success' => false,
-                    'message' => 'No active pricing contracts found'
+                    'message' => 'No active pricing contracts found',
+                    'data' => []
                 ];
             }
 
@@ -666,7 +667,8 @@ class AppointmentScheduler
                 Log::warning("No suitable providers found for solicitation #{$solicitation->id}");
                 return [
                     'success' => false,
-                    'message' => 'No suitable providers found'
+                    'message' => 'No suitable providers found',
+                    'data' => []
                 ];
             }
 
@@ -693,6 +695,7 @@ class AppointmentScheduler
 
             return [
                 'success' => true,
+                'message' => 'Providers found successfully',
                 'data' => $providers
             ];
 
@@ -700,7 +703,8 @@ class AppointmentScheduler
             Log::error("Error finding providers for solicitation #{$solicitation->id}: " . $e->getMessage());
             return [
                 'success' => false,
-                'message' => 'Error finding providers: ' . $e->getMessage()
+                'message' => 'Error finding providers: ' . $e->getMessage(),
+                'data' => []
             ];
         }
     }

@@ -89,10 +89,10 @@ class ProcessAutomaticScheduling implements ShouldQueue
             ]);
 
             // Handle the no providers found case
-            if (!$result['success']) {
+            if (!isset($result['success']) || !$result['success']) {
                 // If no providers found, mark as pending
                 $this->solicitation->markAsPending();
-                Log::warning("Nenhum profissional encontrado para solicitação #{$this->solicitation->id}: {$result['message']}");
+                Log::warning("Nenhum profissional encontrado para solicitação #{$this->solicitation->id}: " . ($result['message'] ?? 'Unknown error'));
 
                 // Notify administrators
                 $usersToNotify = User::role(['super_admin', 'network_manager', 'director', 'commercial_manager'])
@@ -108,6 +108,11 @@ class ProcessAutomaticScheduling implements ShouldQueue
             }
 
             // Process found providers
+            if (!isset($result['data']) || empty($result['data'])) {
+                Log::error("Invalid response format from findBestProvider for solicitation #{$this->solicitation->id}");
+                throw new \Exception("Invalid response format from findBestProvider");
+            }
+
             $createdInvites = 0;
             foreach ($result['data'] as $provider) {
                 // Double-check if invite already exists for this specific provider
