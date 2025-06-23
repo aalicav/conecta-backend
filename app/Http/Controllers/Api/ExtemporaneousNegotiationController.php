@@ -285,6 +285,31 @@ class ExtemporaneousNegotiationController extends Controller
                 'approval_notes' => $validated['approval_notes'],
                 'negotiated_price' => $negotiation->requested_value
             ]);
+
+            // Desativar contratos de preço anteriores para a mesma entidade e código TUSS
+            \App\Models\PricingContract::where('contractable_type', $negotiation->negotiable_type)
+                ->where('contractable_id', $negotiation->negotiable_id)
+                ->where('tuss_procedure_id', $negotiation->tuss_id)
+                ->where('is_active', true)
+                ->update([
+                    'is_active' => false,
+                    'end_date' => now(),
+                    'notes' => 'Desativado pela negociação extemporânea #' . $negotiation->id
+                ]);
+
+            // Criar novo contrato de preço
+            \App\Models\PricingContract::create([
+                'tuss_procedure_id' => $negotiation->tuss_id,
+                'contractable_type' => $negotiation->negotiable_type,
+                'contractable_id' => $negotiation->negotiable_id,
+                'price' => $negotiation->requested_value,
+                'is_active' => true,
+                'start_date' => now(),
+                'end_date' => null, // Sem data de término para negociações extemporâneas
+                'created_by' => $user->id,
+                'medical_specialty_id' => $negotiation->medical_specialty_id,
+                'notes' => 'Criado a partir da negociação extemporânea #' . $negotiation->id
+            ]);
             
             // Notify the requester
             $this->notificationService->sendToUser($negotiation->created_by, [
