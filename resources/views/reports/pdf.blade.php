@@ -132,27 +132,27 @@
             <table class="breakdown-table">
                 <tr>
                     <th>Período:</th>
-                    <td>{{ $summary['Período'] }}</td>
+                    <td>{{ $summary['Período'] ?? 'N/A' }}</td>
                     <th>Total de Transações:</th>
-                    <td>{{ $summary['Total de Transações'] }}</td>
+                    <td>{{ $summary['Total de Transações'] ?? '0' }}</td>
                 </tr>
                 <tr>
                     <th>Valor Total (Bruto):</th>
-                    <td>R$ {{ number_format($summary['Valor Total (Bruto)'], 2, ',', '.') }}</td>
+                    <td>R$ {{ isset($summary['Valor Total (Bruto)']) ? number_format($summary['Valor Total (Bruto)'], 2, ',', '.') : '0,00' }}</td>
                     <th>Valor Total (Líquido):</th>
-                    <td>R$ {{ number_format($summary['Valor Total (Líquido)'], 2, ',', '.') }}</td>
+                    <td>R$ {{ isset($summary['Valor Total (Líquido)']) ? number_format($summary['Valor Total (Líquido)'], 2, ',', '.') : '0,00' }}</td>
                 </tr>
                 <tr>
                     <th>Total Descontos:</th>
-                    <td>R$ {{ number_format($summary['Total Descontos'], 2, ',', '.') }}</td>
+                    <td>R$ {{ isset($summary['Total Descontos']) ? number_format($summary['Total Descontos'], 2, ',', '.') : '0,00' }}</td>
                     <th>Total Glosas:</th>
-                    <td>R$ {{ number_format($summary['Total Glosas'], 2, ',', '.') }}</td>
+                    <td>R$ {{ isset($summary['Total Glosas']) ? number_format($summary['Total Glosas'], 2, ',', '.') : '0,00' }}</td>
                 </tr>
                 <tr>
                     <th>Total Recebido:</th>
-                    <td class="highlight">R$ {{ number_format($summary['Total Recebido'], 2, ',', '.') }}</td>
+                    <td class="highlight">R$ {{ isset($summary['Total Recebido']) ? number_format($summary['Total Recebido'], 2, ',', '.') : '0,00' }}</td>
                     <th>Total Pendente:</th>
-                    <td>R$ {{ number_format($summary['Total Pendente'], 2, ',', '.') }}</td>
+                    <td>R$ {{ isset($summary['Total Pendente']) ? number_format($summary['Total Pendente'], 2, ',', '.') : '0,00' }}</td>
                 </tr>
             </table>
         </div>
@@ -185,7 +185,7 @@
                         <th>Quantidade</th>
                         <th>Total</th>
                     </tr>
-                    @foreach($health_plans as $plan => $data)
+                    @foreach($health_plans ?? [] as $plan => $data)
                     <tr>
                         <td>{{ $plan }}</td>
                         <td class="text-center">{{ $data['count'] }}</td>
@@ -199,23 +199,40 @@
     </div>
     @endif
 
-    @if(!empty($data))
+    @php
+        $hasData = false;
+        $headers = [];
+        
+        if (is_array($data) && !empty($data)) {
+            $hasData = true;
+            $headers = array_keys($data[0]);
+        } elseif (is_object($data) && method_exists($data, 'count') && $data->count() > 0) {
+            $hasData = true;
+            $firstItem = $data->first();
+            $headers = array_keys(is_array($firstItem) ? $firstItem : (array)$firstItem);
+        }
+    @endphp
+
+    @if($hasData)
         <h2>Detalhamento das Transações</h2>
         <table class="main-table">
             <thead>
                 <tr>
-                    @foreach(array_keys($data[0]) as $header)
+                    @foreach($headers as $header)
                         <th>{{ $header }}</th>
                     @endforeach
                 </tr>
             </thead>
             <tbody>
                 @foreach($data as $row)
+                    @php
+                        $rowData = is_array($row) ? $row : (array)$row;
+                    @endphp
                     <tr>
-                        @foreach($row as $key => $cell)
+                        @foreach($rowData as $key => $cell)
                             <td @if(in_array($key, ['Valor Base', 'Desconto', 'Glosa', 'Valor Total'])) class="text-right" @endif>
                                 @if(in_array($key, ['Valor Base', 'Desconto', 'Glosa', 'Valor Total']))
-                                    R$ {{ number_format($cell, 2, ',', '.') }}
+                                    R$ {{ is_numeric($cell) ? number_format($cell, 2, ',', '.') : $cell }}
                                 @else
                                     {{ $cell }}
                                 @endif
@@ -227,7 +244,7 @@
         </table>
     @else
         <div class="no-data">
-            Nenhum dado disponível para este relatório.
+            Nenhum dado disponível para este relatório no período selecionado.
         </div>
     @endif
 
