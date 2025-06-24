@@ -177,7 +177,7 @@ class ReportController extends Controller
     }
 
     /**
-     * Display the specified report with detailed information.
+     * Display the specified report.
      *
      * @param  int  $id
      * @return \Illuminate\Http\JsonResponse
@@ -185,61 +185,23 @@ class ReportController extends Controller
     public function show($id)
     {
         try {
-            $report = Report::with([
-                'creator:id,name,email',
-                'generations' => function ($query) {
-                    $query->orderBy('created_at', 'desc');
-                },
-                'generations.generator:id,name,email'
-            ])->findOrFail($id);
+            $report = Report::with(['creator', 'generations' => function ($query) {
+                $query->latest('completed_at')->limit(5);
+            }])->findOrFail($id);
             
             // Access control - non-admins can only see their own reports and public reports
             if (!Auth::user()->hasRole('admin') && 
                 $report->created_by !== Auth::id() && 
                 !$report->is_public) {
                 return response()->json([
-                    'success' => false,
+                    'status' => 'error',
                     'message' => 'You do not have permission to view this report'
                 ], 403);
             }
-
-            // Get additional statistics
-            $statistics = [
-                'total_generations' => $report->generations->count(),
-                'successful_generations' => $report->generations->where('status', 'completed')->count(),
-                'failed_generations' => $report->generations->where('status', 'failed')->count(),
-                'total_file_size' => $report->generations
-                    ->where('file_size', '!=', null)
-                    ->sum(function($generation) {
-                        return (int) $generation->file_size;
-                    }),
-                'last_generated' => $report->generations
-                    ->where('status', 'completed')
-                    ->first()?->completed_at,
-                'average_generation_time' => $report->generations
-                    ->where('status', 'completed')
-                    ->where('started_at', '!=', null)
-                    ->where('completed_at', '!=', null)
-                    ->avg(function($generation) {
-                        return Carbon::parse($generation->completed_at)
-                            ->diffInSeconds(Carbon::parse($generation->started_at));
-                    })
-            ];
             
             return response()->json([
-                'success' => true,
-                'data' => [
-                    'report' => $report,
-                    'statistics' => $statistics,
-                    'config' => config('reports.types.' . $report->type, null),
-                    'permissions' => [
-                        'can_edit' => Auth::user()->hasRole('admin') || $report->created_by === Auth::id(),
-                        'can_delete' => Auth::user()->hasRole('admin') || $report->created_by === Auth::id(),
-                        'can_generate' => Auth::user()->hasRole('admin') || 
-                            $report->is_public || 
-                            $report->created_by === Auth::id()
-                    ]
-                ]
+                'status' => 'success',
+                'data' => $report
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch report: ' . $e->getMessage(), [
@@ -249,7 +211,7 @@ class ReportController extends Controller
             ]);
             
             return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'message' => 'Failed to fetch report',
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
