@@ -192,6 +192,7 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::prefix('reports')->group(function () {
         Route::get('config', [ReportController::class, 'config']);
         Route::post('generate', [ReportController::class, 'generate']);
+        Route::post('export', [ReportController::class, 'export']);
         Route::get('appointments', [ReportController::class, 'appointments']);
         Route::get('professionals', [ReportController::class, 'professionals']);
         Route::get('clinics', [ReportController::class, 'clinics']);
