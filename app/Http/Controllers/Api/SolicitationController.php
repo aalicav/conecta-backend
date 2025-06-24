@@ -653,7 +653,7 @@ class SolicitationController extends Controller
             }
 
             // Check if solicitation is in a state that can be scheduled
-            if (!$solicitation->isPending() && !$solicitation->isProcessing()) {
+            if (!($solicitation->status === Solicitation::STATUS_PENDING) && !($solicitation->status === Solicitation::STATUS_PROCESSING)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'A solicitação não pode ser agendada no estado atual'
