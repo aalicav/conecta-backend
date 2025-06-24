@@ -199,6 +199,9 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::get('clinics', [ReportController::class, 'clinics']);
         Route::get('financial', [ReportController::class, 'financial']);
         Route::get('billing', [ReportController::class, 'billing']);
+        Route::get('download/{id}', [ReportController::class, 'download']);
+        Route::get('{id}', [ReportController::class, 'show']);
+        Route::delete('{id}', [ReportController::class, 'destroy']);
         
         // Scheduled reports
         Route::get('scheduled', [ReportController::class, 'scheduled']);
