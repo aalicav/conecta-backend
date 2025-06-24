@@ -38,7 +38,7 @@ class ProfessionalAvailabilityController extends Controller
     public function submitAvailability(Request $request)
     {
         // Ensure user is a professional or clinic
-        if (!Auth::user()->hasRole('professional') && !Auth::user()->hasRole('clinic')) {
+        if (!Auth::user()->hasRole('professional') && !Auth::user()->hasRole('clinic') && !Auth::user()->hasRole('network_manager') && !Auth::user()->hasRole('super_admin')) {
             return response()->json([
                 'success' => false,
                 'message' => 'Apenas profissionais e clínicas podem registrar disponibilidade'
