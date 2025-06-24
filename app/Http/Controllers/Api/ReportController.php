@@ -723,7 +723,7 @@ class ReportController extends Controller
     {
         try {
             $validated = $request->validate([
-                'report_type' => 'required|string|in:financial,appointment,performance,custom',
+                'report_type' => 'required|string|in:financial,appointments,performance,custom',
                 'parameters' => 'nullable|array',
                 'format' => 'required|string|in:pdf,csv,xlsx',
                 'name' => 'required|string|max:255',
