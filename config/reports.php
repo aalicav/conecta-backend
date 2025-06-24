@@ -10,7 +10,7 @@ return [
     |
     */
     'types' => [
-        'appointments' => [
+        'appointment' => [
             'name' => 'Relatório de Agendamentos',
             'description' => 'Relatório detalhado de agendamentos com filtros por data, status, cidade e estado.',
             'formats' => ['pdf', 'csv', 'xlsx'],
