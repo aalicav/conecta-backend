@@ -284,7 +284,7 @@ return [
     |
     */
     'permissions' => [
-        'appointments' => ['admin', 'clinic_admin', 'professional', 'plan_admin'],
+        'appointment' => ['admin', 'clinic_admin', 'professional', 'plan_admin'],
         'professionals' => ['admin', 'clinic_admin', 'plan_admin'],
         'clinics' => ['admin', 'plan_admin'],
         'financial' => ['admin', 'plan_admin'],
