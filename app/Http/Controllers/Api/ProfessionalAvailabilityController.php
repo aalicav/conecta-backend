@@ -65,7 +65,7 @@ class ProfessionalAvailabilityController extends Controller
                 ->where('status', 'accepted')
                 ->first();
 
-            if (!$invite) {
+            if (!$invite && !Auth::user()->hasRole('network_manager') && !Auth::user()->hasRole('super_admin')) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Você não foi convidado para esta solicitação'
