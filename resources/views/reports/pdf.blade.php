@@ -1,3 +1,28 @@
+@php
+    $hasData = false;
+    $headers = [];
+    $dataArray = [];
+    
+    // Convert data to array and check if we have valid data
+    if (is_array($data)) {
+        $dataArray = $data;
+        $hasData = !empty($data);
+    } elseif (is_object($data) && method_exists($data, 'count')) {
+        $hasData = $data->count() > 0;
+        if ($hasData) {
+            $dataArray = $data->toArray();
+        }
+    }
+    
+    // Get headers only if we have data
+    if ($hasData) {
+        $firstItem = is_array($dataArray) && !empty($dataArray) ? reset($dataArray) : null;
+        if ($firstItem) {
+            $headers = array_keys(is_array($firstItem) ? $firstItem : (array)$firstItem);
+        }
+    }
+@endphp
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -157,7 +182,7 @@
             </table>
         </div>
 
-        @if(isset($payment_methods))
+        @if(isset($payment_methods) && !empty($payment_methods))
         <div class="summary-grid">
             <div class="summary-box">
                 <h3>Formas de Pagamento</h3>
@@ -170,13 +195,14 @@
                     @foreach($payment_methods as $method => $data)
                     <tr>
                         <td>{{ ucfirst($method ?: 'N/A') }}</td>
-                        <td class="text-center">{{ $data['count'] }}</td>
-                        <td class="text-right">R$ {{ number_format($data['total'], 2, ',', '.') }}</td>
+                        <td class="text-center">{{ $data['count'] ?? 0 }}</td>
+                        <td class="text-right">R$ {{ number_format($data['total'] ?? 0, 2, ',', '.') }}</td>
                     </tr>
                     @endforeach
                 </table>
             </div>
 
+            @if(isset($health_plans) && !empty($health_plans))
             <div class="summary-box">
                 <h3>Convênios</h3>
                 <table class="breakdown-table">
@@ -185,35 +211,22 @@
                         <th>Quantidade</th>
                         <th>Total</th>
                     </tr>
-                    @foreach($health_plans ?? [] as $plan => $data)
+                    @foreach($health_plans as $plan => $data)
                     <tr>
                         <td>{{ $plan }}</td>
-                        <td class="text-center">{{ $data['count'] }}</td>
-                        <td class="text-right">R$ {{ number_format($data['total'], 2, ',', '.') }}</td>
+                        <td class="text-center">{{ $data['count'] ?? 0 }}</td>
+                        <td class="text-right">R$ {{ number_format($data['total'] ?? 0, 2, ',', '.') }}</td>
                     </tr>
                     @endforeach
                 </table>
             </div>
+            @endif
         </div>
         @endif
     </div>
     @endif
 
-    @php
-        $hasData = false;
-        $headers = [];
-        
-        if (is_array($data) && !empty($data)) {
-            $hasData = true;
-            $headers = array_keys($data[0]);
-        } elseif (is_object($data) && method_exists($data, 'count') && $data->count() > 0) {
-            $hasData = true;
-            $firstItem = $data->first();
-            $headers = array_keys(is_array($firstItem) ? $firstItem : (array)$firstItem);
-        }
-    @endphp
-
-    @if($hasData)
+    @if($hasData && !empty($headers))
         <h2>Detalhamento das Transações</h2>
         <table class="main-table">
             <thead>
@@ -224,7 +237,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach($data as $row)
+                @foreach($dataArray as $row)
                     @php
                         $rowData = is_array($row) ? $row : (array)$row;
                     @endphp
@@ -244,7 +257,7 @@
         </table>
     @else
         <div class="no-data">
-            Nenhum dado disponível para este relatório no período selecionado.
+            Nenhum dado disponível para este relatório no período selecionado ({{ \Carbon\Carbon::parse($report->parameters['start_date'] ?? null)->format('d/m/Y') ?? 'início' }} até {{ \Carbon\Carbon::parse($report->parameters['end_date'] ?? null)->format('d/m/Y') ?? 'fim' }}).
         </div>
     @endif
 
