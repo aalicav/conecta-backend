@@ -1337,4 +1337,90 @@ class ReportController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * List all reports with their latest generation.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function list(Request $request): JsonResponse
+    {
+        try {
+            $query = Report::with(['creator', 'generations' => function ($query) {
+                $query->latest('created_at');
+            }]);
+
+            // Apply filters
+            if ($request->has('type')) {
+                $query->where('type', $request->input('type'));
+            }
+
+            if ($request->has('is_template')) {
+                $query->where('is_template', $request->boolean('is_template'));
+            }
+
+            if ($request->has('is_scheduled')) {
+                $query->where('is_scheduled', $request->boolean('is_scheduled'));
+            }
+
+            if ($request->has('created_by') && $request->input('created_by') !== 'all') {
+                $query->where('created_by', $request->input('created_by'));
+            }
+
+            // Access control based on user role
+            if (Auth::user()->hasRole(['health_plan', 'plan_admin'])) {
+                $healthPlanId = Auth::user()->entity_id;
+                $query->where(function ($q) use ($healthPlanId) {
+                    $q->where('created_by', Auth::id())
+                      ->orWhere('is_public', true)
+                      ->orWhereJsonContains('parameters->health_plan_id', $healthPlanId);
+                });
+            } elseif (!Auth::user()->hasRole('admin')) {
+                $query->where(function ($q) {
+                    $q->where('created_by', Auth::id())
+                      ->orWhere('is_public', true);
+                });
+            }
+
+            // Sort options
+            $sortField = $request->input('sort_by', 'created_at');
+            $sortDirection = $request->input('sort_direction', 'desc');
+            $query->orderBy($sortField, $sortDirection);
+
+            // Pagination
+            $perPage = $request->input('per_page', 15);
+            $reports = $query->paginate($perPage);
+
+            // Transform the data to include the latest generation status
+            $data = $reports->through(function ($report) {
+                $report->latest_generation = $report->generations->first();
+                unset($report->generations);
+                return $report;
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'meta' => [
+                    'total' => $reports->total(),
+                    'per_page' => $reports->perPage(),
+                    'current_page' => $reports->currentPage(),
+                    'last_page' => $reports->lastPage(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch reports list: ' . $e->getMessage(), [
+                'exception' => $e,
+                'user_id' => Auth::id(),
+                'request_data' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch reports list',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 
