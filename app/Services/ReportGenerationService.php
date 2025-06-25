@@ -59,7 +59,8 @@ class ReportGenerationService
                     $join->on('appointments.provider_id', '=', 'clinics.id')
                         ->where('appointments.provider_type', '=', 'App\\Models\\Clinic');
                 })
-                ->leftJoin('health_plans', 'solicitations.health_plan_id', '=', 'health_plans.id');
+                ->leftJoin('health_plans', 'solicitations.health_plan_id', '=', 'health_plans.id')
+                ->leftJoin('addresses', 'appointments.address_id', '=', 'addresses.id');
 
             // Apply filters only if they have actual values
             if (isset($filters['start_date']) && $filters['start_date']) {
@@ -105,6 +106,13 @@ class ReportGenerationService
                 'patients.cpf as patient_document',
                 DB::raw('COALESCE(professionals.name, clinics.name) as provider_name'),
                 'health_plans.name as health_plan_name',
+                'addresses.street',
+                'addresses.number',
+                'addresses.complement',
+                'addresses.neighborhood',
+                'addresses.city as address_city',
+                'addresses.state as address_state',
+                'addresses.reference',
                 'appointments.created_at',
                 'appointments.updated_at'
             ])->get();
@@ -432,6 +440,13 @@ class ReportGenerationService
                     'Documento',
                     'Prestador',
                     'Plano de Saúde',
+                    'Rua',
+                    'Número',
+                    'Complemento',
+                    'Bairro',
+                    'Cidade',
+                    'Estado',
+                    'Referência',
                     'Data Criação',
                     'Última Atualização'
                 ];
@@ -512,6 +527,13 @@ class ReportGenerationService
                         $item->patient_document,
                         $item->provider_name,
                         $item->health_plan_name,
+                        $item->street,
+                        $item->number,
+                        $item->complement,
+                        $item->neighborhood,
+                        $item->address_city,
+                        $item->address_state,
+                        $item->reference,
                         $item->created_at,
                         $item->updated_at
                     ];

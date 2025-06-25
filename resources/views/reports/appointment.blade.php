@@ -144,6 +144,7 @@
                 <th>Paciente</th>
                 <th>Prestador</th>
                 <th>Plano de Saúde</th>
+                <th>Endereço</th>
                 <th>Status</th>
                 <th>Compareceu</th>
             </tr>
@@ -155,12 +156,27 @@
                 <td>{{ $appointment->patient_name }}</td>
                 <td>{{ $appointment->provider_name }}</td>
                 <td>{{ $appointment->health_plan_name }}</td>
+                <td>
+                    @if($appointment->street)
+                        {{ $appointment->street }}, {{ $appointment->number }}
+                        @if($appointment->complement)
+                            - {{ $appointment->complement }}
+                        @endif
+                        <br>
+                        {{ $appointment->neighborhood }} - {{ $appointment->address_city }}/{{ $appointment->address_state }}
+                        @if($appointment->reference)
+                            <br>Ref: {{ $appointment->reference }}
+                        @endif
+                    @else
+                        Não informado
+                    @endif
+                </td>
                 <td>{{ $appointment->status }}</td>
                 <td>{{ $appointment->patient_attended ? 'Sim' : 'Não' }}</td>
             </tr>
             @empty
             <tr>
-                <td colspan="6" style="text-align: center;">Nenhum agendamento encontrado</td>
+                <td colspan="7" style="text-align: center;">Nenhum agendamento encontrado</td>
             </tr>
             @endforelse
         </tbody>
