@@ -10,6 +10,7 @@ use Illuminate\Queue\SerializesModels;
 use App\Services\ReportGenerationService;
 use App\Models\User;
 use App\Notifications\ReportGenerated;
+use App\Notifications\ReportGenerationFailed;
 use Illuminate\Support\Facades\Notification;
 
 class GenerateReport implements ShouldQueue
@@ -37,6 +38,9 @@ class GenerateReport implements ShouldQueue
      */
     public function handle(ReportGenerationService $reportService)
     {
+        // Get the user before try-catch block
+        $user = User::find($this->userId);
+
         try {
             // Generate the report
             $filePath = $reportService->generateReport(
@@ -44,9 +48,6 @@ class GenerateReport implements ShouldQueue
                 $this->filters,
                 $this->format
             );
-
-            // Get the user
-            $user = User::find($this->userId);
 
             // Send notification
             if ($user) {

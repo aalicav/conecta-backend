@@ -3,24 +3,23 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Notifications\Messages\MailMessage;
 
-class ReportGenerationFailed extends Notification implements ShouldQueue
+class ReportGenerationFailed extends Notification
 {
     use Queueable;
 
-    protected $type;
-    protected $error;
+    protected $reportType;
+    protected $errorMessage;
 
     /**
      * Create a new notification instance.
      */
-    public function __construct(string $type, string $error)
+    public function __construct(string $reportType, string $errorMessage)
     {
-        $this->type = $type;
-        $this->error = $error;
+        $this->reportType = $reportType;
+        $this->errorMessage = $errorMessage;
     }
 
     /**
@@ -38,15 +37,12 @@ class ReportGenerationFailed extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $reportTypes = config('reports.types');
-        $reportName = $reportTypes[$this->type]['name'] ?? 'Relatório';
-
         return (new MailMessage)
             ->error()
-            ->subject("{$reportName} - Falha na Geração")
-            ->greeting("Olá {$notifiable->name}!")
-            ->line("Houve um erro ao gerar seu {$reportName}.")
-            ->line("Erro: {$this->error}")
+            ->subject('Falha na Geração do Relatório')
+            ->line('Houve um erro ao gerar o relatório solicitado.')
+            ->line('Tipo do relatório: ' . $this->reportType)
+            ->line('Erro: ' . $this->errorMessage)
             ->line('Por favor, tente novamente ou entre em contato com o suporte se o problema persistir.');
     }
 
@@ -57,15 +53,10 @@ class ReportGenerationFailed extends Notification implements ShouldQueue
      */
     public function toArray(object $notifiable): array
     {
-        $reportTypes = config('reports.types');
-        $reportName = $reportTypes[$this->type]['name'] ?? 'Relatório';
-
         return [
-            'title' => "{$reportName} - Falha na Geração",
-            'message' => "Houve um erro ao gerar seu {$reportName}.",
-            'error' => $this->error,
-            'type' => 'report_generation_failed',
-            'report_type' => $this->type
+            'report_type' => $this->reportType,
+            'error_message' => $this->errorMessage,
+            'type' => 'report_generation_failed'
         ];
     }
 } 
