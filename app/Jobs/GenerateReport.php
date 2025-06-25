@@ -44,7 +44,7 @@ class GenerateReport implements ShouldQueue
         $user = User::find($this->userId);
 
         try {
-            // Create a report generation record
+            // Create or get the report record
             $report = Report::where('type', $this->type)->first();
             if (!$report) {
                 $report = Report::create([
@@ -57,23 +57,27 @@ class GenerateReport implements ShouldQueue
                 ]);
             }
 
-            $generation = $report->generations()->create([
-                'file_format' => $this->format,
-                'parameters' => $this->filters,
-                'generated_by' => $this->userId,
-                'status' => 'processing'
-            ]);
-
-            // Generate the report
+            // Generate the report first
             $filePath = $reportService->generateReport(
                 $this->type,
                 $this->filters,
                 $this->format
             );
 
-            // Update generation record with success
+            // Get file size if available
             $fileSize = Storage::exists($filePath) ? Storage::size($filePath) : null;
-            $generation->markAsCompleted(null, $fileSize);
+
+            // Create generation record with the file path
+            $generation = $report->generations()->create([
+                'file_path' => $filePath,
+                'file_format' => $this->format,
+                'parameters' => $this->filters,
+                'generated_by' => $this->userId,
+                'status' => 'completed',
+                'completed_at' => now(),
+                'file_size' => $fileSize,
+                'rows_count' => null // You might want to add this if you can count the rows
+            ]);
 
             // Send notification
             if ($user) {
@@ -83,10 +87,22 @@ class GenerateReport implements ShouldQueue
                     url("storage/{$filePath}")
                 ));
             }
+
+            // Update report's last generation time
+            $report->updateNextScheduledTime();
+
         } catch (\Exception $e) {
-            // Update generation record with failure if it exists
-            if (isset($generation)) {
-                $generation->markAsFailed($e->getMessage());
+            // Create failed generation record if we have a report
+            if (isset($report)) {
+                $report->generations()->create([
+                    'file_path' => null,
+                    'file_format' => $this->format,
+                    'parameters' => $this->filters,
+                    'generated_by' => $this->userId,
+                    'status' => 'failed',
+                    'completed_at' => now(),
+                    'error_message' => $e->getMessage()
+                ]);
             }
 
             // Log error and notify user
