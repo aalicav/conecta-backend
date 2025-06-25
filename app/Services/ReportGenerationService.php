@@ -60,42 +60,42 @@ class ReportGenerationService
             })
             ->leftJoin('health_plans', 'solicitations.health_plan_id', '=', 'health_plans.id');
 
-        // Apply filters
-        if (!empty($filters['start_date'])) {
+        // Apply filters only if they have actual values
+        if (isset($filters['start_date']) && $filters['start_date']) {
             $query->whereDate('appointments.scheduled_date', '>=', $filters['start_date']);
         }
-        if (!empty($filters['end_date'])) {
+        if (isset($filters['end_date']) && $filters['end_date']) {
             $query->whereDate('appointments.scheduled_date', '<=', $filters['end_date']);
         }
-        if (!empty($filters['status'])) {
+        if (isset($filters['status']) && $filters['status'] !== '') {
             $query->where('appointments.status', $filters['status']);
         }
-        if (!empty($filters['city'])) {
+        if (isset($filters['city']) && $filters['city']) {
             $query->where(function($q) use ($filters) {
                 $q->where('professionals.city', $filters['city'])
                   ->orWhere('clinics.city', $filters['city']);
             });
         }
-        if (!empty($filters['state'])) {
+        if (isset($filters['state']) && $filters['state']) {
             $query->where(function($q) use ($filters) {
                 $q->where('professionals.state', $filters['state'])
                   ->orWhere('clinics.state', $filters['state']);
             });
         }
-        if (!empty($filters['health_plan_id'])) {
+        if (isset($filters['health_plan_id']) && $filters['health_plan_id']) {
             $query->where('solicitations.health_plan_id', $filters['health_plan_id']);
         }
-        if (!empty($filters['professional_id'])) {
+        if (isset($filters['professional_id']) && $filters['professional_id']) {
             $query->where('appointments.provider_id', $filters['professional_id'])
                   ->where('appointments.provider_type', 'App\\Models\\Professional');
         }
-        if (!empty($filters['clinic_id'])) {
+        if (isset($filters['clinic_id']) && $filters['clinic_id']) {
             $query->where('appointments.provider_id', $filters['clinic_id'])
                   ->where('appointments.provider_type', 'App\\Models\\Clinic');
         }
 
-        // Select fields
-        return $query->select([
+        // Get data for graphs
+        $data = $query->select([
             'appointments.id',
             'appointments.scheduled_date',
             'appointments.status',
@@ -107,6 +107,24 @@ class ReportGenerationService
             'appointments.created_at',
             'appointments.updated_at'
         ])->get();
+
+        // Add statistical data for graphs
+        $statistics = [
+            'total_appointments' => $data->count(),
+            'status_distribution' => $data->groupBy('status')->map->count(),
+            'attendance_rate' => [
+                'attended' => $data->where('patient_attended', true)->count(),
+                'not_attended' => $data->where('patient_attended', false)->count()
+            ],
+            'daily_distribution' => $data->groupBy(function($item) {
+                return Carbon::parse($item->scheduled_date)->format('Y-m-d');
+            })->map->count()
+        ];
+
+        return [
+            'appointments' => $data,
+            'statistics' => $statistics
+        ];
     }
 
     /**
@@ -306,7 +324,19 @@ class ReportGenerationService
     private function exportToPdf($data, string $type)
     {
         $view = "reports.{$type}";
-        $pdf = PDF::loadView($view, ['data' => $data]);
+        
+        // For appointments report, pass both appointments and statistics
+        $viewData = $type === 'appointments' 
+            ? [
+                'data' => $data['appointments'],
+                'statistics' => $data['statistics']
+            ] 
+            : ['data' => $data];
+            
+        $pdf = PDF::loadView($view, $viewData);
+        
+        // Set paper size and orientation for better layout
+        $pdf->setPaper('A4', 'landscape');
         
         $filename = "{$type}_report_" . date('Y-m-d_His') . '.pdf';
         $path = "reports/{$filename}";
