@@ -53,8 +53,6 @@
             size: landscape;
         }
     </style>
-    <!-- Include Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     @php
@@ -178,42 +176,5 @@
         </pre>
     </div>
     @endif
-
-    <script>
-        // Status Distribution Chart
-        var statusCtx = document.getElementById('statusChart').getContext('2d');
-        new Chart(statusCtx, {
-            type: 'pie',
-            data: {
-                labels: {!! json_encode(array_keys($statistics['status_distribution']->toArray())) !!},
-                datasets: [{
-                    data: {!! json_encode(array_values($statistics['status_distribution']->toArray())) !!},
-                    backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0']
-                }]
-            }
-        });
-
-        // Daily Distribution Chart
-        var dailyCtx = document.getElementById('dailyChart').getContext('2d');
-        new Chart(dailyCtx, {
-            type: 'line',
-            data: {
-                labels: {!! json_encode(array_keys($statistics['daily_distribution']->toArray())) !!},
-                datasets: [{
-                    label: 'Agendamentos por Dia',
-                    data: {!! json_encode(array_values($statistics['daily_distribution']->toArray())) !!},
-                    borderColor: '#36A2EB',
-                    fill: false
-                }]
-            },
-            options: {
-                scales: {
-                    y: {
-                        beginAtZero: true
-                    }
-                }
-            }
-        });
-    </script>
 </body>
 </html> 

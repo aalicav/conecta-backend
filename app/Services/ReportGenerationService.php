@@ -112,14 +112,14 @@ class ReportGenerationService
             // Add statistical data for graphs
             $statistics = [
                 'total_appointments' => $appointments->count(),
-                'status_distribution' => $appointments->groupBy('status')->map->count(),
+                'status_distribution' => $appointments->groupBy('status')->map->count()->toArray(),
                 'attendance_rate' => [
                     'attended' => $appointments->where('patient_attended', true)->count(),
                     'not_attended' => $appointments->where('patient_attended', false)->count()
                 ],
                 'daily_distribution' => $appointments->groupBy(function($item) {
                     return Carbon::parse($item->scheduled_date)->format('Y-m-d');
-                })->map->count()
+                })->map->count()->toArray()
             ];
 
             \Log::info('Appointment report data:', [
