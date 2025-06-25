@@ -47,84 +47,97 @@ class ReportGenerationService
      */
     private function getAppointmentsReport(array $filters)
     {
-        $query = DB::table('appointments')
-            ->join('solicitations', 'appointments.solicitation_id', '=', 'solicitations.id')
-            ->join('patients', 'solicitations.patient_id', '=', 'patients.id')
-            ->leftJoin('professionals', function($join) {
-                $join->on('appointments.provider_id', '=', 'professionals.id')
-                    ->where('appointments.provider_type', '=', 'App\\Models\\Professional');
-            })
-            ->leftJoin('clinics', function($join) {
-                $join->on('appointments.provider_id', '=', 'clinics.id')
-                    ->where('appointments.provider_type', '=', 'App\\Models\\Clinic');
-            })
-            ->leftJoin('health_plans', 'solicitations.health_plan_id', '=', 'health_plans.id');
+        try {
+            $query = DB::table('appointments')
+                ->join('solicitations', 'appointments.solicitation_id', '=', 'solicitations.id')
+                ->join('patients', 'solicitations.patient_id', '=', 'patients.id')
+                ->leftJoin('professionals', function($join) {
+                    $join->on('appointments.provider_id', '=', 'professionals.id')
+                        ->where('appointments.provider_type', '=', 'App\\Models\\Professional');
+                })
+                ->leftJoin('clinics', function($join) {
+                    $join->on('appointments.provider_id', '=', 'clinics.id')
+                        ->where('appointments.provider_type', '=', 'App\\Models\\Clinic');
+                })
+                ->leftJoin('health_plans', 'solicitations.health_plan_id', '=', 'health_plans.id');
 
-        // Apply filters only if they have actual values
-        if (isset($filters['start_date']) && $filters['start_date']) {
-            $query->whereDate('appointments.scheduled_date', '>=', $filters['start_date']);
-        }
-        if (isset($filters['end_date']) && $filters['end_date']) {
-            $query->whereDate('appointments.scheduled_date', '<=', $filters['end_date']);
-        }
-        if (isset($filters['status']) && $filters['status'] !== '') {
-            $query->where('appointments.status', $filters['status']);
-        }
-        if (isset($filters['city']) && $filters['city']) {
-            $query->where(function($q) use ($filters) {
-                $q->where('professionals.city', $filters['city'])
-                  ->orWhere('clinics.city', $filters['city']);
-            });
-        }
-        if (isset($filters['state']) && $filters['state']) {
-            $query->where(function($q) use ($filters) {
-                $q->where('professionals.state', $filters['state'])
-                  ->orWhere('clinics.state', $filters['state']);
-            });
-        }
-        if (isset($filters['health_plan_id']) && $filters['health_plan_id']) {
-            $query->where('solicitations.health_plan_id', $filters['health_plan_id']);
-        }
-        if (isset($filters['professional_id']) && $filters['professional_id']) {
-            $query->where('appointments.provider_id', $filters['professional_id'])
-                  ->where('appointments.provider_type', 'App\\Models\\Professional');
-        }
-        if (isset($filters['clinic_id']) && $filters['clinic_id']) {
-            $query->where('appointments.provider_id', $filters['clinic_id'])
-                  ->where('appointments.provider_type', 'App\\Models\\Clinic');
-        }
+            // Apply filters only if they have actual values
+            if (isset($filters['start_date']) && $filters['start_date']) {
+                $query->whereDate('appointments.scheduled_date', '>=', $filters['start_date']);
+            }
+            if (isset($filters['end_date']) && $filters['end_date']) {
+                $query->whereDate('appointments.scheduled_date', '<=', $filters['end_date']);
+            }
+            if (isset($filters['status']) && $filters['status'] !== '') {
+                $query->where('appointments.status', $filters['status']);
+            }
+            if (isset($filters['city']) && $filters['city']) {
+                $query->where(function($q) use ($filters) {
+                    $q->where('professionals.city', $filters['city'])
+                      ->orWhere('clinics.city', $filters['city']);
+                });
+            }
+            if (isset($filters['state']) && $filters['state']) {
+                $query->where(function($q) use ($filters) {
+                    $q->where('professionals.state', $filters['state'])
+                      ->orWhere('clinics.state', $filters['state']);
+                });
+            }
+            if (isset($filters['health_plan_id']) && $filters['health_plan_id']) {
+                $query->where('solicitations.health_plan_id', $filters['health_plan_id']);
+            }
+            if (isset($filters['professional_id']) && $filters['professional_id']) {
+                $query->where('appointments.provider_id', $filters['professional_id'])
+                      ->where('appointments.provider_type', 'App\\Models\\Professional');
+            }
+            if (isset($filters['clinic_id']) && $filters['clinic_id']) {
+                $query->where('appointments.provider_id', $filters['clinic_id'])
+                      ->where('appointments.provider_type', 'App\\Models\\Clinic');
+            }
 
-        // Get data for graphs
-        $appointments = $query->select([
-            'appointments.id',
-            'appointments.scheduled_date',
-            'appointments.status',
-            'appointments.patient_attended',
-            'patients.name as patient_name',
-            'patients.cpf as patient_document',
-            DB::raw('COALESCE(professionals.name, clinics.name) as provider_name'),
-            'health_plans.name as health_plan_name',
-            'appointments.created_at',
-            'appointments.updated_at'
-        ])->get();
+            // Get data for graphs
+            $appointments = $query->select([
+                'appointments.id',
+                'appointments.scheduled_date',
+                'appointments.status',
+                'appointments.patient_attended',
+                'patients.name as patient_name',
+                'patients.cpf as patient_document',
+                DB::raw('COALESCE(professionals.name, clinics.name) as provider_name'),
+                'health_plans.name as health_plan_name',
+                'appointments.created_at',
+                'appointments.updated_at'
+            ])->get();
 
-        // Add statistical data for graphs
-        $statistics = [
-            'total_appointments' => $appointments->count(),
-            'status_distribution' => $appointments->groupBy('status')->map->count(),
-            'attendance_rate' => [
-                'attended' => $appointments->where('patient_attended', true)->count(),
-                'not_attended' => $appointments->where('patient_attended', false)->count()
-            ],
-            'daily_distribution' => $appointments->groupBy(function($item) {
-                return Carbon::parse($item->scheduled_date)->format('Y-m-d');
-            })->map->count()
-        ];
+            // Add statistical data for graphs
+            $statistics = [
+                'total_appointments' => $appointments->count(),
+                'status_distribution' => $appointments->groupBy('status')->map->count(),
+                'attendance_rate' => [
+                    'attended' => $appointments->where('patient_attended', true)->count(),
+                    'not_attended' => $appointments->where('patient_attended', false)->count()
+                ],
+                'daily_distribution' => $appointments->groupBy(function($item) {
+                    return Carbon::parse($item->scheduled_date)->format('Y-m-d');
+                })->map->count()
+            ];
 
-        return [
-            'appointments' => $appointments,
-            'statistics' => $statistics
-        ];
+            \Log::info('Appointment report data:', [
+                'appointments_count' => $appointments->count(),
+                'statistics' => $statistics
+            ]);
+
+            return [
+                'appointments' => $appointments,
+                'statistics' => $statistics
+            ];
+        } catch (\Exception $e) {
+            \Log::error('Error generating appointments report:', [
+                'error' => $e->getMessage(),
+                'filters' => $filters
+            ]);
+            throw $e;
+        }
     }
 
     /**
@@ -325,13 +338,18 @@ class ReportGenerationService
     {
         $view = "reports.{$type}";
         
-        // For appointment report, pass both appointments and statistics
-        $viewData = $type === 'appointment' 
-            ? [
+        // For appointment report, ensure we have both appointments and statistics
+        if ($type === 'appointment') {
+            if (!isset($data['appointments']) || !isset($data['statistics'])) {
+                throw new \Exception("Invalid data structure for appointment report");
+            }
+            $viewData = [
                 'data' => $data['appointments'],
                 'statistics' => $data['statistics']
-            ] 
-            : ['data' => $data];
+            ];
+        } else {
+            $viewData = ['data' => $data];
+        }
             
         $pdf = PDF::loadView($view, $viewData);
         

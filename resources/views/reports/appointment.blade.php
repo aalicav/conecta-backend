@@ -13,30 +13,31 @@
             margin-bottom: 30px;
         }
         .stats-container {
-            display: flex;
-            justify-content: space-between;
             margin-bottom: 30px;
         }
-        .stat-box {
+        .stat-row {
+            display: block;
+            margin-bottom: 15px;
             border: 1px solid #ddd;
-            padding: 15px;
-            text-align: center;
-            width: 23%;
+            padding: 10px;
+        }
+        .stat-label {
+            font-weight: bold;
+            margin-right: 10px;
         }
         .graph-container {
             margin-bottom: 30px;
-            height: 300px;
         }
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
+            font-size: 12px;
         }
         th, td {
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
-            font-size: 12px;
         }
         th {
             background-color: #f5f5f5;
@@ -45,6 +46,8 @@
             font-size: 16px;
             font-weight: bold;
             margin-bottom: 10px;
+            background-color: #f5f5f5;
+            padding: 10px;
         }
         @page {
             size: landscape;
@@ -54,6 +57,15 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+    @php
+        $totalAppointments = $statistics['total_appointments'] ?? 0;
+        $attendanceRate = isset($statistics['attendance_rate']) && $totalAppointments > 0
+            ? round(($statistics['attendance_rate']['attended'] / $totalAppointments) * 100, 1)
+            : 0;
+        $attended = $statistics['attendance_rate']['attended'] ?? 0;
+        $notAttended = $statistics['attendance_rate']['not_attended'] ?? 0;
+    @endphp
+
     <div class="header">
         <h1>Relatório de Agendamentos</h1>
         <p>Gerado em: {{ now()->format('d/m/Y H:i:s') }}</p>
@@ -61,21 +73,21 @@
 
     <!-- Summary Statistics -->
     <div class="stats-container">
-        <div class="stat-box">
-            <h3>Total de Agendamentos</h3>
-            <h2>{{ $statistics['total_appointments'] ?? 0 }}</h2>
+        <div class="stat-row">
+            <span class="stat-label">Total de Agendamentos:</span>
+            <span>{{ $totalAppointments }}</span>
         </div>
-        <div class="stat-box">
-            <h3>Taxa de Comparecimento</h3>
-            <h2>{{ isset($statistics['attendance_rate']) ? round(($statistics['attendance_rate']['attended'] / max(1, $statistics['total_appointments'])) * 100, 1) : 0 }}%</h2>
+        <div class="stat-row">
+            <span class="stat-label">Taxa de Comparecimento:</span>
+            <span>{{ $attendanceRate }}%</span>
         </div>
-        <div class="stat-box">
-            <h3>Compareceram</h3>
-            <h2>{{ $statistics['attendance_rate']['attended'] ?? 0 }}</h2>
+        <div class="stat-row">
+            <span class="stat-label">Compareceram:</span>
+            <span>{{ $attended }}</span>
         </div>
-        <div class="stat-box">
-            <h3>Não Compareceram</h3>
-            <h2>{{ $statistics['attendance_rate']['not_attended'] ?? 0 }}</h2>
+        <div class="stat-row">
+            <span class="stat-label">Não Compareceram:</span>
+            <span>{{ $notAttended }}</span>
         </div>
     </div>
 
@@ -95,7 +107,7 @@
                 <tr>
                     <td>{{ $status }}</td>
                     <td>{{ $count }}</td>
-                    <td>{{ round(($count / max(1, $statistics['total_appointments'])) * 100, 1) }}%</td>
+                    <td>{{ $totalAppointments > 0 ? round(($count / $totalAppointments) * 100, 1) : 0 }}%</td>
                 </tr>
                 @endforeach
             </tbody>
@@ -110,6 +122,7 @@
                 <tr>
                     <th>Data</th>
                     <th>Quantidade</th>
+                    <th>Porcentagem do Total</th>
                 </tr>
             </thead>
             <tbody>
@@ -117,6 +130,7 @@
                 <tr>
                     <td>{{ \Carbon\Carbon::parse($date)->format('d/m/Y') }}</td>
                     <td>{{ $count }}</td>
+                    <td>{{ $totalAppointments > 0 ? round(($count / $totalAppointments) * 100, 1) : 0 }}%</td>
                 </tr>
                 @endforeach
             </tbody>
@@ -124,7 +138,7 @@
     </div>
 
     <!-- Data Table -->
-    <h2>Lista de Agendamentos</h2>
+    <div class="chart-title">Lista de Agendamentos</div>
     <table>
         <thead>
             <tr>
@@ -137,7 +151,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach($data ?? [] as $appointment)
+            @forelse($data ?? [] as $appointment)
             <tr>
                 <td>{{ \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i') }}</td>
                 <td>{{ $appointment->patient_name }}</td>
@@ -146,9 +160,24 @@
                 <td>{{ $appointment->status }}</td>
                 <td>{{ $appointment->patient_attended ? 'Sim' : 'Não' }}</td>
             </tr>
-            @endforeach
+            @empty
+            <tr>
+                <td colspan="6" style="text-align: center;">Nenhum agendamento encontrado</td>
+            </tr>
+            @endforelse
         </tbody>
     </table>
+
+    <!-- Debug Information (will be hidden in production) -->
+    @if(config('app.debug'))
+    <div style="margin-top: 20px; font-size: 10px; color: #666;">
+        <pre>
+            Data Variables:
+            statistics: {{ print_r($statistics ?? [], true) }}
+            data count: {{ isset($data) ? count($data) : 0 }}
+        </pre>
+    </div>
+    @endif
 
     <script>
         // Status Distribution Chart
