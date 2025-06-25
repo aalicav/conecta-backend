@@ -9,10 +9,11 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use App\Services\ReportGenerationService;
 use App\Models\User;
+use App\Models\Report;
+use App\Models\ReportGeneration;
 use App\Notifications\ReportGenerated;
 use App\Notifications\ReportGenerationFailed;
 use Illuminate\Support\Facades\Notification;
-use App\Models\Report;
 use Illuminate\Support\Facades\Storage;
 
 class GenerateReport implements ShouldQueue
@@ -23,16 +24,20 @@ class GenerateReport implements ShouldQueue
     protected $filters;
     protected $format;
     protected $userId;
+    protected $reportId;
+    protected $generationId;
 
     /**
      * Create a new job instance.
      */
-    public function __construct(string $type, array $filters, string $format, int $userId)
+    public function __construct(string $type, array $filters, string $format, int $userId, int $reportId, int $generationId)
     {
         $this->type = $type;
         $this->filters = $filters;
         $this->format = $format;
         $this->userId = $userId;
+        $this->reportId = $reportId;
+        $this->generationId = $generationId;
     }
 
     /**
@@ -40,24 +45,16 @@ class GenerateReport implements ShouldQueue
      */
     public function handle(ReportGenerationService $reportService)
     {
-        // Get the user before try-catch block
+        // Get the user and generation record
         $user = User::find($this->userId);
+        $generation = ReportGeneration::with('report')->find($this->generationId);
+
+        if (!$generation) {
+            throw new \Exception("Report generation record not found");
+        }
 
         try {
-            // Create or get the report record
-            $report = Report::where('type', $this->type)->first();
-            if (!$report) {
-                $report = Report::create([
-                    'type' => $this->type,
-                    'name' => ucfirst($this->type) . ' Report',
-                    'description' => 'Automatically created report',
-                    'parameters' => $this->filters,
-                    'file_format' => $this->format,
-                    'created_by' => $this->userId
-                ]);
-            }
-
-            // Generate the report first
+            // Generate the report
             $filePath = $reportService->generateReport(
                 $this->type,
                 $this->filters,
@@ -67,17 +64,16 @@ class GenerateReport implements ShouldQueue
             // Get file size if available
             $fileSize = Storage::exists($filePath) ? Storage::size($filePath) : null;
 
-            // Create generation record with the file path
-            $generation = $report->generations()->create([
+            // Update generation record with success
+            $generation->update([
                 'file_path' => $filePath,
-                'file_format' => $this->format,
-                'parameters' => $this->filters,
-                'generated_by' => $this->userId,
                 'status' => 'completed',
                 'completed_at' => now(),
-                'file_size' => $fileSize,
-                'rows_count' => null // You might want to add this if you can count the rows
+                'file_size' => $fileSize
             ]);
+
+            // Update report's last generation time
+            $generation->report->updateNextScheduledTime();
 
             // Send notification
             if ($user) {
@@ -87,30 +83,22 @@ class GenerateReport implements ShouldQueue
                     url("storage/{$filePath}")
                 ));
             }
-
-            // Update report's last generation time
-            $report->updateNextScheduledTime();
-
         } catch (\Exception $e) {
-            // Create failed generation record if we have a report
-            if (isset($report)) {
-                $report->generations()->create([
-                    'file_path' => null,
-                    'file_format' => $this->format,
-                    'parameters' => $this->filters,
-                    'generated_by' => $this->userId,
-                    'status' => 'failed',
-                    'completed_at' => now(),
-                    'error_message' => $e->getMessage()
-                ]);
-            }
+            // Update generation record with failure
+            $generation->update([
+                'status' => 'failed',
+                'completed_at' => now(),
+                'error_message' => $e->getMessage()
+            ]);
 
             // Log error and notify user
             \Log::error('Error generating report: ' . $e->getMessage(), [
                 'type' => $this->type,
                 'filters' => $this->filters,
                 'format' => $this->format,
-                'user_id' => $this->userId
+                'user_id' => $this->userId,
+                'report_id' => $this->reportId,
+                'generation_id' => $this->generationId
             ]);
 
             if ($user) {

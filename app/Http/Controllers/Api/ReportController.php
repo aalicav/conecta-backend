@@ -342,12 +342,12 @@ class ReportController extends Controller
     }
 
     /**
-     * Generate and download a report.
+     * Create a new report with initial generation.
      *
      * @param Request $request
      * @return JsonResponse
      */
-    public function generate(Request $request)
+    public function create(Request $request): JsonResponse
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -363,6 +363,8 @@ class ReportController extends Controller
                 'filters.professional_id' => 'nullable|integer|exists:professionals,id',
                 'filters.clinic_id' => 'nullable|integer|exists:clinics,id',
                 'filters.specialty' => 'nullable|string',
+                'name' => 'required|string|max:255',
+                'description' => 'nullable|string'
             ]);
 
             if ($validator->fails()) {
@@ -381,36 +383,126 @@ class ReportController extends Controller
                 !array_intersect($user->getRoleNames()->toArray(), $reportConfig['permissions'][$request->type])) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'You do not have permission to generate this type of report'
+                    'message' => 'You do not have permission to create this type of report'
                 ], 403);
             }
+
+            // Create report record
+            $report = Report::create([
+                'name' => $request->name,
+                'type' => $request->type,
+                'description' => $request->description,
+                'parameters' => $request->filters,
+                'file_format' => $request->format,
+                'created_by' => Auth::id()
+            ]);
+
+            // Create initial generation record
+            $generation = $report->generations()->create([
+                'file_format' => $request->format,
+                'parameters' => $request->filters,
+                'generated_by' => Auth::id(),
+                'status' => 'processing',
+                'started_at' => now()
+            ]);
 
             // Dispatch job to generate report
             GenerateReport::dispatch(
                 $request->type,
                 $request->filters ?? [],
                 $request->format,
-                Auth::id()
+                Auth::id(),
+                $report->id,
+                $generation->id
             );
-
-            $reportName = $reportConfig['types'][$request->type]['name'] ?? 'Relatório';
 
             return response()->json([
                 'success' => true,
-                'message' => "A geração do {$reportName} foi iniciada. Você receberá uma notificação quando estiver pronto.",
+                'message' => "A geração do relatório foi iniciada. Você receberá uma notificação quando estiver pronto.",
                 'data' => [
-                    'type' => $request->type,
-                    'format' => $request->format,
-                    'filters' => $request->filters
+                    'report' => $report,
+                    'generation' => $generation
                 ]
             ]);
+
         } catch (\Exception $e) {
-            Log::error('Error generating report: ' . $e->getMessage());
+            Log::error('Failed to create report: ' . $e->getMessage(), [
+                'exception' => $e,
+                'user_id' => Auth::id(),
+                'request_data' => $request->all()
+            ]);
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to generate report',
+                'message' => 'Failed to create report',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Generate a new version of an existing report.
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function generateVersion(Request $request, $id): JsonResponse
+    {
+        try {
+            $report = Report::findOrFail($id);
+            
+            // Access control - only admins and the creator can generate new versions
+            if (!Auth::user()->hasRole('admin') && 
+                $report->created_by !== Auth::id() && 
+                !$report->is_public) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to generate this report'
+                ], 403);
+            }
+
+            // Create new generation record
+            $generation = $report->generations()->create([
+                'file_format' => $request->format ?? $report->file_format,
+                'parameters' => $request->filters ?? $report->parameters,
+                'generated_by' => Auth::id(),
+                'status' => 'processing',
+                'started_at' => now()
+            ]);
+
+            // Dispatch job to generate report
+            GenerateReport::dispatch(
+                $report->type,
+                $request->filters ?? $report->parameters ?? [],
+                $request->format ?? $report->file_format,
+                Auth::id(),
+                $report->id,
+                $generation->id
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => "A geração do relatório foi iniciada. Você receberá uma notificação quando estiver pronto.",
+                'data' => [
+                    'report' => $report,
+                    'generation' => $generation
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to generate report version: ' . $e->getMessage(), [
+                'exception' => $e,
+                'user_id' => Auth::id(),
+                'report_id' => $id,
+                'request_data' => $request->all()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate report version',
+                'error' => $e->getMessage()
+            ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
         }
     }
 
