@@ -25,6 +25,7 @@
         }
         .graph-container {
             margin-bottom: 30px;
+            height: 300px;
         }
         table {
             width: 100%;
@@ -35,6 +36,7 @@
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
+            font-size: 12px;
         }
         th {
             background-color: #f5f5f5;
@@ -61,31 +63,64 @@
     <div class="stats-container">
         <div class="stat-box">
             <h3>Total de Agendamentos</h3>
-            <h2>{{ $statistics['total_appointments'] }}</h2>
+            <h2>{{ $statistics['total_appointments'] ?? 0 }}</h2>
         </div>
         <div class="stat-box">
             <h3>Taxa de Comparecimento</h3>
-            <h2>{{ round(($statistics['attendance_rate']['attended'] / max(1, $statistics['total_appointments'])) * 100, 1) }}%</h2>
+            <h2>{{ isset($statistics['attendance_rate']) ? round(($statistics['attendance_rate']['attended'] / max(1, $statistics['total_appointments'])) * 100, 1) : 0 }}%</h2>
         </div>
         <div class="stat-box">
             <h3>Compareceram</h3>
-            <h2>{{ $statistics['attendance_rate']['attended'] }}</h2>
+            <h2>{{ $statistics['attendance_rate']['attended'] ?? 0 }}</h2>
         </div>
         <div class="stat-box">
             <h3>Não Compareceram</h3>
-            <h2>{{ $statistics['attendance_rate']['not_attended'] }}</h2>
+            <h2>{{ $statistics['attendance_rate']['not_attended'] ?? 0 }}</h2>
         </div>
     </div>
 
-    <!-- Graphs -->
+    <!-- Status Distribution -->
     <div class="graph-container">
         <div class="chart-title">Distribuição por Status</div>
-        <canvas id="statusChart"></canvas>
+        <table>
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Quantidade</th>
+                    <th>Porcentagem</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($statistics['status_distribution'] ?? [] as $status => $count)
+                <tr>
+                    <td>{{ $status }}</td>
+                    <td>{{ $count }}</td>
+                    <td>{{ round(($count / max(1, $statistics['total_appointments'])) * 100, 1) }}%</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
     </div>
 
+    <!-- Daily Distribution -->
     <div class="graph-container">
         <div class="chart-title">Distribuição Diária</div>
-        <canvas id="dailyChart"></canvas>
+        <table>
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Quantidade</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($statistics['daily_distribution'] ?? [] as $date => $count)
+                <tr>
+                    <td>{{ \Carbon\Carbon::parse($date)->format('d/m/Y') }}</td>
+                    <td>{{ $count }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
     </div>
 
     <!-- Data Table -->
@@ -102,7 +137,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach($data as $appointment)
+            @foreach($data ?? [] as $appointment)
             <tr>
                 <td>{{ \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i') }}</td>
                 <td>{{ $appointment->patient_name }}</td>

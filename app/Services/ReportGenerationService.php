@@ -95,7 +95,7 @@ class ReportGenerationService
         }
 
         // Get data for graphs
-        $data = $query->select([
+        $appointments = $query->select([
             'appointments.id',
             'appointments.scheduled_date',
             'appointments.status',
@@ -110,19 +110,19 @@ class ReportGenerationService
 
         // Add statistical data for graphs
         $statistics = [
-            'total_appointments' => $data->count(),
-            'status_distribution' => $data->groupBy('status')->map->count(),
+            'total_appointments' => $appointments->count(),
+            'status_distribution' => $appointments->groupBy('status')->map->count(),
             'attendance_rate' => [
-                'attended' => $data->where('patient_attended', true)->count(),
-                'not_attended' => $data->where('patient_attended', false)->count()
+                'attended' => $appointments->where('patient_attended', true)->count(),
+                'not_attended' => $appointments->where('patient_attended', false)->count()
             ],
-            'daily_distribution' => $data->groupBy(function($item) {
+            'daily_distribution' => $appointments->groupBy(function($item) {
                 return Carbon::parse($item->scheduled_date)->format('Y-m-d');
             })->map->count()
         ];
 
         return [
-            'appointments' => $data,
+            'appointments' => $appointments,
             'statistics' => $statistics
         ];
     }
@@ -325,7 +325,7 @@ class ReportGenerationService
     {
         $view = "reports.{$type}";
         
-        // For appointments report, pass both appointments and statistics
+        // For appointment report, pass both appointments and statistics
         $viewData = $type === 'appointment' 
             ? [
                 'data' => $data['appointments'],
