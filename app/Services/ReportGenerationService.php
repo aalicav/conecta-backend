@@ -326,7 +326,7 @@ class ReportGenerationService
         $view = "reports.{$type}";
         
         // For appointments report, pass both appointments and statistics
-        $viewData = $type === 'appointments' 
+        $viewData = $type === 'appointment' 
             ? [
                 'data' => $data['appointments'],
                 'statistics' => $data['statistics']
@@ -404,7 +404,7 @@ class ReportGenerationService
     private function getReportHeaders(string $type)
     {
         switch ($type) {
-            case 'appointments':
+            case 'appointment':
                 return [
                     'ID',
                     'Data Agendada',
@@ -477,9 +477,14 @@ class ReportGenerationService
      */
     private function formatDataForExport($data, string $type)
     {
+        // For appointment reports, use the appointments data
+        if ($type === 'appointment') {
+            $data = $data['appointments'];
+        }
+
         return $data->map(function($item) use ($type) {
             switch ($type) {
-                case 'appointments':
+                case 'appointment':
                     return [
                         $item->id,
                         $item->scheduled_date,
