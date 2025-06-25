@@ -387,6 +387,11 @@ class ReportController extends Controller
                 ], 403);
             }
 
+            // Generate file path
+            $fileName = str_replace(' ', '_', strtolower($request->name)) . '_' . uniqid() . '_' . now()->format('Y-m-d_His');
+            $relativePath = "reports/{$request->type}/{$fileName}.{$request->format}";
+            $storagePath = "public/{$relativePath}";
+
             // Create report record
             $report = Report::create([
                 'name' => $request->name,
@@ -400,10 +405,11 @@ class ReportController extends Controller
             // Create initial generation record
             $generation = $report->generations()->create([
                 'file_format' => $request->format,
+                'file_path' => $storagePath,
                 'parameters' => $request->filters,
                 'generated_by' => Auth::id(),
                 'status' => 'processing',
-                'started_at' => now()
+                'started_at' => \Carbon\Carbon::now()
             ]);
 
             // Dispatch job to generate report
@@ -468,14 +474,14 @@ class ReportController extends Controller
             $relativePath = "reports/{$report->type}/{$fileName}.{$format}";
             $storagePath = "public/{$relativePath}";
 
-            // Create new generation record
+            // Create new generation record with explicit Carbon instance
             $generation = $report->generations()->create([
                 'file_format' => $format,
                 'file_path' => $storagePath,
                 'parameters' => $request->filters ?? $report->parameters,
                 'generated_by' => Auth::id(),
                 'status' => 'processing',
-                'started_at' => now()
+                'started_at' => \Carbon\Carbon::now()
             ]);
 
             // Dispatch job to generate report
