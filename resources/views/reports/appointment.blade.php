@@ -165,16 +165,5 @@
             @endforelse
         </tbody>
     </table>
-
-    <!-- Debug Information (will be hidden in production) -->
-    @if(config('app.debug'))
-    <div style="margin-top: 20px; font-size: 10px; color: #666;">
-        <pre>
-            Data Variables:
-            statistics: {{ print_r($statistics ?? [], true) }}
-            data count: {{ isset($data) ? count($data) : 0 }}
-        </pre>
-    </div>
-    @endif
 </body>
 </html> 
