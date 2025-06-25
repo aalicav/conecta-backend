@@ -112,7 +112,6 @@ class ReportGenerationService
                 'addresses.neighborhood',
                 'addresses.city as address_city',
                 'addresses.state as address_state',
-                'addresses.reference',
                 'appointments.created_at',
                 'appointments.updated_at'
             ])->get();
@@ -446,7 +445,6 @@ class ReportGenerationService
                     'Bairro',
                     'Cidade',
                     'Estado',
-                    'Referência',
                     'Data Criação',
                     'Última Atualização'
                 ];
@@ -533,7 +531,6 @@ class ReportGenerationService
                         $item->neighborhood,
                         $item->address_city,
                         $item->address_state,
-                        $item->reference,
                         $item->created_at,
                         $item->updated_at
                     ];

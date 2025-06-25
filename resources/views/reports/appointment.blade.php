@@ -164,9 +164,6 @@
                         @endif
                         <br>
                         {{ $appointment->neighborhood }} - {{ $appointment->address_city }}/{{ $appointment->address_state }}
-                        @if($appointment->reference)
-                            <br>Ref: {{ $appointment->reference }}
-                        @endif
                     @else
                         Não informado
                     @endif
