@@ -351,7 +351,7 @@ class ReportController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'type' => 'required|string|in:appointments,professionals,clinics,financial,billing',
+                'type' => 'required|string|in:appointment,professionals,clinics,financial,billing',
                 'format' => 'required|string|in:pdf,csv,xlsx',
                 'filters' => 'nullable|array',
                 'filters.start_date' => 'nullable|date',

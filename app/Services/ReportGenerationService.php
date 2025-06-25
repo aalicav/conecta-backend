@@ -27,7 +27,7 @@ class ReportGenerationService
     private function getReportData(string $type, array $filters)
     {
         switch ($type) {
-            case 'appointments':
+            case 'appointment':
                 return $this->getAppointmentsReport($filters);
             case 'professionals':
                 return $this->getProfessionalsReport($filters);
