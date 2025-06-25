@@ -462,9 +462,16 @@ class ReportController extends Controller
                 ], 403);
             }
 
+            // Generate file path
+            $format = $request->format ?? $report->file_format;
+            $fileName = str_replace(' ', '_', strtolower($report->name)) . '_' . uniqid() . '_' . now()->format('Y-m-d_His');
+            $relativePath = "reports/{$report->type}/{$fileName}.{$format}";
+            $storagePath = "public/{$relativePath}";
+
             // Create new generation record
             $generation = $report->generations()->create([
-                'file_format' => $request->format ?? $report->file_format,
+                'file_format' => $format,
+                'file_path' => $storagePath,
                 'parameters' => $request->filters ?? $report->parameters,
                 'generated_by' => Auth::id(),
                 'status' => 'processing',
@@ -475,7 +482,7 @@ class ReportController extends Controller
             GenerateReport::dispatch(
                 $report->type,
                 $request->filters ?? $report->parameters ?? [],
-                $request->format ?? $report->file_format,
+                $format,
                 Auth::id(),
                 $report->id,
                 $generation->id
