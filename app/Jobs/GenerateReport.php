@@ -12,6 +12,8 @@ use App\Models\User;
 use App\Notifications\ReportGenerated;
 use App\Notifications\ReportGenerationFailed;
 use Illuminate\Support\Facades\Notification;
+use App\Models\Report;
+use Illuminate\Support\Facades\Storage;
 
 class GenerateReport implements ShouldQueue
 {
@@ -42,12 +44,36 @@ class GenerateReport implements ShouldQueue
         $user = User::find($this->userId);
 
         try {
+            // Create a report generation record
+            $report = Report::where('type', $this->type)->first();
+            if (!$report) {
+                $report = Report::create([
+                    'type' => $this->type,
+                    'name' => ucfirst($this->type) . ' Report',
+                    'description' => 'Automatically created report',
+                    'parameters' => $this->filters,
+                    'file_format' => $this->format,
+                    'created_by' => $this->userId
+                ]);
+            }
+
+            $generation = $report->generations()->create([
+                'file_format' => $this->format,
+                'parameters' => $this->filters,
+                'generated_by' => $this->userId,
+                'status' => 'processing'
+            ]);
+
             // Generate the report
             $filePath = $reportService->generateReport(
                 $this->type,
                 $this->filters,
                 $this->format
             );
+
+            // Update generation record with success
+            $fileSize = Storage::exists($filePath) ? Storage::size($filePath) : null;
+            $generation->markAsCompleted(null, $fileSize);
 
             // Send notification
             if ($user) {
@@ -58,6 +84,11 @@ class GenerateReport implements ShouldQueue
                 ));
             }
         } catch (\Exception $e) {
+            // Update generation record with failure if it exists
+            if (isset($generation)) {
+                $generation->markAsFailed($e->getMessage());
+            }
+
             // Log error and notify user
             \Log::error('Error generating report: ' . $e->getMessage(), [
                 'type' => $this->type,
