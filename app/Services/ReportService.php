@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Exception;
 use Barryvdh\DomPDF\Facade\Pdf;
+use League\Csv\Writer;
+use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
+use OpenSpout\Writer\XLSX\Options;
+use OpenSpout\Common\Entity\Row;
 
 class ReportService
 {
@@ -204,37 +208,24 @@ class ReportService
                 \Log::info('Created directory', ['directory' => $directory]);
             }
 
-            // Generate CSV content
-            $output = fopen('php://temp', 'r+');
+            // Create CSV writer with UTF-8 BOM
+            $csv = Writer::createFromString('');
+            $csv->setDelimiter(';');
             
             // Add BOM for UTF-8
-            fputs($output, "\xEF\xBB\xBF");
+            $csv->setOutputBOM(Writer::BOM_UTF8);
             
-            // Write headers with proper encoding
+            // Write headers
             $headers = array_keys($data[0]);
-            $encodedHeaders = array_map(function($header) {
-                return mb_convert_encoding($header, 'UTF-8', 'UTF-8');
-            }, $headers);
-            fputcsv($output, $encodedHeaders, ';');
+            $csv->insertOne($headers);
             
-            // Write data with proper encoding
+            // Write data
             foreach ($data as $row) {
-                $encodedRow = array_map(function($value) {
-                    if (is_string($value)) {
-                        return mb_convert_encoding($value, 'UTF-8', 'UTF-8');
-                    }
-                    return $value;
-                }, $row);
-                fputcsv($output, $encodedRow, ';');
+                $csv->insertOne($row);
             }
             
-            // Get content
-            rewind($output);
-            $content = stream_get_contents($output);
-            fclose($output);
-            
-            // Store the file with UTF-8 encoding
-            $stored = Storage::put($filePath, $content);
+            // Store the file
+            $stored = Storage::put($filePath, $csv->toString());
             
             if (!$stored) {
                 throw new Exception("Failed to store CSV file");
@@ -262,8 +253,6 @@ class ReportService
 
     /**
      * Generate an Excel file from the data.
-     * 
-     * This is a placeholder - actual implementation would use a library like PhpSpreadsheet.
      *
      * @param string $filePath
      * @param array $data
@@ -271,9 +260,60 @@ class ReportService
      */
     public function generateExcelFile(string $filePath, array $data): void
     {
-        // Placeholder - would use PhpSpreadsheet or similar library
-        // For now, just create a CSV as a fallback
-        $this->generateCsvFile($filePath, $data);
+        \Log::info('Starting Excel generation', [
+            'file_path' => $filePath
+        ]);
+
+        if (empty($data)) {
+            $data[] = [
+                'Data' => date('d/m/Y H:i:s'),
+                'Mensagem' => 'Nenhum dado encontrado para o período selecionado'
+            ];
+        }
+
+        try {
+            $fullPath = storage_path("app/{$filePath}");
+            
+            // Ensure directory exists
+            $directory = dirname($fullPath);
+            if (!is_dir($directory)) {
+                mkdir($directory, 0755, true);
+                \Log::info('Created directory', ['directory' => $directory]);
+            }
+            
+            // Create XLSX writer
+            $options = new Options();
+            $writer = new XlsxWriter($options);
+            $writer->openToFile($fullPath);
+            
+            // Write headers
+            $headers = array_keys($data[0]);
+            $writer->addRow(Row::fromValues($headers));
+            
+            // Write data
+            foreach ($data as $row) {
+                $writer->addRow(Row::fromValues($row));
+            }
+            
+            $writer->close();
+            
+            \Log::info('Excel file generated successfully', [
+                'file_path' => $filePath,
+                'size' => Storage::size($filePath)
+            ]);
+            
+            // Set permissions if the file exists
+            if (file_exists($fullPath)) {
+                chmod($fullPath, 0644);
+            }
+        } catch (Exception $e) {
+            \Log::error('Failed to generate Excel file', [
+                'file_path' => $filePath,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
     }
 
     /**
