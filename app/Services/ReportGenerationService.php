@@ -6,9 +6,10 @@ use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Barryvdh\DomPDF\Facade\Pdf;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Writer\Csv;
+use League\Csv\Writer;
+use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
+use OpenSpout\Writer\XLSX\Options;
+use OpenSpout\Common\Entity\Row;
 
 class ReportGenerationService
 {
@@ -376,25 +377,39 @@ class ReportGenerationService
      */
     private function exportToCsv($data, string $type)
     {
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        
-        // Add headers
-        $headers = $this->getReportHeaders($type);
-        $sheet->fromArray($headers, null, 'A1');
-        
-        // Add data
-        $rowData = $this->formatDataForExport($data, $type);
-        $sheet->fromArray($rowData, null, 'A2');
-        
-        $writer = new Csv($spreadsheet);
-        
-        $filename = "{$type}_report_" . date('Y-m-d_His') . '.csv';
-        $path = "reports/{$filename}";
-        
-        $writer->save(storage_path("app/{$path}"));
-        
-        return $path;
+        try {
+            // Create CSV writer
+            $csv = Writer::createFromString('');
+            
+            // Add headers
+            $headers = $this->getReportHeaders($type);
+            $csv->insertOne($headers);
+            
+            // Add data
+            $rowData = $this->formatDataForExport($data, $type);
+            foreach ($rowData as $row) {
+                $csv->insertOne($row);
+            }
+            
+            $filename = "{$type}_report_" . date('Y-m-d_His') . '.csv';
+            $path = "reports/{$filename}";
+            
+            // Save to storage
+            Storage::put($path, $csv->toString());
+            
+            \Log::info('CSV file generated successfully', [
+                'file_path' => $path,
+                'size' => Storage::size($path)
+            ]);
+            
+            return $path;
+        } catch (\Exception $e) {
+            \Log::error('Failed to generate CSV file', [
+                'error' => $e->getMessage(),
+                'type' => $type
+            ]);
+            throw $e;
+        }
     }
 
     /**
@@ -402,25 +417,47 @@ class ReportGenerationService
      */
     private function exportToXlsx($data, string $type)
     {
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        
-        // Add headers
-        $headers = $this->getReportHeaders($type);
-        $sheet->fromArray($headers, null, 'A1');
-        
-        // Add data
-        $rowData = $this->formatDataForExport($data, $type);
-        $sheet->fromArray($rowData, null, 'A2');
-        
-        $writer = new Xlsx($spreadsheet);
-        
-        $filename = "{$type}_report_" . date('Y-m-d_His') . '.xlsx';
-        $path = "reports/{$filename}";
-        
-        $writer->save(storage_path("app/{$path}"));
-        
-        return $path;
+        try {
+            $filename = "{$type}_report_" . date('Y-m-d_His') . '.xlsx';
+            $path = "reports/{$filename}";
+            $fullPath = storage_path("app/{$path}");
+            
+            // Ensure directory exists
+            $directory = dirname($fullPath);
+            if (!is_dir($directory)) {
+                mkdir($directory, 0755, true);
+            }
+            
+            // Create XLSX writer
+            $options = new Options();
+            $writer = new XlsxWriter($options);
+            $writer->openToFile($fullPath);
+            
+            // Add headers
+            $headers = $this->getReportHeaders($type);
+            $writer->addRow(Row::fromValues($headers));
+            
+            // Add data
+            $rowData = $this->formatDataForExport($data, $type);
+            foreach ($rowData as $row) {
+                $writer->addRow(Row::fromValues($row));
+            }
+            
+            $writer->close();
+            
+            \Log::info('XLSX file generated successfully', [
+                'file_path' => $path,
+                'size' => Storage::size($path)
+            ]);
+            
+            return $path;
+        } catch (\Exception $e) {
+            \Log::error('Failed to generate XLSX file', [
+                'error' => $e->getMessage(),
+                'type' => $type
+            ]);
+            throw $e;
+        }
     }
 
     /**
