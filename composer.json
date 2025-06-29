@@ -18,7 +18,7 @@
         "laravel/tinker": "^2.10.1",
         "league/csv": "^9.24",
         "nfephp-org/sped-nfe": "*",
-        "openspout/openspout": "^4.30",
+        "openspout/openspout": "*",
         "owen-it/laravel-auditing": "^14.0",
         "spatie/laravel-permission": "^6.17",
         "twilio/sdk": "^7.11"
