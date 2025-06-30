@@ -28,15 +28,11 @@ class BillingRuleController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = BillingRule::with(['healthPlan', 'contract']);
+            $query = BillingRule::with(['healthPlan']);
             
             // Apply filters
             if ($request->has('health_plan_id')) {
                 $query->where('health_plan_id', $request->health_plan_id);
-            }
-            
-            if ($request->has('contract_id')) {
-                $query->where('contract_id', $request->contract_id);
             }
             
             if ($request->has('frequency')) {
@@ -80,7 +76,6 @@ class BillingRuleController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'health_plan_id' => 'required|exists:health_plans,id',
-                'contract_id' => 'required|exists:contracts,id',
                 'frequency' => 'required|string|in:monthly,weekly,daily',
                 'monthly_day' => 'nullable|integer|min:1|max:31',
                 'batch_size' => 'nullable|integer|min:1',
@@ -113,7 +108,7 @@ class BillingRuleController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Billing rule created successfully',
-                'data' => $rule->load(['healthPlan', 'contract'])
+                'data' => $rule->load(['healthPlan'])
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -133,7 +128,7 @@ class BillingRuleController extends Controller
     public function show(int $id): JsonResponse
     {
         try {
-            $billingRule = BillingRule::with(['healthPlan', 'contract'])->findOrFail($id);
+            $billingRule = BillingRule::with(['healthPlan'])->findOrFail($id);
             
             return response()->json([
                 'success' => true,
@@ -160,7 +155,6 @@ class BillingRuleController extends Controller
             
             $validator = Validator::make($request->all(), [
                 'health_plan_id' => 'sometimes|exists:health_plans,id',
-                'contract_id' => 'sometimes|exists:contracts,id',
                 'frequency' => 'sometimes|string|in:monthly,weekly,daily',
                 'monthly_day' => 'nullable|integer|min:1|max:31',
                 'batch_size' => 'nullable|integer|min:1',
@@ -192,7 +186,7 @@ class BillingRuleController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Billing rule updated successfully',
-                'data' => $billingRule->load(['healthPlan', 'contract'])
+                'data' => $billingRule->load(['healthPlan'])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();

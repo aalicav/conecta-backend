@@ -58,14 +58,6 @@ class BillingRule extends Model
     }
 
     /**
-     * Get the contract that owns the billing rule.
-     */
-    public function contract(): BelongsTo
-    {
-        return $this->belongsTo(Contract::class);
-    }
-
-    /**
      * Get the billing batches for the rule.
      */
     public function billingBatches(): HasMany
