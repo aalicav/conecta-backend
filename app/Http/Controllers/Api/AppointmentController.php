@@ -2462,12 +2462,12 @@ class AppointmentController extends Controller
         // Create billing batch
         $batch = BillingBatch::create([
             'billing_rule_id' => $rule->id,
-            'entity_type' => 'health_plan',
+            'entity_type' => 'App\\Models\\HealthPlan',
             'entity_id' => $appointment->solicitation->health_plan_id,
             'reference_period_start' => $scheduledDate->startOfDay(),
             'reference_period_end' => $scheduledDate->endOfDay(),
             'billing_date' => now(),
-            'due_date' => now()->addDays($rule->payment_term_days ?? 30),
+            'due_date' => now()->addDays($rule->payment_days ?? 30),
             'status' => 'pending',
             'items_count' => 1,
             'total_amount' => $this->calculateAppointmentPrice($appointment),
@@ -2507,46 +2507,51 @@ class AppointmentController extends Controller
      */
     private function calculateAppointmentPrice(Appointment $appointment): float
     {
+        // Get the base procedure price, defaulting to 0 if null
+        $basePrice = $appointment->procedure_price ?? 0.0;
+        
         // If not a consultation (10101012), return standard procedure price
         if ($appointment->procedure_code !== '10101012') {
-            return $appointment->procedure_price;
+            return (float) $basePrice;
         }
 
         // Check for specialty-specific pricing
-        if ($appointment->provider->medical_specialty_id) {
+        if ($appointment->provider && $appointment->provider->medical_specialty_id) {
             $specialty = $appointment->provider->medicalSpecialty;
             
-            // Try to get price in order:
-            // 1. Professional specific price
-            $price = $specialty->getPriceForEntity('professional', $appointment->provider_id);
-            if ($price) {
-                return $price;
-            }
-
-            // 2. Clinic specific price
-            if ($appointment->clinic_id) {
-                $price = $specialty->getPriceForEntity('clinic', $appointment->clinic_id);
-                if ($price) {
-                    return $price;
+            if ($specialty) {
+                // Try to get price in order:
+                // 1. Professional specific price
+                $price = $specialty->getPriceForEntity('professional', $appointment->provider_id);
+                if ($price !== null && $price > 0) {
+                    return (float) $price;
                 }
-            }
 
-            // 3. Health plan specific price
-            if ($appointment->solicitation->health_plan_id) {
-                $price = $specialty->getPriceForEntity('health_plan', $appointment->solicitation->health_plan_id);
-                if ($price) {
-                    return $price;
+                // 2. Clinic specific price
+                if ($appointment->clinic_id) {
+                    $price = $specialty->getPriceForEntity('clinic', $appointment->clinic_id);
+                    if ($price !== null && $price > 0) {
+                        return (float) $price;
+                    }
                 }
-            }
 
-            // 4. Specialty default price
-            if ($specialty->default_price) {
-                return $specialty->default_price;
+                // 3. Health plan specific price
+                if ($appointment->solicitation && $appointment->solicitation->health_plan_id) {
+                    $price = $specialty->getPriceForEntity('health_plan', $appointment->solicitation->health_plan_id);
+                    if ($price !== null && $price > 0) {
+                        return (float) $price;
+                    }
+                }
+
+                // 4. Specialty default price
+                if ($specialty->default_price && $specialty->default_price > 0) {
+                    return (float) $specialty->default_price;
+                }
             }
         }
 
         // Return standard procedure price if no specialty pricing found
-        return $appointment->procedure_price;
+        return (float) $basePrice;
     }
 
     /**
@@ -2606,7 +2611,7 @@ class AppointmentController extends Controller
                 'reference_period_start' => $scheduledDate->startOfDay(),
                 'reference_period_end' => $scheduledDate->endOfDay(),
                 'billing_date' => now(),
-                'due_date' => now()->addDays($billingRule->payment_term_days ?? 30),
+                'due_date' => now()->addDays($billingRule->payment_days ?? 30),
                 'status' => 'pending',
                 'items_count' => 1,
                 'total_amount' => $this->calculateAppointmentPrice($appointment),
