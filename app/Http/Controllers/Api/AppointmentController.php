@@ -2483,13 +2483,16 @@ class AppointmentController extends Controller
      */
     private function createBillingBatch(Appointment $appointment, BillingRule $rule): void
     {
+        // Convert scheduled_date to Carbon instance
+        $scheduledDate = Carbon::parse($appointment->scheduled_date);
+        
         // Create billing batch
         $batch = BillingBatch::create([
             'billing_rule_id' => $rule->id,
             'entity_type' => 'health_plan',
             'entity_id' => $appointment->solicitation->health_plan_id,
-            'reference_period_start' => $appointment->scheduled_date->startOfDay(),
-            'reference_period_end' => $appointment->scheduled_date->endOfDay(),
+            'reference_period_start' => $scheduledDate->startOfDay(),
+            'reference_period_end' => $scheduledDate->endOfDay(),
             'billing_date' => now(),
             'due_date' => now()->addDays($rule->payment_term_days ?? 30),
             'status' => 'pending',
@@ -2502,7 +2505,7 @@ class AppointmentController extends Controller
         $batch->billingItems()->create([
             'item_type' => 'appointment',
             'item_id' => $appointment->id,
-            'description' => "Atendimento {$appointment->provider->specialty} - {$appointment->scheduled_date}",
+            'description' => "Atendimento {$appointment->provider->specialty} - " . $scheduledDate->format('Y-m-d H:i:s'),
             'unit_price' => $this->calculateAppointmentPrice($appointment),
             'total_amount' => $this->calculateAppointmentPrice($appointment),
             'tuss_code' => $appointment->procedure_code,
@@ -2617,13 +2620,16 @@ class AppointmentController extends Controller
                 ]);
             }
 
+            // Convert scheduled_date to Carbon instance
+            $scheduledDate = Carbon::parse($appointment->scheduled_date);
+
             // Create billing batch
             $batch = BillingBatch::create([
                 'billing_rule_id' => $billingRule->id,
                 'entity_type' => 'App\\Models\\HealthPlan',
                 'entity_id' => $appointment->solicitation->health_plan_id,
-                'reference_period_start' => $appointment->scheduled_date->startOfDay(),
-                'reference_period_end' => $appointment->scheduled_date->endOfDay(),
+                'reference_period_start' => $scheduledDate->startOfDay(),
+                'reference_period_end' => $scheduledDate->endOfDay(),
                 'billing_date' => now(),
                 'due_date' => now()->addDays($billingRule->payment_term_days ?? 30),
                 'status' => 'pending',
@@ -2637,7 +2643,7 @@ class AppointmentController extends Controller
                 'billing_batch_id'        => $batch->id,
                 'item_type'               => 'appointment',
                 'item_id'                 => $appointment->id,
-                'description'             => "Atendimento {$appointment->provider->specialty} - {$appointment->scheduled_date}",
+                'description'             => "Atendimento {$appointment->provider->specialty} - " . $scheduledDate->format('Y-m-d H:i:s'),
                 'quantity'                => 1,
                 'unit_price'              => $this->calculateAppointmentPrice($appointment),
                 'discount_amount'         => 0,
@@ -2703,9 +2709,6 @@ class AppointmentController extends Controller
      */
     private function isAppointmentEligibleForBilling(Appointment $appointment): bool
     {
-        return $appointment->patient_confirmed &&
-               $appointment->professional_confirmed &&
-               $appointment->patient_attended === true &&
-               $appointment->guide_status === 'approved';
+        return $appointment->patient_attended;
     }
 } 
