@@ -32,6 +32,12 @@ class BillingController extends Controller
             ->when($request->status, function ($q, $status) {
                 return $q->where('status', $status);
             })
+            ->when($request->date_from, function ($q, $date) {
+                return $q->where('billing_date', '>=', $date);
+            })
+            ->when($request->date_to, function ($q, $date) {
+                return $q->where('billing_date', '<=', $date);
+            })
             ->when($request->start_date, function ($q, $date) {
                 return $q->where('billing_date', '>=', $date);
             })
@@ -43,7 +49,59 @@ class BillingController extends Controller
                     ->where('entity_type', 'health_plan');
             });
 
-        return response()->json($query->paginate($request->per_page ?? 15));
+        $batches = $query->orderBy('created_at', 'desc')->get();
+
+        // Transform data to match frontend expectations
+        $transformedBatches = $batches->map(function ($batch) {
+            return [
+                'id' => $batch->id,
+                'reference_period_start' => $batch->reference_period_start,
+                'reference_period_end' => $batch->reference_period_end,
+                'total_amount' => $batch->total_amount,
+                'status' => $batch->status,
+                'created_at' => $batch->created_at,
+                'items' => $batch->billingItems->map(function ($item) {
+                    return [
+                        'id' => $item->id,
+                        'patient' => [
+                            'name' => $item->patient_name,
+                            'cpf' => $item->patient_document,
+                        ],
+                        'provider' => [
+                            'name' => $item->professional_name,
+                            'type' => 'professional',
+                            'specialty' => $item->professional_specialty,
+                        ],
+                        'procedure' => [
+                            'code' => $item->tuss_code,
+                            'description' => $item->tuss_description,
+                        ],
+                        'appointment' => [
+                            'scheduled_date' => $item->patient_journey_data['scheduled_at'] ?? null,
+                            'booking_date' => $item->patient_journey_data['scheduled_at'] ?? null,
+                            'confirmation_date' => $item->patient_journey_data['scheduled_at'] ?? null,
+                            'attendance_confirmation' => $item->patient_journey_data['patient_attended'] ? 'Sim' : 'Não',
+                            'guide_status' => $item->patient_journey_data['guide_status'] ?? 'missing',
+                        ],
+                        'amount' => $item->total_amount,
+                        'status' => $item->status,
+                        'gloss_reason' => $item->gloss_reason ?? null,
+                    ];
+                }),
+                'payment_proof' => $batch->payment_proof_path,
+                'invoice' => $batch->fiscalDocuments->first()?->document_url ?? null,
+            ];
+        });
+
+        return response()->json([
+            'data' => $transformedBatches,
+            'meta' => [
+                'total' => $batches->count(),
+                'per_page' => $batches->count(),
+                'current_page' => 1,
+                'last_page' => 1,
+            ]
+        ]);
     }
 
     /**
@@ -564,5 +622,109 @@ class BillingController extends Controller
             ->first();
         
         return $pricingContract ? $pricingContract->price : 0;
+    }
+
+    /**
+     * Exporta relatório de faturamento em CSV ou PDF
+     */
+    public function exportReport(Request $request)
+    {
+        $request->validate([
+            'format' => 'required|in:csv,pdf',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date',
+            'status' => 'nullable|string',
+        ]);
+
+        $query = BillingBatch::with(['billingItems', 'fiscalDocuments'])
+            ->when($request->status, function ($q, $status) {
+                return $q->where('status', $status);
+            })
+            ->when($request->date_from, function ($q, $date) {
+                return $q->where('billing_date', '>=', $date);
+            })
+            ->when($request->date_to, function ($q, $date) {
+                return $q->where('billing_date', '<=', $date);
+            })
+            ->orderBy('created_at', 'desc');
+
+        $batches = $query->get();
+
+        if ($request->format === 'csv') {
+            return $this->exportToCsv($batches);
+        } else {
+            return $this->exportToPdf($batches);
+        }
+    }
+
+    /**
+     * Exporta dados para CSV
+     */
+    private function exportToCsv($batches)
+    {
+        $filename = 'relatorio_faturamento_' . now()->format('Y-m-d_H-i-s') . '.csv';
+        
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $callback = function() use ($batches) {
+            $file = fopen('php://output', 'w');
+            
+            // CSV Headers
+            fputcsv($file, [
+                'ID do Lote',
+                'Período Início',
+                'Período Fim',
+                'Valor Total',
+                'Status',
+                'Data de Criação',
+                'Quantidade de Itens'
+            ]);
+
+            foreach ($batches as $batch) {
+                fputcsv($file, [
+                    $batch->id,
+                    $batch->reference_period_start,
+                    $batch->reference_period_end,
+                    number_format($batch->total_amount, 2, ',', '.'),
+                    $batch->status,
+                    $batch->created_at->format('d/m/Y H:i:s'),
+                    $batch->billingItems->count()
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Exporta dados para PDF
+     */
+    private function exportToPdf($batches)
+    {
+        $filename = 'relatorio_faturamento_' . now()->format('Y-m-d_H-i-s') . '.pdf';
+        
+        // For now, return a simple text response
+        // In a real implementation, you would use a PDF library like DomPDF or TCPDF
+        $content = "Relatório de Faturamento\n\n";
+        $content .= "Período: " . ($batches->first()?->reference_period_start ?? 'N/A') . " a " . ($batches->last()?->reference_period_end ?? 'N/A') . "\n";
+        $content .= "Total de lotes: " . $batches->count() . "\n";
+        $content .= "Valor total: R$ " . number_format($batches->sum('total_amount'), 2, ',', '.') . "\n\n";
+
+        foreach ($batches as $batch) {
+            $content .= "Lote #{$batch->id}\n";
+            $content .= "Período: {$batch->reference_period_start} a {$batch->reference_period_end}\n";
+            $content .= "Valor: R$ " . number_format($batch->total_amount, 2, ',', '.') . "\n";
+            $content .= "Status: {$batch->status}\n";
+            $content .= "Itens: {$batch->billingItems->count()}\n\n";
+        }
+
+        return response($content)
+            ->header('Content-Type', 'application/pdf')
+            ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
     }
 } 

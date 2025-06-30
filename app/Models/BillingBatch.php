@@ -80,6 +80,14 @@ class BillingBatch extends Model
     }
 
     /**
+     * Alias para o relacionamento de billing items (compatível com o controller).
+     */
+    public function billingItems(): HasMany
+    {
+        return $this->items();
+    }
+
+    /**
      * Get the fiscal documents for the batch.
      */
     public function fiscalDocuments(): HasMany
