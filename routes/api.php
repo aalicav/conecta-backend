@@ -243,6 +243,8 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
 
     // Billing
     Route::prefix('billing')->group(function () {
+        Route::get('/', [BillingController::class, 'index']);
+        Route::get('/report', [BillingController::class, 'exportReport']);
         Route::get('/overview', [BillingController::class, 'overview']);
         Route::get('/transactions', [BillingController::class, 'transactions']);
         Route::get('/transactions/{id}/invoice', [BillingController::class, 'generateInvoice']);
