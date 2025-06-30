@@ -78,7 +78,12 @@ class SolicitationController extends Controller
         
         // Filter by status if provided
         if ($request->has('status')) {
-            $query->where('status', $request->status);
+            $status = $request->status;
+            if (is_array($status)) {
+                $query->whereIn('status', $status);
+            } else {
+                $query->where('status', $status);
+            }
         }
         
         // Filter by health plan if provided
