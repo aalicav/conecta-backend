@@ -73,24 +73,29 @@ class ProfessionalAvailabilityController extends Controller
             }
 
             // Verify that the professional/clinic has the required specialty for this solicitation
-            $hasSpecialty = $solicitation->tuss->specialties()
-                ->where(function ($query) {
-                    if (Auth::user()->hasRole('professional')) {
-                        $query->whereHas('professionals', function ($q) {
-                            $q->where('professionals.id', Auth::user()->entity_id);
-                        });
-                    } else {
-                        $query->whereHas('clinics', function ($q) {
-                            $q->where('clinics.id', Auth::user()->entity_id);
-                        });
-                    }
-                })
-                ->exists();
+            // This verification is now handled through pricing contracts
+            $hasPricingContract = false;
+            
+            if (Auth::user()->hasRole('professional')) {
+                $hasPricingContract = \App\Models\Professional::where('id', Auth::user()->entity_id)
+                    ->whereHas('pricingContracts', function ($query) use ($solicitation) {
+                        $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                            ->where('is_active', true);
+                    })
+                    ->exists();
+            } else {
+                $hasPricingContract = \App\Models\Clinic::where('id', Auth::user()->entity_id)
+                    ->whereHas('pricingContracts', function ($query) use ($solicitation) {
+                        $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                            ->where('is_active', true);
+                    })
+                    ->exists();
+            }
 
-            if (!$hasSpecialty) {
+            if (!$hasPricingContract) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Você não possui a especialidade necessária para esta solicitação'
+                    'message' => 'Você não possui contrato de preço para este procedimento'
                 ], 403);
             }
 

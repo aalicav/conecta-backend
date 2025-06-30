@@ -19,13 +19,16 @@ class ProfessionalAvailability extends Model
         'notes',
         'status', // pending, accepted, rejected
         'selected_by',
-        'selected_at'
+        'selected_at',
+        'rejected_at',
+        'rejection_reason'
     ];
 
     protected $casts = [
         'available_date' => 'date',
         'available_time' => 'datetime',
-        'selected_at' => 'datetime'
+        'selected_at' => 'datetime',
+        'rejected_at' => 'datetime'
     ];
 
     /**
