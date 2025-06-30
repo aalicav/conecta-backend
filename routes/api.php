@@ -403,7 +403,7 @@ Route::middleware(['auth:sanctum'])->prefix('privacy')->group(function () {
 });
 
 // Billing Rules
-Route::middleware(['auth:sanctum', 'role:plan_admin'])->group(function () {
+Route::middleware(['auth:sanctum', 'role:super_admin', 'role:network_manager'])->group(function () {
     Route::get('/billing-rules', [BillingRuleController::class, 'index']);
     Route::post('/billing-rules', [BillingRuleController::class, 'store']);
     Route::get('/billing-rules/{billingRule}', [BillingRuleController::class, 'show']);
