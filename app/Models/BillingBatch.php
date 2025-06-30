@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class BillingBatch extends Model
 {
@@ -88,11 +89,11 @@ class BillingBatch extends Model
     }
 
     /**
-     * Get the fiscal documents for the batch.
+     * Get the fiscal documents for the batch (polimórfico).
      */
-    public function fiscalDocuments(): HasMany
+    public function fiscalDocuments()
     {
-        return $this->hasMany(FiscalDocument::class);
+        return $this->morphMany(FiscalDocument::class, 'documentable');
     }
 
     /**
