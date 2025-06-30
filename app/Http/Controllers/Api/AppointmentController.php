@@ -362,6 +362,7 @@ class AppointmentController extends Controller
 
             // Validate request
             $validator = Validator::make($request->all(), [
+                'patient_attended' => 'required|boolean',
                 'notes' => 'nullable|string',
             ]);
 
@@ -375,38 +376,53 @@ class AppointmentController extends Controller
 
             DB::beginTransaction();
 
-            // Mark as attended automatically
-            if (!$appointment->markAsAttended(Auth::id(), $request->notes)) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to mark appointment as attended'
-                ], 500);
-            }
-
-            // Check if appointment is eligible for billing
-            if ($this->isEligibleForBilling($appointment)) {
-                $appointment->markAsEligibleForBilling();
-                
-                // Get applicable billing rule
-                $billingRule = $this->getApplicableBillingRule($appointment);
-                
-                if ($billingRule && $billingRule->rule_type === 'per_appointment') {
-                    $this->createBillingBatch($appointment, $billingRule);
+            // Mark attendance based on patient_attended parameter
+            if ($request->patient_attended) {
+                // Mark as attended
+                if (!$appointment->markAsAttended(Auth::id(), $request->notes)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to mark appointment as attended'
+                    ], 500);
                 }
-            }
 
-            // Send completion notification
-            $this->notificationService->notifyAppointmentCompleted($appointment);
+                // Check if appointment is eligible for billing
+                if ($this->isEligibleForBilling($appointment)) {
+                    $appointment->markAsEligibleForBilling();
+                    
+                    // Get applicable billing rule
+                    $billingRule = $this->getApplicableBillingRule($appointment);
+                    
+                    if ($billingRule && $billingRule->rule_type === 'per_appointment') {
+                        $this->createBillingBatch($appointment, $billingRule);
+                    }
+                }
 
-            // Check if all appointments for this solicitation are completed
-            $pendingAppointments = Appointment::where('solicitation_id', $appointment->solicitation_id)
-                ->whereNotIn('status', [Appointment::STATUS_COMPLETED, Appointment::STATUS_CANCELLED])
-                ->exists();
+                // Send completion notification
+                $this->notificationService->notifyAppointmentCompleted($appointment);
 
-            // If no pending appointments, mark the solicitation as completed
-            if (!$pendingAppointments) {
-                $appointment->solicitation->markAsCompleted();
+                // Check if all appointments for this solicitation are completed
+                $pendingAppointments = Appointment::where('solicitation_id', $appointment->solicitation_id)
+                    ->whereNotIn('status', [Appointment::STATUS_COMPLETED, Appointment::STATUS_CANCELLED])
+                    ->exists();
+
+                // If no pending appointments, mark the solicitation as completed
+                if (!$pendingAppointments) {
+                    $appointment->solicitation->markAsCompleted();
+                }
+            } else {
+                // Mark as missed
+                if (!$appointment->markAsMissedAttendance(Auth::id(), $request->notes)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to mark appointment as missed'
+                    ], 500);
+                }
+
+                // Send missed notification
+                $this->notificationService->notifyAppointmentMissed($appointment);
             }
 
             DB::commit();
@@ -423,7 +439,9 @@ class AppointmentController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Appointment completed and patient marked as attended successfully',
+                'message' => $request->patient_attended 
+                    ? 'Patient marked as attended successfully' 
+                    : 'Patient marked as missed successfully',
                 'data' => new AppointmentResource($appointment)
             ]);
         } catch (\Exception $e) {
