@@ -2437,45 +2437,18 @@ class AppointmentController extends Controller
      */
     private function getApplicableBillingRule(Appointment $appointment): ?BillingRule
     {
-        // Try to get specific rule for the provider
-        $rule = BillingRule::where('entity_type', get_class($appointment->provider))
-            ->where('entity_id', $appointment->provider_id)
-            ->where('is_active', true)
-            ->orderBy('priority', 'desc')
-            ->first();
-
-        if ($rule) {
-            return $rule;
-        }
-
-        // Try to get global rule for the provider type
-        $rule = BillingRule::where('entity_type', get_class($appointment->provider))
-            ->whereNull('entity_id')
-            ->where('is_active', true)
-            ->orderBy('priority', 'desc')
-            ->first();
-
-        if ($rule) {
-            return $rule;
-        }
-
         // Try to get rule for the health plan
-        $rule = BillingRule::where('entity_type', 'App\\Models\\HealthPlan')
-            ->where('entity_id', $appointment->solicitation->health_plan_id)
+        $rule = BillingRule::where('health_plan_id', $appointment->solicitation->health_plan_id)
             ->where('is_active', true)
-            ->orderBy('priority', 'desc')
+            ->orderBy('payment_days', 'desc')
             ->first();
 
         if ($rule) {
             return $rule;
         }
 
-        // Try to get global rule for health plans
-        return BillingRule::where('entity_type', 'App\\Models\\HealthPlan')
-            ->whereNull('entity_id')
-            ->where('is_active', true)
-            ->orderBy('priority', 'desc')
-            ->first();
+        // If no specific rule found, return null
+        return null;
     }
 
     /**
@@ -2600,22 +2573,24 @@ class AppointmentController extends Controller
             DB::beginTransaction();
 
             // Get or create billing rule for the health plan
-            $billingRule = BillingRule::where('entity_type', 'App\\Models\\HealthPlan')
-                ->where('entity_id', $appointment->solicitation->health_plan_id)
+            $billingRule = BillingRule::where('health_plan_id', $appointment->solicitation->health_plan_id)
                 ->where('is_active', true)
                 ->first();
 
             if (!$billingRule) {
                 // Create a default billing rule if none exists
                 $billingRule = BillingRule::create([
-                    'name' => 'Regra Padrão - ' . $appointment->solicitation->healthPlan->name,
-                    'description' => 'Regra de faturamento padrão criada automaticamente',
-                    'entity_type' => 'App\\Models\\HealthPlan',
-                    'entity_id' => $appointment->solicitation->health_plan_id,
-                    'rule_type' => 'per_appointment',
-                    'payment_term_days' => 30,
+                    'health_plan_id' => $appointment->solicitation->health_plan_id,
+                    'contract_id' => null, // Will be set when contract is available
+                    'frequency' => 'monthly',
+                    'monthly_day' => 1,
+                    'batch_size' => 100,
+                    'payment_days' => 30,
+                    'notification_frequency' => 'daily',
+                    'document_format' => 'pdf',
                     'is_active' => true,
-                    'priority' => 1,
+                    'generate_nfe' => false,
+                    'nfe_environment' => 2,
                     'created_by' => auth()->id()
                 ]);
             }
