@@ -196,7 +196,16 @@ class ReportGenerationService
             DB::raw('COUNT(DISTINCT CASE WHEN appointments.patient_attended = 1 THEN appointments.id END) as completed_appointments'),
             'professionals.created_at'
         ])
-        ->groupBy('professionals.id')
+        ->groupBy([
+            'professionals.id',
+            'professionals.name',
+            'professionals.cpf',
+            'professionals.specialty',
+            'professionals.council_number',
+            'professionals.status',
+            'clinics.name',
+            'professionals.created_at'
+        ])
         ->get();
     }
 
@@ -242,7 +251,15 @@ class ReportGenerationService
             DB::raw('COUNT(DISTINCT CASE WHEN appointments.patient_attended = 1 THEN appointments.id END) as completed_appointments'),
             'clinics.created_at'
         ])
-        ->groupBy('clinics.id')
+        ->groupBy([
+            'clinics.id',
+            'clinics.name',
+            'clinics.cnpj',
+            'clinics.city',
+            'clinics.state',
+            'clinics.status',
+            'clinics.created_at'
+        ])
         ->get();
     }
 
@@ -280,7 +297,14 @@ class ReportGenerationService
             DB::raw('SUM(billing_items.total_amount) as total_amount'),
             'billing_batches.created_at'
         ])
-        ->groupBy('billing_batches.id')
+        ->groupBy([
+            'billing_batches.id',
+            'billing_batches.billing_date',
+            'billing_batches.due_date',
+            'billing_batches.status',
+            'health_plans.name',
+            'billing_batches.created_at'
+        ])
         ->get();
     }
 

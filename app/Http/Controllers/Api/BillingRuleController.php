@@ -20,7 +20,6 @@ class BillingRuleController extends Controller
     public function __construct()
     {
         $this->middleware('auth:sanctum');
-        $this->middleware('permission:manage financials')->except(['index', 'show', 'getApplicableRules']);
     }
     
     /**
