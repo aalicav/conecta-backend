@@ -31,6 +31,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\BillingRule;
 use App\Models\BillingBatch;
 use App\Models\BillingItem;
+use App\Models\ValueVerification;
 
 class AppointmentController extends Controller
 {
@@ -2659,6 +2660,9 @@ class AppointmentController extends Controller
                 'eligible_for_billing' => true
             ]);
 
+            // Check if value verification is needed
+            $this->checkAndCreateValueVerification($billingItem, $appointment);
+
             DB::commit();
 
             return response()->json([
@@ -2690,5 +2694,112 @@ class AppointmentController extends Controller
     private function isAppointmentEligibleForBilling(Appointment $appointment): bool
     {
         return $appointment->patient_attended;
+    }
+
+    /**
+     * Check if value verification is needed and create it if necessary
+     */
+    private function checkAndCreateValueVerification(BillingItem $billingItem, Appointment $appointment): void
+    {
+        // Check if the price is significantly different from expected
+        $expectedPrice = $this->getExpectedAppointmentPrice($appointment);
+        $actualPrice = $billingItem->unit_price;
+
+        if ($expectedPrice && $actualPrice) {
+            $difference = abs($actualPrice - $expectedPrice);
+            $percentage = ($difference / $expectedPrice) * 100;
+
+            // If difference is more than 15%, create verification
+            if ($percentage > 15) {
+                ValueVerification::create([
+                    'entity_type' => 'App\\Models\\BillingItem',
+                    'entity_id' => $billingItem->id,
+                    'value_type' => ValueVerification::TYPE_APPOINTMENT_PRICE,
+                    'original_value' => $actualPrice,
+                    'verified_value' => $actualPrice,
+                    'status' => ValueVerification::STATUS_PENDING,
+                    'requester_id' => auth()->id(),
+                    'billing_batch_id' => $billingItem->billing_batch_id,
+                    'billing_item_id' => $billingItem->id,
+                    'appointment_id' => $appointment->id,
+                    'verification_reason' => "Diferença significativa no preço: {$percentage}% de variação",
+                    'priority' => $percentage > 30 ? ValueVerification::PRIORITY_HIGH : ValueVerification::PRIORITY_MEDIUM,
+                    'due_date' => now()->addDays(2),
+                    'auto_approve_threshold' => 10.0,
+                ]);
+            }
+        }
+
+        // Check if this is a high-value procedure (more than R$ 1000)
+        if ($actualPrice > 1000) {
+            ValueVerification::create([
+                'entity_type' => 'App\\Models\\BillingItem',
+                'entity_id' => $billingItem->id,
+                'value_type' => ValueVerification::TYPE_BILLING_AMOUNT,
+                'original_value' => $actualPrice,
+                'verified_value' => $actualPrice,
+                'status' => ValueVerification::STATUS_PENDING,
+                'requester_id' => auth()->id(),
+                'billing_batch_id' => $billingItem->billing_batch_id,
+                'billing_item_id' => $billingItem->id,
+                'appointment_id' => $appointment->id,
+                'verification_reason' => 'Verificação obrigatória para procedimentos de alto valor',
+                'priority' => ValueVerification::PRIORITY_HIGH,
+                'due_date' => now()->addDays(1),
+                'auto_approve_threshold' => 5.0,
+            ]);
+        }
+    }
+
+    /**
+     * Get expected appointment price based on contracts and rules
+     */
+    private function getExpectedAppointmentPrice(Appointment $appointment): ?float
+    {
+        // Get the base procedure price
+        $basePrice = $appointment->procedure_price ?? 0.0;
+
+        // If not a consultation (10101012), return standard procedure price
+        if ($appointment->procedure_code !== '10101012') {
+            return (float) $basePrice;
+        }
+
+        // Check for specialty-specific pricing
+        if ($appointment->provider && $appointment->provider->medical_specialty_id) {
+            $specialty = $appointment->provider->medicalSpecialty;
+            
+            if ($specialty) {
+                // Try to get price in order:
+                // 1. Professional specific price
+                $price = $specialty->getPriceForEntity('professional', $appointment->provider_id);
+                if ($price !== null && $price > 0) {
+                    return (float) $price;
+                }
+
+                // 2. Clinic specific price
+                if ($appointment->clinic_id) {
+                    $price = $specialty->getPriceForEntity('clinic', $appointment->clinic_id);
+                    if ($price !== null && $price > 0) {
+                        return (float) $price;
+                    }
+                }
+
+                // 3. Health plan specific price
+                if ($appointment->solicitation && $appointment->solicitation->health_plan_id) {
+                    $price = $specialty->getPriceForEntity('health_plan', $appointment->solicitation->health_plan_id);
+                    if ($price !== null && $price > 0) {
+                        return (float) $price;
+                    }
+                }
+
+                // 4. Specialty default price
+                if ($specialty->default_price && $specialty->default_price > 0) {
+                    return (float) $specialty->default_price;
+                }
+            }
+        }
+
+        // Return standard procedure price if no specialty pricing found
+        return (float) $basePrice;
     }
 } 

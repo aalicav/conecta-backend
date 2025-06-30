@@ -97,6 +97,22 @@ class BillingBatch extends Model
     }
 
     /**
+     * Get the value verifications for the batch.
+     */
+    public function valueVerifications(): HasMany
+    {
+        return $this->hasMany(ValueVerification::class);
+    }
+
+    /**
+     * Get pending value verifications for the batch.
+     */
+    public function pendingValueVerifications(): HasMany
+    {
+        return $this->hasMany(ValueVerification::class)->pending();
+    }
+
+    /**
      * Get the payment proofs for the batch.
      */
     public function paymentProofs(): HasMany

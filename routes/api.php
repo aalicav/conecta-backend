@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\ProfessionalAvailabilityController;
 use App\Http\Controllers\Api\SolicitationInviteController;
 use App\Http\Controllers\Billing\NFeController;
 use App\Http\Controllers\Api\ExtemporaneousNegotiationController;
+use App\Http\Controllers\Api\ValueVerificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -252,7 +253,27 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::get('/batches', [BillingController::class, 'index']);
         Route::post('/batches', [BillingController::class, 'generateBatch']);
         Route::get('/batches/{batch}', [BillingController::class, 'show']);
+        Route::patch('/batches/{batch}/status', [BillingController::class, 'updateStatus']);
         Route::post('/batches/{batch}/payment', [BillingController::class, 'registerPayment']);
+        Route::post('/batches/{batch}/auto-verifications', [BillingController::class, 'processAutoVerifications']);
+        
+        // Value Verifications
+        Route::get('/value-verifications', [BillingController::class, 'pendingValueVerifications']);
+        Route::get('/value-verifications/statistics', [BillingController::class, 'valueVerificationStatistics']);
+        Route::post('/value-verifications/{verification}/verify', [BillingController::class, 'verifyValue']);
+        Route::post('/value-verifications/{verification}/reject', [BillingController::class, 'rejectValue']);
+        Route::post('/billing-items/{billingItem}/value-verifications', [BillingController::class, 'createValueVerification']);
+
+        // Value Verifications (dedicated controller)
+        Route::prefix('value-verifications')->group(function () {
+            Route::get('/', [ValueVerificationController::class, 'index']);
+            Route::get('/statistics', [ValueVerificationController::class, 'statistics']);
+            Route::get('/{verification}', [ValueVerificationController::class, 'show']);
+            Route::post('/{verification}/verify', [ValueVerificationController::class, 'verify']);
+            Route::post('/{verification}/reject', [ValueVerificationController::class, 'reject']);
+            Route::post('/bulk-verify', [ValueVerificationController::class, 'bulkVerify']);
+        });
+
         Route::post('/items/{item}/glosa', [BillingController::class, 'registerGlosa']);
         Route::get('/glosses/{gloss}', [BillingController::class, 'showGlosa']);
         Route::post('/glosses/{gloss}/appeal', [BillingController::class, 'appealGlosa']);

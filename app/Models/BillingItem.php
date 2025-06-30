@@ -83,4 +83,54 @@ class BillingItem extends Model
     {
         return $this->hasMany(PaymentGloss::class);
     }
+
+    /**
+     * Get the value verifications for this billing item.
+     */
+    public function valueVerifications(): HasMany
+    {
+        return $this->hasMany(ValueVerification::class);
+    }
+
+    /**
+     * Get pending value verifications for this billing item.
+     */
+    public function pendingValueVerifications(): HasMany
+    {
+        return $this->hasMany(ValueVerification::class)->pending();
+    }
+
+    /**
+     * Check if this item needs value verification
+     */
+    public function needsValueVerification(): bool
+    {
+        // Check if there are pending verifications
+        if ($this->pendingValueVerifications()->exists()) {
+            return true;
+        }
+
+        // Check if the price is significantly different from expected
+        $expectedPrice = $this->getExpectedPrice();
+        if ($expectedPrice && $this->unit_price) {
+            $difference = abs($this->unit_price - $expectedPrice);
+            $percentage = ($difference / $expectedPrice) * 100;
+            
+            // If difference is more than 10%, needs verification
+            return $percentage > 10;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get expected price based on contracts and rules
+     */
+    private function getExpectedPrice(): ?float
+    {
+        // This would implement the logic to get the expected price
+        // based on contracts, specialty prices, etc.
+        // For now, return null to indicate no expected price available
+        return null;
+    }
 } 

@@ -20,6 +20,8 @@ use App\Models\User;
 use App\Models\SpecialtyPrice;
 use App\Models\MedicalSpecialty;
 use App\Models\PricingContract;
+use App\Models\BillingRule;
+use App\Models\ValueVerification;
 
 class BillingController extends Controller
 {
@@ -726,5 +728,276 @@ class BillingController extends Controller
         return response($content)
             ->header('Content-Type', 'application/pdf')
             ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+    }
+
+    /**
+     * Lista as verificações de valores pendentes
+     */
+    public function pendingValueVerifications(Request $request)
+    {
+        $query = ValueVerification::with(['billingBatch', 'billingItem', 'appointment', 'requester'])
+            ->when($request->status, function ($q, $status) {
+                return $q->where('status', $status);
+            })
+            ->when($request->priority, function ($q, $priority) {
+                return $q->where('priority', $priority);
+            })
+            ->when($request->value_type, function ($q, $type) {
+                return $q->where('value_type', $type);
+            })
+            ->when($request->billing_batch_id, function ($q, $batchId) {
+                return $q->where('billing_batch_id', $batchId);
+            })
+            ->when($request->overdue, function ($q) {
+                return $q->overdue();
+            })
+            ->when($request->high_priority, function ($q) {
+                return $q->highPriority();
+            });
+
+        $verifications = $query->orderBy('priority', 'desc')
+            ->orderBy('due_date', 'asc')
+            ->paginate($request->per_page ?? 15);
+
+        return response()->json([
+            'data' => $verifications->items(),
+            'meta' => [
+                'total' => $verifications->total(),
+                'per_page' => $verifications->perPage(),
+                'current_page' => $verifications->currentPage(),
+                'last_page' => $verifications->lastPage(),
+                'statistics' => ValueVerification::getStatistics()
+            ]
+        ]);
+    }
+
+    /**
+     * Verifica um valor específico
+     */
+    public function verifyValue(Request $request, ValueVerification $verification)
+    {
+        $request->validate([
+            'verified_value' => 'required|numeric|min:0',
+            'notes' => 'nullable|string',
+            'auto_approve' => 'boolean'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            // Check if verification can be auto-approved
+            if ($request->auto_approve && $verification->canBeAutoApproved()) {
+                $verification->autoApprove();
+            } else {
+                // Manual verification
+                $verification->verify(
+                    auth()->id(),
+                    $request->verified_value,
+                    $request->notes
+                );
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Valor verificado com sucesso',
+                'data' => $verification->load(['billingBatch', 'billingItem', 'appointment'])
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Erro ao verificar valor',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Rejeita um valor específico
+     */
+    public function rejectValue(Request $request, ValueVerification $verification)
+    {
+        $request->validate([
+            'notes' => 'required|string|min:10'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $verification->reject(auth()->id(), $request->notes);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Valor rejeitado com sucesso',
+                'data' => $verification->load(['billingBatch', 'billingItem', 'appointment'])
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Erro ao rejeitar valor',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Cria verificação de valor para um item de cobrança
+     */
+    public function createValueVerification(Request $request, BillingItem $billingItem)
+    {
+        $request->validate([
+            'reason' => 'required|string|min:10',
+            'priority' => 'nullable|in:low,medium,high,critical',
+            'due_date' => 'nullable|date|after:today',
+            'auto_approve_threshold' => 'nullable|numeric|min:0|max:100'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $verification = ValueVerification::createFromBillingItem(
+                $billingItem,
+                $request->reason
+            );
+
+            // Override default values if provided
+            if ($request->priority) {
+                $verification->priority = $request->priority;
+            }
+            if ($request->due_date) {
+                $verification->due_date = $request->due_date;
+            }
+            if ($request->auto_approve_threshold) {
+                $verification->auto_approve_threshold = $request->auto_approve_threshold;
+            }
+
+            $verification->save();
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Verificação de valor criada com sucesso',
+                'data' => $verification->load(['billingBatch', 'billingItem', 'appointment'])
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Erro ao criar verificação de valor',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Processa verificações automáticas para um lote de cobrança
+     */
+    public function processAutoVerifications(BillingBatch $batch)
+    {
+        try {
+            DB::beginTransaction();
+
+            $processed = 0;
+            $autoApproved = 0;
+            $pending = 0;
+
+            // Get all pending verifications for this batch
+            $verifications = $batch->pendingValueVerifications;
+
+            foreach ($verifications as $verification) {
+                if ($verification->canBeAutoApproved()) {
+                    $verification->autoApprove();
+                    $autoApproved++;
+                } else {
+                    $pending++;
+                }
+                $processed++;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Processamento automático concluído',
+                'data' => [
+                    'processed' => $processed,
+                    'auto_approved' => $autoApproved,
+                    'pending' => $pending,
+                    'batch_id' => $batch->id
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Erro ao processar verificações automáticas',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtém estatísticas de verificação de valores
+     */
+    public function valueVerificationStatistics(Request $request)
+    {
+        try {
+            $query = ValueVerification::query();
+
+            // Apply filters
+            if ($request->billing_batch_id) {
+                $query->where('billing_batch_id', $request->billing_batch_id);
+            }
+            if ($request->date_from) {
+                $query->where('created_at', '>=', $request->date_from);
+            }
+            if ($request->date_to) {
+                $query->where('created_at', '<=', $request->date_to);
+            }
+
+            $statistics = [
+                'total' => $query->count(),
+                'pending' => (clone $query)->where('status', ValueVerification::STATUS_PENDING)->count(),
+                'verified' => (clone $query)->where('status', ValueVerification::STATUS_VERIFIED)->count(),
+                'rejected' => (clone $query)->where('status', ValueVerification::STATUS_REJECTED)->count(),
+                'auto_approved' => (clone $query)->where('status', ValueVerification::STATUS_AUTO_APPROVED)->count(),
+                'overdue' => (clone $query)->overdue()->count(),
+                'high_priority' => (clone $query)->highPriority()->count(),
+            ];
+
+            // Get average processing time
+            $avgProcessingTime = (clone $query)
+                ->whereNotNull('verified_at')
+                ->whereNotNull('created_at')
+                ->get()
+                ->avg(function ($verification) {
+                    return $verification->created_at->diffInHours($verification->verified_at);
+                });
+
+            $statistics['avg_processing_time_hours'] = round($avgProcessingTime ?? 0, 2);
+
+            // Get value difference statistics
+            $valueStats = (clone $query)
+                ->whereNotNull('verified_value')
+                ->get()
+                ->map(function ($verification) {
+                    return $verification->getDifferencePercentage();
+                });
+
+            $statistics['avg_difference_percentage'] = round($valueStats->avg() ?? 0, 2);
+            $statistics['max_difference_percentage'] = round($valueStats->max() ?? 0, 2);
+
+            return response()->json([
+                'data' => $statistics
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erro ao obter estatísticas',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 } 
