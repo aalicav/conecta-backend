@@ -278,6 +278,10 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::get('/glosses/{gloss}', [BillingController::class, 'showGlosa']);
         Route::post('/glosses/{gloss}/appeal', [BillingController::class, 'appealGlosa']);
         Route::post('/check-overdue', [BillingController::class, 'checkOverduePayments']);
+        
+        // Billing notifications and management
+        Route::post('/notifications', [BillingController::class, 'sendNotification']);
+        Route::delete('/items/{item}', [BillingController::class, 'deleteBillingItem']);
     });
 
     // Profile routes

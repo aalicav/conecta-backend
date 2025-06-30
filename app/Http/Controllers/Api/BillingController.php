@@ -1000,4 +1000,119 @@ class BillingController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Envia notificação relacionada a cobrança
+     */
+    public function sendNotification(Request $request)
+    {
+        $request->validate([
+            'billing_item_id' => 'required|exists:billing_items,id',
+            'message' => 'required|string|min:10',
+            'type' => 'required|string|in:billing_notification,payment_reminder,gloss_notification'
+        ]);
+
+        try {
+            $billingItem = BillingItem::findOrFail($request->billing_item_id);
+            
+            // Get users with director role
+            $directors = User::role(['director', 'super_admin'])->get();
+            
+            // Send notification to directors
+            foreach ($directors as $director) {
+                $director->notify(new \Illuminate\Notifications\DatabaseNotification([
+                    'id' => \Illuminate\Support\Str::uuid()->toString(),
+                    'type' => 'App\\Notifications\\BillingNotification',
+                    'notifiable_type' => get_class($director),
+                    'notifiable_id' => $director->id,
+                    'data' => json_encode([
+                        'title' => 'Notificação de Cobrança',
+                        'body' => $request->message,
+                        'action_url' => "/billing/batches/{$billingItem->billing_batch_id}",
+                        'action_text' => 'Ver Cobrança',
+                        'icon' => 'dollar-sign',
+                        'priority' => 'normal',
+                        'type' => $request->type,
+                        'billing_item_id' => $billingItem->id,
+                        'billing_batch_id' => $billingItem->billing_batch_id
+                    ]),
+                    'read_at' => null,
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]));
+            }
+
+            return response()->json([
+                'message' => 'Notificação enviada com sucesso',
+                'data' => [
+                    'recipients_count' => $directors->count(),
+                    'billing_item_id' => $billingItem->id
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erro ao enviar notificação',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Exclui um item de cobrança
+     */
+    public function deleteBillingItem(BillingItem $item)
+    {
+        try {
+            // Check if user has permission to delete billing items
+            if (!auth()->user()->hasRole(['network_manager', 'super_admin'])) {
+                return response()->json([
+                    'message' => 'Você não tem permissão para excluir itens de cobrança'
+                ], 403);
+            }
+
+            // Check if item can be deleted (not paid, not processed)
+            if ($item->status === 'paid' || $item->status === 'processed') {
+                return response()->json([
+                    'message' => 'Não é possível excluir itens já pagos ou processados'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            // Store item data for logging
+            $itemData = [
+                'id' => $item->id,
+                'billing_batch_id' => $item->billing_batch_id,
+                'description' => $item->description,
+                'total_amount' => $item->total_amount,
+                'deleted_by' => auth()->id(),
+                'deleted_at' => now()
+            ];
+
+            // Delete the item
+            $item->delete();
+
+            // Update batch total amount
+            $batch = $item->billingBatch;
+            if ($batch) {
+                $batch->total_amount = $batch->billingItems->sum('total_amount');
+                $batch->save();
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Item de cobrança excluído com sucesso',
+                'data' => $itemData
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Erro ao excluir item de cobrança',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 
