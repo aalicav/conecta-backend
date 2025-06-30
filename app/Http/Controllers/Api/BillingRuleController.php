@@ -28,19 +28,19 @@ class BillingRuleController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = BillingRule::with(['creator']);
+            $query = BillingRule::with(['healthPlan', 'contract']);
             
             // Apply filters
-            if ($request->has('entity_type')) {
-                $query->where('entity_type', $request->entity_type);
+            if ($request->has('health_plan_id')) {
+                $query->where('health_plan_id', $request->health_plan_id);
             }
             
-            if ($request->has('entity_id')) {
-                $query->where('entity_id', $request->entity_id);
+            if ($request->has('contract_id')) {
+                $query->where('contract_id', $request->contract_id);
             }
             
-            if ($request->has('rule_type')) {
-                $query->where('rule_type', $request->rule_type);
+            if ($request->has('frequency')) {
+                $query->where('frequency', $request->frequency);
             }
             
             if ($request->has('is_active')) {
@@ -49,7 +49,7 @@ class BillingRuleController extends Controller
             }
             
             // Apply sorting
-            $sort = $request->sort ?? 'priority';
+            $sort = $request->sort ?? 'id';
             $direction = $request->direction ?? 'desc';
             $query->orderBy($sort, $direction);
             
@@ -79,21 +79,20 @@ class BillingRuleController extends Controller
     {
         try {
             $validator = Validator::make($request->all(), [
-                'name' => 'required|string|max:255',
-                'description' => 'nullable|string',
-                'entity_type' => 'required|string|in:App\\Models\\HealthPlan,App\\Models\\Clinic,App\\Models\\Professional',
-                'entity_id' => 'nullable|integer',
-                'rule_type' => 'required|string|in:monthly,batch,per_appointment',
-                'billing_cycle' => 'required_if:rule_type,monthly|nullable|string|in:monthly,biweekly,weekly',
-                'billing_day' => 'required_if:rule_type,monthly|nullable|integer|min:1|max:31',
-                'payment_term_days' => 'nullable|integer|min:0',
-                'invoice_generation_days_before' => 'nullable|integer|min:0',
-                'payment_method' => 'nullable|string',
-                'conditions' => 'nullable|array',
-                'discounts' => 'nullable|array',
-                'tax_rules' => 'nullable|array',
+                'health_plan_id' => 'required|exists:health_plans,id',
+                'contract_id' => 'required|exists:contracts,id',
+                'frequency' => 'required|string|in:monthly,weekly,daily',
+                'monthly_day' => 'nullable|integer|min:1|max:31',
+                'batch_size' => 'nullable|integer|min:1',
+                'payment_days' => 'required|integer|min:1',
+                'notification_recipients' => 'nullable|array',
+                'notification_recipients.*' => 'email',
+                'notification_frequency' => 'required|string|in:daily,weekly,monthly',
+                'document_format' => 'required|string|in:pdf,xml,json',
                 'is_active' => 'boolean',
-                'priority' => 'integer|min:0',
+                'generate_nfe' => 'boolean',
+                'nfe_series' => 'nullable|integer',
+                'nfe_environment' => 'nullable|integer|in:1,2',
             ]);
 
             if ($validator->fails()) {
@@ -107,7 +106,6 @@ class BillingRuleController extends Controller
             DB::beginTransaction();
             
             $rule = new BillingRule($request->all());
-            $rule->created_by = Auth::id();
             $rule->save();
             
             DB::commit();
@@ -115,7 +113,7 @@ class BillingRuleController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Billing rule created successfully',
-                'data' => $rule
+                'data' => $rule->load(['healthPlan', 'contract'])
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -135,7 +133,7 @@ class BillingRuleController extends Controller
     public function show(int $id): JsonResponse
     {
         try {
-            $billingRule = BillingRule::with(['creator'])->findOrFail($id);
+            $billingRule = BillingRule::with(['healthPlan', 'contract'])->findOrFail($id);
             
             return response()->json([
                 'success' => true,
@@ -161,21 +159,20 @@ class BillingRuleController extends Controller
             $billingRule = BillingRule::findOrFail($id);
             
             $validator = Validator::make($request->all(), [
-                'name' => 'sometimes|string|max:255',
-                'description' => 'nullable|string',
-                'entity_type' => 'sometimes|string|in:App\\Models\\HealthPlan,App\\Models\\Clinic,App\\Models\\Professional',
-                'entity_id' => 'nullable|integer',
-                'rule_type' => 'sometimes|string|in:monthly,batch,per_appointment',
-                'billing_cycle' => 'required_if:rule_type,monthly|nullable|string|in:monthly,biweekly,weekly',
-                'billing_day' => 'required_if:rule_type,monthly|nullable|integer|min:1|max:31',
-                'payment_term_days' => 'nullable|integer|min:0',
-                'invoice_generation_days_before' => 'nullable|integer|min:0',
-                'payment_method' => 'nullable|string',
-                'conditions' => 'nullable|array',
-                'discounts' => 'nullable|array',
-                'tax_rules' => 'nullable|array',
+                'health_plan_id' => 'sometimes|exists:health_plans,id',
+                'contract_id' => 'sometimes|exists:contracts,id',
+                'frequency' => 'sometimes|string|in:monthly,weekly,daily',
+                'monthly_day' => 'nullable|integer|min:1|max:31',
+                'batch_size' => 'nullable|integer|min:1',
+                'payment_days' => 'sometimes|integer|min:1',
+                'notification_recipients' => 'nullable|array',
+                'notification_recipients.*' => 'email',
+                'notification_frequency' => 'sometimes|string|in:daily,weekly,monthly',
+                'document_format' => 'sometimes|string|in:pdf,xml,json',
                 'is_active' => 'boolean',
-                'priority' => 'integer|min:0',
+                'generate_nfe' => 'boolean',
+                'nfe_series' => 'nullable|integer',
+                'nfe_environment' => 'nullable|integer|in:1,2',
             ]);
 
             if ($validator->fails()) {
@@ -195,7 +192,7 @@ class BillingRuleController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Billing rule updated successfully',
-                'data' => $billingRule
+                'data' => $billingRule->load(['healthPlan', 'contract'])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
