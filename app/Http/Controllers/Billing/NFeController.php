@@ -55,7 +55,8 @@ class NFeController extends Controller
             $query->whereDate('nfe_authorization_date', '<=', $request->end_date);
         }
 
-        $nfes = $query->paginate(10);
+        $perPage = $request->get('per_page', 15);
+        $nfes = $query->paginate($perPage);
 
         return response()->json($nfes);
     }
@@ -79,7 +80,13 @@ class NFeController extends Controller
         }
 
         try {
-            $xmlContent = Storage::get($nfe->nfe_xml);
+            // Se o XML está armazenado como string no banco
+            if (is_string($nfe->nfe_xml)) {
+                $xmlContent = $nfe->nfe_xml;
+            } else {
+                // Se está armazenado como arquivo
+                $xmlContent = Storage::get($nfe->nfe_xml);
+            }
             
             return response($xmlContent, 200, [
                 'Content-Type' => 'application/xml',
