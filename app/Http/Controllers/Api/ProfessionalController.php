@@ -412,7 +412,36 @@ class ProfessionalController extends Controller
                 'all_data' => $request->all(),
                 'has_phones' => $request->has('phones'),
                 'phones_data' => $request->phones,
-                'request_keys' => array_keys($request->all())
+                'request_keys' => array_keys($request->all()),
+                'content_type' => $request->header('Content-Type'),
+                'method' => $request->method(),
+                'input' => $request->input(),
+                'post_data' => $request->post(),
+                'raw_input' => $request->getContent()
+            ]);
+
+            // Try to manually parse phones from the request
+            $phones = [];
+            $input = $request->all();
+            
+            // Look for phone data in the input
+            foreach ($input as $key => $value) {
+                if (preg_match('/^phones\[(\d+)\]\[(\w+)\]$/', $key, $matches)) {
+                    $index = $matches[1];
+                    $field = $matches[2];
+                    if (!isset($phones[$index])) {
+                        $phones[$index] = [];
+                    }
+                    $phones[$index][$field] = $value;
+                }
+            }
+            
+            // Convert associative array to indexed array
+            $phones = array_values($phones);
+            
+            Log::info('Manually parsed phones', [
+                'phones' => $phones,
+                'phones_count' => count($phones)
             ]);
 
             // Check if user has permission to update this professional
