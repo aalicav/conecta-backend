@@ -1411,4 +1411,149 @@ class ProfessionalController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get unique states from professionals.
+     *
+     * @return JsonResponse
+     */
+    public function getStates(): JsonResponse
+    {
+        try {
+            $states = Professional::whereNotNull('state')
+                ->where('state', '!=', '')
+                ->distinct()
+                ->pluck('state')
+                ->sort()
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $states
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error retrieving professional states: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve states',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get unique cities from professionals.
+     *
+     * @return JsonResponse
+     */
+    public function getCities(): JsonResponse
+    {
+        try {
+            $cities = Professional::whereNotNull('city')
+                ->where('city', '!=', '')
+                ->distinct()
+                ->pluck('city')
+                ->sort()
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $cities
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error retrieving professional cities: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve cities',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get unique specialties from professionals.
+     *
+     * @return JsonResponse
+     */
+    public function getAllSpecialties(): JsonResponse
+    {
+        try {
+            $specialties = Professional::whereNotNull('specialty')
+                ->where('specialty', '!=', '')
+                ->distinct()
+                ->pluck('specialty')
+                ->sort()
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $specialties
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error retrieving professional specialties: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve specialties',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get unique professional types.
+     *
+     * @return JsonResponse
+     */
+    public function getProfessionalTypes(): JsonResponse
+    {
+        try {
+            $types = Professional::whereNotNull('professional_type')
+                ->where('professional_type', '!=', '')
+                ->distinct()
+                ->pluck('professional_type')
+                ->sort()
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $types
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error retrieving professional types: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve professional types',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get unique council types from professionals.
+     *
+     * @return JsonResponse
+     */
+    public function getCouncilTypes(): JsonResponse
+    {
+        try {
+            $councilTypes = Professional::whereNotNull('council_type')
+                ->where('council_type', '!=', '')
+                ->distinct()
+                ->pluck('council_type')
+                ->sort()
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $councilTypes
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error retrieving council types: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve council types',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 
