@@ -417,7 +417,9 @@ class ProfessionalController extends Controller
                 'method' => $request->method(),
                 'input' => $request->input(),
                 'post_data' => $request->post(),
-                'raw_input' => $request->getContent()
+                'raw_input' => $request->getContent(),
+                'is_method_spoofed' => $request->isMethod('PUT'),
+                'original_method' => $request->getMethod()
             ]);
 
             // Try to manually parse phones from the request
