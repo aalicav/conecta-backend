@@ -424,15 +424,67 @@ class ProfessionalController extends Controller
             $phones = [];
             $input = $request->all();
             
-            // Look for phone data in the input
-            foreach ($input as $key => $value) {
-                if (preg_match('/^phones\[(\d+)\]\[(\w+)\]$/', $key, $matches)) {
-                    $index = $matches[1];
-                    $field = $matches[2];
-                    if (!isset($phones[$index])) {
-                        $phones[$index] = [];
+            // If Laravel didn't parse the input properly, try to parse the raw content
+            if (empty($input)) {
+                $rawContent = $request->getContent();
+                Log::info('Raw content received', ['raw_content' => $rawContent]);
+                
+                // Parse multipart/form-data manually
+                $boundary = null;
+                $contentType = $request->header('Content-Type');
+                if (preg_match('/boundary=(.*)$/', $contentType, $matches)) {
+                    $boundary = '--' . trim($matches[1]);
+                }
+                
+                if ($boundary && $rawContent) {
+                    $parts = explode($boundary, $rawContent);
+                    foreach ($parts as $part) {
+                        if (empty($part) || $part === "\r\n" || $part === "--\r\n") {
+                            continue;
+                        }
+                        
+                        // Parse each part
+                        if (preg_match('/Content-Disposition: form-data; name="([^"]+)"/', $part, $nameMatches)) {
+                            $fieldName = $nameMatches[1];
+                            $value = '';
+                            
+                            // Extract value after the headers
+                            $lines = explode("\r\n", $part);
+                            $valueStart = false;
+                            foreach ($lines as $line) {
+                                if ($valueStart) {
+                                    $value .= $line . "\r\n";
+                                } elseif (empty(trim($line))) {
+                                    $valueStart = true;
+                                }
+                            }
+                            
+                            // Clean up the value
+                            $value = trim($value);
+                            
+                            // Parse phone fields
+                            if (preg_match('/^phones\[(\d+)\]\[(\w+)\]$/', $fieldName, $matches)) {
+                                $index = $matches[1];
+                                $field = $matches[2];
+                                if (!isset($phones[$index])) {
+                                    $phones[$index] = [];
+                                }
+                                $phones[$index][$field] = $value;
+                            }
+                        }
                     }
-                    $phones[$index][$field] = $value;
+                }
+            } else {
+                // Look for phone data in the input
+                foreach ($input as $key => $value) {
+                    if (preg_match('/^phones\[(\d+)\]\[(\w+)\]$/', $key, $matches)) {
+                        $index = $matches[1];
+                        $field = $matches[2];
+                        if (!isset($phones[$index])) {
+                            $phones[$index] = [];
+                        }
+                        $phones[$index][$field] = $value;
+                    }
                 }
             }
             
@@ -522,11 +574,13 @@ class ProfessionalController extends Controller
             $professional->save();
 
             // Update phones if provided
-            if ($request->has('phones')) {
-                Log::info('Updating phones for professional', ['phones' => $request->phones]);
+            if ($request->has('phones') || !empty($phones)) {
+                $phonesToProcess = $request->has('phones') ? $request->phones : $phones;
+                Log::info('Updating phones for professional', ['phones' => $phonesToProcess]);
+                
                 // Get existing phone IDs
                 $existingPhoneIds = $professional->phones->pluck('id')->toArray();
-                $updatedPhoneIds = collect($request->phones)->pluck('id')->filter()->toArray();
+                $updatedPhoneIds = collect($phonesToProcess)->pluck('id')->filter()->toArray();
                 
                 // Delete phones that are not in the updated list
                 $phoneIdsToDelete = array_diff($existingPhoneIds, $updatedPhoneIds);
@@ -535,7 +589,7 @@ class ProfessionalController extends Controller
                 }
                 
                 // Update or create phones
-                foreach ($request->phones as $phoneData) {
+                foreach ($phonesToProcess as $phoneData) {
                     Log::info('Processing phone', ['phone_data' => $phoneData]);
                     if (isset($phoneData['id'])) {
                         Phone::where('id', $phoneData['id'])->update([
