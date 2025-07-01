@@ -152,6 +152,8 @@ class ProfessionalController extends Controller
                 'phones' => 'nullable|array',
                 'phones.*.number' => 'required|string',
                 'phones.*.type' => 'required|string',
+                'phones.*.is_whatsapp' => 'nullable|boolean',
+                'phones.*.is_primary' => 'nullable|boolean',
                 'create_user' => 'nullable|boolean',
                 'email' => 'required_if:create_user,true|email|unique:users,email',
                 'password' => 'nullable|min:8',
@@ -196,6 +198,8 @@ class ProfessionalController extends Controller
                     $professional->phones()->create([
                         'number' => $phoneData['number'],
                         'type' => $phoneData['type'],
+                        'is_whatsapp' => $phoneData['is_whatsapp'] ?? false,
+                        'is_primary' => $phoneData['is_primary'] ?? false,
                     ]);
                 }
             } else {
@@ -403,6 +407,14 @@ class ProfessionalController extends Controller
     public function update(Request $request, Professional $professional): JsonResponse
     {
         try {
+            // Debug: Log all request data
+            Log::info('Update request received', [
+                'all_data' => $request->all(),
+                'has_phones' => $request->has('phones'),
+                'phones_data' => $request->phones,
+                'request_keys' => array_keys($request->all())
+            ]);
+
             // Check if user has permission to update this professional
             if (!$this->canManageProfessional($professional)) {
                 return response()->json([
@@ -448,6 +460,8 @@ class ProfessionalController extends Controller
                 'phones.*.id' => 'nullable|exists:phones,id',
                 'phones.*.number' => 'required|string',
                 'phones.*.type' => 'required|string',
+                'phones.*.is_whatsapp' => 'nullable|boolean',
+                'phones.*.is_primary' => 'nullable|boolean',
                 'documents' => 'sometimes|array',
                 'documents.*.file' => 'required|file|max:10240',
                 'documents.*.type' => 'required|string',
@@ -498,11 +512,15 @@ class ProfessionalController extends Controller
                         Phone::where('id', $phoneData['id'])->update([
                             'number' => $phoneData['number'],
                             'type' => $phoneData['type'],
+                            'is_whatsapp' => $phoneData['is_whatsapp'] ?? false,
+                            'is_primary' => $phoneData['is_primary'] ?? false,
                         ]);
                     } else {
                         $professional->phones()->create([
                             'number' => $phoneData['number'],
                             'type' => $phoneData['type'],
+                            'is_whatsapp' => $phoneData['is_whatsapp'] ?? false,
+                            'is_primary' => $phoneData['is_primary'] ?? false,
                         ]);
                     }
                 }
