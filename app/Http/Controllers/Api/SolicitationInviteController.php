@@ -35,7 +35,8 @@ class SolicitationInviteController extends Controller
             // Order by creation date, newest first
             $query->orderBy('created_at', 'desc');
 
-            $invites = $query->paginate(15);
+            $perPage = $request->get('per_page', 15);
+            $invites = $query->paginate($perPage);
 
             // Se o usuário for admin, incluir informações adicionais do prestador
             if (Auth::user()->hasAnyRole(['network_manager', 'super_admin', 'director'])) {

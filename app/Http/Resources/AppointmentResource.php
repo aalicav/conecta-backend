@@ -32,6 +32,14 @@ class AppointmentResource extends JsonResource
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
             
+            // Patient attendance fields
+            'patient_attended' => $this->patient_attended,
+            'attendance_confirmed_at' => $this->attendance_confirmed_at,
+            'attendance_confirmed_by' => $this->attendance_confirmed_by,
+            'attendance_notes' => $this->attendance_notes,
+            'eligible_for_billing' => $this->eligible_for_billing,
+            'billing_batch_id' => $this->billing_batch_id,
+            
             // Relationships
             'solicitation' => new SolicitationResource($this->whenLoaded('solicitation')),
             'provider' => $this->when($this->provider, function() {
@@ -45,8 +53,10 @@ class AppointmentResource extends JsonResource
             'confirmed_by_user' => new UserResource($this->whenLoaded('confirmedBy')),
             'completed_by_user' => new UserResource($this->whenLoaded('completedBy')),
             'cancelled_by_user' => new UserResource($this->whenLoaded('cancelledBy')),
+            'attendance_confirmed_by_user' => new UserResource($this->whenLoaded('attendanceConfirmedBy')),
             'created_by_user' => new UserResource($this->whenLoaded('createdBy')),
             'payment' => new PaymentResource($this->whenLoaded('payment')),
+            'billing_batch' => new BillingBatchResource($this->whenLoaded('billingBatch')),
             'address' => $this->address,
             
             // Computed values
