@@ -1263,64 +1263,6 @@ class ClinicController extends Controller
     }
 
     /**
-     * Get unique states from clinics.
-     *
-     * @return JsonResponse
-     */
-    public function getStates(): JsonResponse
-    {
-        try {
-            $states = Clinic::whereNotNull('state')
-                ->where('state', '!=', '')
-                ->distinct()
-                ->pluck('state')
-                ->sort()
-                ->values();
-
-            return response()->json([
-                'success' => true,
-                'data' => $states
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error retrieving clinic states: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve states',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get unique cities from clinics.
-     *
-     * @return JsonResponse
-     */
-    public function getCities(): JsonResponse
-    {
-        try {
-            $cities = Clinic::whereNotNull('city')
-                ->where('city', '!=', '')
-                ->distinct()
-                ->pluck('city')
-                ->sort()
-                ->values();
-
-            return response()->json([
-                'success' => true,
-                'data' => $cities
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Error retrieving clinic cities: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve cities',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
      * Get unique clinic types.
      *
      * @return JsonResponse

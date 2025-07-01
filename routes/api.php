@@ -124,16 +124,7 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::get('/professionals/{professional}/contract-data', [ProfessionalController::class, 'getContractData'])
         ->middleware(['permission:view professionals']);
     
-    // Professional filter options
-    Route::get('/professionals/states', [ProfessionalController::class, 'getStates']);
-    Route::get('/professionals/cities', [ProfessionalController::class, 'getCities']);
-    Route::get('/professionals/specialties', [ProfessionalController::class, 'getAllSpecialties']);
-    Route::get('/professionals/types', [ProfessionalController::class, 'getProfessionalTypes']);
-    Route::get('/professionals/council-types', [ProfessionalController::class, 'getCouncilTypes']);
-    
     // Clinic filter options
-    Route::get('/clinics/states', [ClinicController::class, 'getStates']);
-    Route::get('/clinics/cities', [ClinicController::class, 'getCities']);
     Route::get('/clinics/types', [ClinicController::class, 'getTypes']);
     
     // Patients

@@ -37,6 +37,23 @@ class SolicitationInviteController extends Controller
 
             $invites = $query->paginate(15);
 
+            // Se o usuário for admin, incluir informações adicionais do prestador
+            if (Auth::user()->hasAnyRole(['network_manager', 'super_admin', 'director'])) {
+                $invites->getCollection()->transform(function ($invite) {
+                    // Carregar informações do prestador baseado no tipo
+                    if ($invite->provider_type === 'App\\Models\\Professional') {
+                        $invite->load('provider:id,name,specialty,professional_type,council_number,council_type');
+                    } else {
+                        $invite->load('provider:id,name,type,city,state');
+                    }
+                    
+                    // Adicionar informações extras da solicitação
+                    $invite->solicitation->load(['patient.addresses', 'tuss.category']);
+                    
+                    return $invite;
+                });
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => $invites
