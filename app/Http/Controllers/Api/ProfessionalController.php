@@ -95,7 +95,7 @@ class ProfessionalController extends Controller
         // Load relationships if requested
         if ($request->has('with')) {
             $relations = explode(',', $request->with);
-            $allowedRelations = ['clinic', 'phones', 'documents', 'approver', 'user', 'contract'];
+            $allowedRelations = ['clinic', 'phones', 'documents', 'approver', 'user', 'contract', 'addresses'];
             $validRelations = array_intersect($allowedRelations, $relations);
             
             if (!empty($validRelations)) {
