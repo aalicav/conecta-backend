@@ -135,21 +135,43 @@ class NFeConfigController extends Controller
                 ], 400);
             }
 
-            // Test certificate
+            // Test certificate - be more tolerant during development
             $certificatePath = $config['certificate_path'];
-            if (!file_exists(storage_path('app/' . $certificatePath))) {
+            $certificateExists = file_exists(storage_path('app/' . $certificatePath));
+            
+            if (!$certificateExists) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Certificado não encontrado no caminho especificado',
+                    'message' => 'Certificado não encontrado. Para desenvolvimento, você pode usar um certificado de teste ou configurar um certificado válido.',
                     'certificate_path' => $certificatePath,
+                    'development_note' => 'Durante o desenvolvimento, você pode criar um certificado de teste ou usar um certificado válido da SEFAZ.',
                 ], 400);
             }
 
-            // Test if NFe is properly configured
-            if (!$this->nfeService->isConfigured()) {
+            // Test certificate password
+            if (empty($config['certificate_password'])) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'NFe não está configurada corretamente. Verifique o certificado digital e sua senha.',
+                    'message' => 'Senha do certificado não configurada',
+                ], 400);
+            }
+
+            // Try to initialize NFe (this will test the certificate)
+            try {
+                $isConfigured = $this->nfeService->isConfigured();
+                
+                if (!$isConfigured) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Erro ao inicializar NFe. Verifique se o certificado é válido e a senha está correta.',
+                        'certificate_path' => $certificatePath,
+                    ], 400);
+                }
+            } catch (\Exception $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Erro ao testar certificado: ' . $e->getMessage(),
+                    'certificate_path' => $certificatePath,
                 ], 400);
             }
 
@@ -159,6 +181,7 @@ class NFeConfigController extends Controller
                 'environment' => $config['tpAmb'] == 1 ? 'Produção' : 'Homologação',
                 'company' => $config['razaosocial'],
                 'cnpj' => $config['cnpj'],
+                'certificate_status' => 'Válido',
             ]);
 
         } catch (\Exception $e) {
