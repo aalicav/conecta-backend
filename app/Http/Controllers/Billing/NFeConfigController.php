@@ -97,16 +97,6 @@ class NFeConfigController extends Controller
         try {
             $config = $this->nfeService->getConfig();
             
-            // Test certificate
-            $certificatePath = $config['certificate_path'];
-            if (!file_exists(storage_path('app/' . $certificatePath))) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Certificado não encontrado no caminho especificado',
-                    'certificate_path' => $certificatePath,
-                ], 400);
-            }
-
             // Test basic configuration
             $requiredFields = [
                 'cnpj' => 'CNPJ',
@@ -142,6 +132,24 @@ class NFeConfigController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Campos de endereço obrigatórios não preenchidos: ' . implode(', ', $missingAddressFields),
+                ], 400);
+            }
+
+            // Test certificate
+            $certificatePath = $config['certificate_path'];
+            if (!file_exists(storage_path('app/' . $certificatePath))) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Certificado não encontrado no caminho especificado',
+                    'certificate_path' => $certificatePath,
+                ], 400);
+            }
+
+            // Test if NFe is properly configured
+            if (!$this->nfeService->isConfigured()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'NFe não está configurada corretamente. Verifique o certificado digital e sua senha.',
                 ], 400);
             }
 

@@ -16,10 +16,12 @@ class NFeService
 {
     protected $tools;
     protected $config;
+    protected $initialized = false;
 
     public function __construct()
     {
-        $this->initializeNFe();
+        // Don't initialize immediately to avoid certificate errors
+        $this->config = $this->getNFeConfig();
     }
 
     /**
@@ -27,13 +29,35 @@ class NFeService
      */
     protected function initializeNFe()
     {
-        $this->config = $this->getNFeConfig();
-        
-        $certificate = Storage::get($this->config['certificate_path']);
-        $certificatePassword = $this->config['certificate_password'];
+        if ($this->initialized) {
+            return;
+        }
 
-        $certificate = Certificate::readPfx($certificate, $certificatePassword);
-        $this->tools = new Tools(json_encode($this->config), $certificate);
+        try {
+            $certificatePath = $this->config['certificate_path'];
+            $certificatePassword = $this->config['certificate_password'];
+
+            // Check if certificate file exists
+            if (!Storage::exists($certificatePath)) {
+                Log::warning('NFe certificate not found: ' . $certificatePath);
+                return;
+            }
+
+            $certificate = Storage::get($certificatePath);
+            
+            if (empty($certificate)) {
+                Log::warning('NFe certificate file is empty: ' . $certificatePath);
+                return;
+            }
+
+            $certificate = Certificate::readPfx($certificate, $certificatePassword);
+            $this->tools = new Tools(json_encode($this->config), $certificate);
+            $this->initialized = true;
+
+        } catch (\Exception $e) {
+            Log::error('Error initializing NFe: ' . $e->getMessage());
+            throw new \Exception('Erro ao inicializar NFe: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -75,6 +99,7 @@ class NFeService
     public function reloadConfig()
     {
         $this->config = $this->getNFeConfig();
+        $this->initialized = false; // Reset initialization flag
         $this->initializeNFe();
     }
 
@@ -140,11 +165,30 @@ class NFeService
     }
 
     /**
+     * Check if NFe is properly configured
+     */
+    public function isConfigured()
+    {
+        try {
+            $this->initializeNFe();
+            return $this->initialized;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
      * Generate NFe for a billing batch
      */
     public function generateNFe(BillingBatch $batch)
     {
         try {
+            $this->initializeNFe();
+            
+            if (!$this->initialized) {
+                throw new \Exception('NFe não está configurada corretamente');
+            }
+
             $nfe = new Make();
             $nfe->taginfNFe((object)$this->getNFeInfo($batch));
             $nfe->tagide((object)$this->getNFeIde($batch));
