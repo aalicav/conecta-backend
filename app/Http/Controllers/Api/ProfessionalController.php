@@ -190,12 +190,16 @@ class ProfessionalController extends Controller
 
             // Create phones if provided
             if ($request->has('phones')) {
+                Log::info('Creating phones for professional', ['phones' => $request->phones]);
                 foreach ($request->phones as $phoneData) {
+                    Log::info('Creating phone', ['phone_data' => $phoneData]);
                     $professional->phones()->create([
                         'number' => $phoneData['number'],
                         'type' => $phoneData['type'],
                     ]);
                 }
+            } else {
+                Log::info('No phones provided in request', ['request_keys' => array_keys($request->all())]);
             }
 
             // Create addresses if provided
@@ -476,6 +480,7 @@ class ProfessionalController extends Controller
 
             // Update phones if provided
             if ($request->has('phones')) {
+                Log::info('Updating phones for professional', ['phones' => $request->phones]);
                 // Get existing phone IDs
                 $existingPhoneIds = $professional->phones->pluck('id')->toArray();
                 $updatedPhoneIds = collect($request->phones)->pluck('id')->filter()->toArray();
@@ -488,6 +493,7 @@ class ProfessionalController extends Controller
                 
                 // Update or create phones
                 foreach ($request->phones as $phoneData) {
+                    Log::info('Processing phone', ['phone_data' => $phoneData]);
                     if (isset($phoneData['id'])) {
                         Phone::where('id', $phoneData['id'])->update([
                             'number' => $phoneData['number'],
@@ -500,6 +506,8 @@ class ProfessionalController extends Controller
                         ]);
                     }
                 }
+            } else {
+                Log::info('No phones provided in update request', ['request_keys' => array_keys($request->all())]);
             }
 
             // Update addresses if provided
