@@ -655,7 +655,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/billing/nfe', [NFeController::class, 'index']);
     Route::get('/billing/nfe/{id}', [NFeController::class, 'show']);
     Route::get('/billing/nfe/{id}/xml', [NFeController::class, 'downloadXML']);
+    Route::get('/billing/nfe/{id}/substitute-nfes', [NFeController::class, 'findSubstituteNFes']);
     Route::post('/billing/nfe/{id}/cancel', [NFeController::class, 'cancel']);
+    Route::post('/billing/nfe/{id}/cancel-by-substitution', [NFeController::class, 'cancelBySubstitution']);
     Route::post('/appointments/{appointment}/generate-nfe', [NFeController::class, 'generateFromAppointment']);
     Route::post('/appointments/{appointment}/generate-billing', [AppointmentController::class, 'generateBilling']);
+    
+    // NFe Configuration routes
+    Route::prefix('billing/nfe-config')->group(function () {
+        Route::get('/', [App\Http\Controllers\Billing\NFeConfigController::class, 'index']);
+        Route::put('/', [App\Http\Controllers\Billing\NFeConfigController::class, 'update']);
+        Route::post('/test', [App\Http\Controllers\Billing\NFeConfigController::class, 'test']);
+        Route::get('/states', [App\Http\Controllers\Billing\NFeConfigController::class, 'getStates']);
+        Route::get('/crt-options', [App\Http\Controllers\Billing\NFeConfigController::class, 'getCrtOptions']);
+        Route::get('/environment-options', [App\Http\Controllers\Billing\NFeConfigController::class, 'getEnvironmentOptions']);
+        Route::post('/initialize-defaults', [App\Http\Controllers\Billing\NFeConfigController::class, 'initializeDefaults']);
+    });
 }); 

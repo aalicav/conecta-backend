@@ -95,28 +95,35 @@ class NFeController extends Controller
         }
     }
 
-    public function cancel($id)
+    public function cancel(Request $request, $id)
     {
         $nfe = BillingBatch::whereNotNull('nfe_number')
             ->findOrFail($id);
 
-        if ($nfe->nfe_status !== 'authorized') {
+        if ($nfe->nfe_status !== 'issued' && $nfe->nfe_status !== 'authorized') {
             return response()->json([
-                'message' => 'Apenas notas fiscais autorizadas podem ser canceladas',
+                'message' => 'Apenas notas fiscais emitidas ou autorizadas podem ser canceladas',
             ], 400);
         }
 
         try {
-            // Aqui você implementaria a lógica de cancelamento usando a biblioteca SPED-NFe
-            // Por enquanto, apenas atualizamos o status
-            $nfe->update([
-                'nfe_status' => 'cancelled',
-            ]);
+            $reason = $request->input('reason', 'Cancelamento solicitado pelo contribuinte');
+            
+            // Usar o serviço para cancelar a NFe
+            $result = $this->nfeService->cancelNFe($nfe, $reason);
 
-            return response()->json([
-                'message' => 'Nota fiscal cancelada com sucesso',
-                'nfe' => $nfe,
-            ]);
+            if ($result['success']) {
+                return response()->json([
+                    'message' => 'Nota fiscal cancelada com sucesso',
+                    'protocol' => $result['protocol'],
+                    'nfe' => $nfe->fresh(),
+                ]);
+            } else {
+                return response()->json([
+                    'message' => 'Erro ao cancelar nota fiscal: ' . $result['error']
+                ], 500);
+            }
+
         } catch (\Exception $e) {
             Log::error('Erro ao cancelar NFe', [
                 'nfe_id' => $id,
@@ -124,6 +131,118 @@ class NFeController extends Controller
             ]);
 
             return response()->json(['message' => 'Erro ao cancelar nota fiscal'], 500);
+        }
+    }
+
+    /**
+     * Cancel NFe by substitution (for duplicate NFes)
+     */
+    public function cancelBySubstitution(Request $request, $id)
+    {
+        $nfe = BillingBatch::whereNotNull('nfe_number')
+            ->findOrFail($id);
+
+        if ($nfe->nfe_status !== 'issued' && $nfe->nfe_status !== 'authorized') {
+            return response()->json([
+                'message' => 'Apenas notas fiscais emitidas ou autorizadas podem ser canceladas por substituição',
+            ], 400);
+        }
+
+        $request->validate([
+            'substitute_nfe_key' => 'required|string|size:44',
+            'reason' => 'nullable|string|max:255',
+        ]);
+
+        try {
+            $substituteNFeKey = $request->input('substitute_nfe_key');
+            $reason = $request->input('reason', 'Cancelamento por substituição - NFe duplicada');
+            
+            // Usar o serviço para cancelar a NFe por substituição
+            $result = $this->nfeService->cancelNFeBySubstitution($nfe, $substituteNFeKey, $reason);
+
+            if ($result['success']) {
+                return response()->json([
+                    'message' => 'Nota fiscal cancelada por substituição com sucesso',
+                    'protocol' => $result['protocol'],
+                    'substitute_nfe_key' => $result['substitute_nfe_key'],
+                    'nfe' => $nfe->fresh(),
+                ]);
+            } else {
+                return response()->json([
+                    'message' => 'Erro ao cancelar nota fiscal por substituição: ' . $result['error']
+                ], 500);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao cancelar NFe por substituição', [
+                'nfe_id' => $id,
+                'substitute_nfe_key' => $request->input('substitute_nfe_key'),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['message' => 'Erro ao cancelar nota fiscal por substituição'], 500);
+        }
+    }
+
+    /**
+     * Find potential substitute NFes for cancellation by substitution
+     */
+    public function findSubstituteNFes($id)
+    {
+        $nfe = BillingBatch::with(['healthPlan', 'contract'])
+            ->whereNotNull('nfe_number')
+            ->findOrFail($id);
+
+        if ($nfe->nfe_status !== 'issued' && $nfe->nfe_status !== 'authorized') {
+            return response()->json([
+                'message' => 'Apenas notas fiscais emitidas ou autorizadas podem ter substitutas',
+            ], 400);
+        }
+
+        try {
+            // Buscar NFes que podem ser substitutas
+            // Mesmo destinatário, mesmo valor (com tolerância), autorizadas, emitidas nas últimas 168 horas
+            $emissionDate = $nfe->nfe_authorization_date ?? $nfe->created_at;
+            $minDate = $emissionDate->subHours(168);
+            $maxDate = $emissionDate->addHours(168);
+            
+            $tolerance = $nfe->total_amount * 0.01; // 1% de tolerância
+            $minAmount = $nfe->total_amount - $tolerance;
+            $maxAmount = $nfe->total_amount + $tolerance;
+
+            $substituteNFes = BillingBatch::with(['healthPlan', 'contract'])
+                ->where('id', '!=', $nfe->id)
+                ->where('health_plan_id', $nfe->health_plan_id)
+                ->where('nfe_status', 'authorized')
+                ->where('total_amount', '>=', $minAmount)
+                ->where('total_amount', '<=', $maxAmount)
+                ->whereNotNull('nfe_authorization_date')
+                ->where('nfe_authorization_date', '>=', $minDate)
+                ->where('nfe_authorization_date', '<=', $maxDate)
+                ->orderBy('nfe_authorization_date', 'desc')
+                ->limit(10)
+                ->get();
+
+            return response()->json([
+                'nfe' => $nfe,
+                'substitute_nfes' => $substituteNFes,
+                'criteria' => [
+                    'health_plan_id' => $nfe->health_plan_id,
+                    'total_amount' => $nfe->total_amount,
+                    'amount_tolerance' => $tolerance,
+                    'date_range_hours' => 168,
+                    'min_date' => $minDate,
+                    'max_date' => $maxDate,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao buscar NFes substitutas', [
+                'nfe_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['message' => 'Erro ao buscar NFes substitutas'], 500);
         }
     }
 
