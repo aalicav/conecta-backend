@@ -289,7 +289,7 @@ class NFeConfigController extends Controller
                 'nfe.csc' => '',
                 'nfe.csc_id' => '',
                 'nfe.certificate_path' => 'certificates/certificate.pfx',
-                'nfe.certificate_password' => '',
+                'nfe.certificate_password' => 'teste123',
                 'nfe.address.street' => '',
                 'nfe.address.number' => '',
                 'nfe.address.district' => '',
