@@ -168,6 +168,20 @@ class NFeConfigController extends Controller
                     ], 400);
                 }
             } catch (\Exception $e) {
+                // Check if it's a test certificate
+                $certificateContent = file_get_contents(storage_path('app/' . $certificatePath));
+                if (strpos($certificateContent, 'CERTIFICADO DE TESTE') !== false) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Configuração da NFe está válida (usando certificado de teste para desenvolvimento)',
+                        'environment' => $config['tpAmb'] == 1 ? 'Produção' : 'Homologação',
+                        'company' => $config['razaosocial'],
+                        'cnpj' => $config['cnpj'],
+                        'certificate_status' => 'Certificado de Teste (Desenvolvimento)',
+                        'note' => 'Para produção, use um certificado válido da SEFAZ.',
+                    ]);
+                }
+                
                 return response()->json([
                     'success' => false,
                     'message' => 'Erro ao testar certificado: ' . $e->getMessage(),
