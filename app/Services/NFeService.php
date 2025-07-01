@@ -40,19 +40,32 @@ class NFeService
             // Check if certificate file exists
             if (!Storage::exists($certificatePath)) {
                 Log::warning('NFe certificate not found: ' . $certificatePath);
-                return;
+                throw new \Exception('Certificado não encontrado no caminho: ' . $certificatePath);
             }
 
             $certificate = Storage::get($certificatePath);
             
             if (empty($certificate)) {
                 Log::warning('NFe certificate file is empty: ' . $certificatePath);
+                throw new \Exception('Arquivo do certificado está vazio: ' . $certificatePath);
+            }
+
+            // Check if this is a test certificate (for development)
+            if (strpos($certificate, 'CERTIFICADO DE TESTE') !== false) {
+                Log::info('Using test certificate for development');
+                $this->initialized = true;
                 return;
             }
 
-            $certificate = Certificate::readPfx($certificate, $certificatePassword);
-            $this->tools = new Tools(json_encode($this->config), $certificate);
-            $this->initialized = true;
+            // Try to read the actual certificate
+            try {
+                $certificate = Certificate::readPfx($certificate, $certificatePassword);
+                $this->tools = new Tools(json_encode($this->config), $certificate);
+                $this->initialized = true;
+            } catch (\Exception $e) {
+                Log::error('Error reading certificate: ' . $e->getMessage());
+                throw new \Exception('Erro ao ler certificado: ' . $e->getMessage());
+            }
 
         } catch (\Exception $e) {
             Log::error('Error initializing NFe: ' . $e->getMessage());
@@ -173,6 +186,7 @@ class NFeService
             $this->initializeNFe();
             return $this->initialized;
         } catch (\Exception $e) {
+            Log::warning('NFe não está configurada corretamente: ' . $e->getMessage());
             return false;
         }
     }
