@@ -42,13 +42,15 @@ class SolicitationInviteController extends Controller
                 $invites->getCollection()->transform(function ($invite) {
                     // Carregar informações do prestador baseado no tipo
                     if ($invite->provider_type === 'App\\Models\\Professional') {
-                        $invite->load('provider:id,name,specialty,professional_type,council_number,council_type');
+                        $professional = \App\Models\Professional::select('id', 'name', 'specialty', 'professional_type', 'council_number', 'council_type', 'city', 'state', 'address')
+                            ->find($invite->provider_id);
+                        $invite->provider = $professional;
                     } else {
-                        $invite->load('provider:id,name,type,city,state');
+                        $clinic = \App\Models\Clinic::with('addresses')
+                            ->select('id', 'name')
+                            ->find($invite->provider_id);
+                        $invite->provider = $clinic;
                     }
-                    
-                    // Adicionar informações extras da solicitação
-                    $invite->solicitation->load(['patient.addresses', 'tuss.category']);
                     
                     return $invite;
                 });
