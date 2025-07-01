@@ -56,7 +56,6 @@ class AppointmentResource extends JsonResource
             'attendance_confirmed_by_user' => new UserResource($this->whenLoaded('attendanceConfirmedBy')),
             'created_by_user' => new UserResource($this->whenLoaded('createdBy')),
             'payment' => new PaymentResource($this->whenLoaded('payment')),
-            'billing_batch' => new BillingBatchResource($this->whenLoaded('billingBatch')),
             'address' => $this->address,
             
             // Computed values
