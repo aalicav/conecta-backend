@@ -24,6 +24,7 @@ class Tuss extends Model
      */
     protected $fillable = [
         'code',
+        'name',
         'description',
         'chapter',
         'group',
@@ -66,11 +67,12 @@ class Tuss extends Model
     }
 
     /**
-     * Scope a query to search by code or description.
+     * Scope a query to search by code, name or description.
      */
     public function scopeSearch($query, $search)
     {
         return $query->where('code', 'like', "%{$search}%")
+            ->orWhere('name', 'like', "%{$search}%")
             ->orWhere('description', 'like', "%{$search}%");
     }
 

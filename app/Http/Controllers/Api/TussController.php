@@ -45,6 +45,13 @@ class TussController extends Controller
             $query->search($request->search);
         }
         
+        // Filter by specific codes if provided (for CSV import)
+        if ($request->has('codes')) {
+            $codes = explode(',', $request->codes);
+            $codes = array_map('trim', $codes);
+            $query->whereIn('code', $codes);
+        }
+        
         // Filter by chapter if provided
         if ($request->has('chapter')) {
             $query->where('chapter', $request->chapter);

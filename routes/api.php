@@ -90,6 +90,19 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
         Route::get('/{health_plan}/procedures', [HealthPlanController::class, 'getProcedures']);
         Route::put('/{health_plan}/procedures', [HealthPlanController::class, 'updateProcedures']);
         Route::post('/{health_plan}/documents', [HealthPlanController::class, 'uploadDocuments']);
+        Route::post('/validate-tuss-codes', [HealthPlanController::class, 'validateTussCodes']);
+        
+        // Health Plan Procedures CRUD
+        Route::prefix('{health_plan}/procedures')->group(function () {
+            Route::get('/', [HealthPlanController::class, 'getProcedures']);
+            Route::post('/', [HealthPlanController::class, 'storeProcedure']);
+            Route::get('/{procedure}', [HealthPlanController::class, 'showProcedure']);
+            Route::put('/{procedure}', [HealthPlanController::class, 'updateProcedure']);
+            Route::delete('/{procedure}', [HealthPlanController::class, 'deleteProcedure']);
+            Route::post('/import-csv', [HealthPlanController::class, 'importProceduresCsv']);
+            Route::get('/export-csv', [HealthPlanController::class, 'exportProceduresCsv']);
+            Route::post('/bulk-update', [HealthPlanController::class, 'bulkUpdateProcedures']);
+        });
     });
 
     // Clinics

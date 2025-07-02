@@ -13,6 +13,7 @@ use App\Models\BillingBatch;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use App\Models\HealthPlan;
 
 class ProcessAppointmentAttendance implements ShouldQueue
 {
@@ -192,6 +193,16 @@ class ProcessAppointmentAttendance implements ShouldQueue
     {
         // If not a consultation (10101012), return standard procedure price
         if ($appointment->procedure_code !== '10101012') {
+            // Busca o preço na nova tabela health_plan_procedures
+            if ($appointment->solicitation && $appointment->solicitation->health_plan_id) {
+                $healthPlan = HealthPlan::find($appointment->solicitation->health_plan_id);
+                if ($healthPlan) {
+                    $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                    if ($price !== null) {
+                        return $price;
+                    }
+                }
+            }
             return $appointment->procedure_price;
         }
 
@@ -214,8 +225,17 @@ class ProcessAppointmentAttendance implements ShouldQueue
                 }
             }
 
-            // 3. Health plan specific price
+            // 3. Health plan specific price (nova tabela)
             if ($appointment->solicitation->health_plan_id) {
+                $healthPlan = HealthPlan::find($appointment->solicitation->health_plan_id);
+                if ($healthPlan) {
+                    $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                    if ($price !== null) {
+                        return $price;
+                    }
+                }
+                
+                // Fallback para especialidade
                 $price = $specialty->getPriceForEntity('health_plan', $appointment->solicitation->health_plan_id);
                 if ($price) {
                     return $price;

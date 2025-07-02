@@ -32,6 +32,7 @@ use App\Models\BillingRule;
 use App\Models\BillingBatch;
 use App\Models\BillingItem;
 use App\Models\ValueVerification;
+use App\Models\HealthPlan;
 
 class AppointmentController extends Controller
 {
@@ -2520,6 +2521,16 @@ class AppointmentController extends Controller
         
         // If not a consultation (10101012), return standard procedure price
         if ($appointment->procedure_code !== '10101012') {
+            // Busca o preço na nova tabela health_plan_procedures
+            if ($appointment->solicitation && $appointment->solicitation->health_plan_id) {
+                $healthPlan = HealthPlan::find($appointment->solicitation->health_plan_id);
+                if ($healthPlan) {
+                    $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                    if ($price !== null) {
+                        return (float) $price;
+                    }
+                }
+            }
             return (float) $basePrice;
         }
 
@@ -2543,8 +2554,17 @@ class AppointmentController extends Controller
                     }
                 }
 
-                // 3. Health plan specific price
+                // 3. Health plan specific price (nova tabela)
                 if ($appointment->solicitation && $appointment->solicitation->health_plan_id) {
+                    $healthPlan = HealthPlan::find($appointment->solicitation->health_plan_id);
+                    if ($healthPlan) {
+                        $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                        if ($price !== null && $price > 0) {
+                            return (float) $price;
+                        }
+                    }
+                    
+                    // Fallback para especialidade
                     $price = $specialty->getPriceForEntity('health_plan', $appointment->solicitation->health_plan_id);
                     if ($price !== null && $price > 0) {
                         return (float) $price;

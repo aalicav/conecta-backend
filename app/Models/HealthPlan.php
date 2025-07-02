@@ -246,6 +246,51 @@ class HealthPlan extends Model implements Auditable
     }
 
     /**
+     * Get procedures with pricing for this health plan.
+     */
+    public function procedures(): HasMany
+    {
+        return $this->hasMany(HealthPlanProcedure::class);
+    }
+
+    /**
+     * Get the price for a specific TUSS procedure.
+     *
+     * @param int $tussProcedureId
+     * @return float|null
+     */
+    public function getProcedurePrice(int $tussProcedureId): ?float
+    {
+        $procedure = $this->procedures()
+            ->where('tuss_procedure_id', $tussProcedureId)
+            ->where('is_active', true)
+            ->where(function ($query) {
+                $query->whereNull('end_date')
+                    ->orWhere('end_date', '>=', now());
+            })
+            ->first();
+
+        return $procedure ? (float) $procedure->price : null;
+    }
+
+    /**
+     * Get all active procedure prices for this health plan.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function getActiveProcedurePrices()
+    {
+        return $this->procedures()
+            ->with('procedure')
+            ->where('is_active', true)
+            ->where(function ($query) {
+                $query->whereNull('end_date')
+                    ->orWhere('end_date', '>=', now());
+            })
+            ->get();
+    }
+
+    /**
      * Get solicitations made by this health plan.
      */
     public function solicitations(): HasMany

@@ -22,6 +22,7 @@ use App\Models\MedicalSpecialty;
 use App\Models\PricingContract;
 use App\Models\BillingRule;
 use App\Models\ValueVerification;
+use App\Models\HealthPlan;
 
 class BillingController extends Controller
 {
@@ -531,13 +532,27 @@ class BillingController extends Controller
     }
 
     /**
-     * Obtém o preço do procedimento considerando a especialidade
+     * Get the price for a procedure based on the appointment context.
+     *
+     * @param Appointment $appointment
+     * @return float
      */
-    private function getProcedurePrice($appointment)
+    private function getProcedurePrice(Appointment $appointment): float
     {
         // Se não for consulta (10101012), retorna o preço padrão do procedimento
         if ($appointment->solicitation->tuss->code !== '10101012') {
-            // Busca o preço através dos contratos de preços
+            // Busca o preço na nova tabela health_plan_procedures
+            if ($appointment->solicitation->health_plan_id) {
+                $healthPlan = HealthPlan::find($appointment->solicitation->health_plan_id);
+                if ($healthPlan) {
+                    $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                    if ($price !== null) {
+                        return $price;
+                    }
+                }
+            }
+            
+            // Fallback para contratos de preços antigos
             $pricingContract = PricingContract::where('tuss_procedure_id', $appointment->solicitation->tuss_id)
                 ->where('contractable_type', get_class($appointment->provider))
                 ->where('contractable_id', $appointment->provider_id)
@@ -553,7 +568,18 @@ class BillingController extends Controller
 
         // Verifica se o profissional tem especialidade definida
         if (!$appointment->provider->specialty) {
-            // Busca o preço através dos contratos de preços
+            // Busca o preço na nova tabela health_plan_procedures
+            if ($appointment->solicitation->health_plan_id) {
+                $healthPlan = HealthPlan::find($appointment->solicitation->health_plan_id);
+                if ($healthPlan) {
+                    $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                    if ($price !== null) {
+                        return $price;
+                    }
+                }
+            }
+            
+            // Fallback para contratos de preços antigos
             $pricingContract = PricingContract::where('tuss_procedure_id', $appointment->solicitation->tuss_id)
                 ->where('contractable_type', get_class($appointment->provider))
                 ->where('contractable_id', $appointment->provider_id)
@@ -570,7 +596,18 @@ class BillingController extends Controller
         // Busca a especialidade pelo nome
         $specialty = MedicalSpecialty::where('name', $appointment->provider->specialty)->first();
         if (!$specialty) {
-            // Busca o preço através dos contratos de preços
+            // Busca o preço na nova tabela health_plan_procedures
+            if ($appointment->solicitation->health_plan_id) {
+                $healthPlan = HealthPlan::find($appointment->solicitation->health_plan_id);
+                if ($healthPlan) {
+                    $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                    if ($price !== null) {
+                        return $price;
+                    }
+                }
+            }
+            
+            // Fallback para contratos de preços antigos
             $pricingContract = PricingContract::where('tuss_procedure_id', $appointment->solicitation->tuss_id)
                 ->where('contractable_type', get_class($appointment->provider))
                 ->where('contractable_id', $appointment->provider_id)
@@ -599,8 +636,17 @@ class BillingController extends Controller
             }
         }
 
-        // 3. Preço específico do plano de saúde
+        // 3. Preço específico do plano de saúde (nova tabela)
         if ($appointment->solicitation->health_plan_id) {
+            $healthPlan = HealthPlan::find($appointment->solicitation->health_plan_id);
+            if ($healthPlan) {
+                $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                if ($price !== null) {
+                    return $price;
+                }
+            }
+            
+            // Fallback para especialidade
             $price = $specialty->getPriceForEntity('health_plan', $appointment->solicitation->health_plan_id);
             if ($price) {
                 return $price;
@@ -612,7 +658,7 @@ class BillingController extends Controller
             return $specialty->default_price;
         }
 
-        // 5. Busca o preço através dos contratos de preços
+        // 5. Busca o preço através dos contratos de preços antigos
         $pricingContract = PricingContract::where('tuss_procedure_id', $appointment->solicitation->tuss_id)
             ->where('contractable_type', get_class($appointment->provider))
             ->where('contractable_id', $appointment->provider_id)

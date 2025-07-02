@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Collection;
 use Carbon\Carbon;
 use App\Notifications\ProfessionalSchedulingRequest;
+use App\Models\HealthPlan;
 
 class AutomaticSchedulingService
 {
@@ -204,11 +205,24 @@ class AutomaticSchedulingService
             ]);
         }
         
-        // 5. Sort by price and distance (prioritize closest and cheapest)
-        return $providers->sortBy([
-            ['price', 'asc'],
-            ['distance', 'asc']
-        ]);
+        // 5. Check for health plan specific pricing in new table
+        if ($healthPlanId) {
+            $healthPlan = HealthPlan::find($healthPlanId);
+            if ($healthPlan) {
+                $healthPlanPrice = $healthPlan->getProcedurePrice($tussId);
+                if ($healthPlanPrice !== null) {
+                    // Add health plan price to all providers that don't have specific pricing
+                    $providers = $providers->map(function ($provider) use ($healthPlanPrice) {
+                        if ($provider['price'] === null || $provider['price'] === 0) {
+                            $provider['price'] = $healthPlanPrice;
+                        }
+                        return $provider;
+                    });
+                }
+            }
+        }
+        
+        return $providers->sortBy('distance')->values();
     }
 
     /**

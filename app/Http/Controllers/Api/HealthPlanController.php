@@ -554,7 +554,7 @@ class HealthPlanController extends Controller
                 'legalRepresentative',
                 'operationalRepresentative',
                 'contract', 
-                'pricingContracts.procedure', // Explicitly load procedures relationship
+                'procedures.procedure', // Load procedures from new table
                 'parent',
                 'children'
             ]);
@@ -1030,7 +1030,7 @@ class HealthPlanController extends Controller
             DB::beginTransaction();
 
             // Get current procedures
-            $currentProcedureIds = $health_plan->pricingContracts()
+            $currentProcedureIds = $health_plan->procedures()
                 ->where('is_active', true)
                 ->pluck('tuss_procedure_id')
                 ->toArray();
@@ -1039,24 +1039,24 @@ class HealthPlanController extends Controller
             $updatedProcedureIds = [];
             $updatedProcedures = [];
             
-            // Update or create pricing contracts for each procedure
+            // Update or create procedures for each procedure
             foreach ($request->procedures as $procedureData) {
                 $tussId = $procedureData['tuss_id'];
                 $updatedProcedureIds[] = $tussId;
                 
-                $pricingContract = $health_plan->pricingContracts()
+                $healthPlanProcedure = $health_plan->procedures()
                     ->where('tuss_procedure_id', $tussId)
                     ->first();
 
-                if ($pricingContract) {
-                    // Update existing pricing contract
-                    $pricingContract->update([
+                if ($healthPlanProcedure) {
+                    // Update existing procedure
+                    $healthPlanProcedure->update([
                         'price' => $procedureData['value'],
                         'notes' => $procedureData['notes'] ?? null,
                     ]);
                 } else {
-                    // Create new pricing contract
-                    $pricingContract = $health_plan->pricingContracts()->create([
+                    // Create new procedure
+                    $healthPlanProcedure = $health_plan->procedures()->create([
                         'tuss_procedure_id' => $tussId,
                         'price' => $procedureData['value'],
                         'notes' => $procedureData['notes'] ?? null,
@@ -1066,7 +1066,7 @@ class HealthPlanController extends Controller
                     ]);
                 }
 
-                $updatedProcedures[] = $pricingContract;
+                $updatedProcedures[] = $healthPlanProcedure;
             }
             
             // Handle deletion of procedures not in the update list
@@ -1076,7 +1076,7 @@ class HealthPlanController extends Controller
                 
                 if (!empty($proceduresToDelete)) {
                     // Soft delete by setting is_active to false
-                    $health_plan->pricingContracts()
+                    $health_plan->procedures()
                         ->whereIn('tuss_procedure_id', $proceduresToDelete)
                         ->update(['is_active' => false]);
                     
@@ -1084,55 +1084,10 @@ class HealthPlanController extends Controller
                 }
             }
 
-            // If skip_contract_update is not true, create a new negotiation
-            if (!($request->skip_contract_update ?? false)) {
-                $negotiationController = new NegotiationController(app(\App\Services\NotificationService::class));
-                
-                // Buscar um modelo de contrato ativo para planos de saúde
-                $contractTemplate = \App\Models\ContractTemplate::where('entity_type', 'health_plan')
-                    ->where('is_active', true)
-                    ->first();
-                
-                if (!$contractTemplate) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'No active contract template found for health plans. Please create one first.'
-                    ], 422);
-                }
-                
-                $negotiationData = [
-                    'entity_type' => 'App\\Models\\HealthPlan',
-                    'entity_id' => $health_plan->id,
-                    'title' => 'Atualização de valores - ' . $health_plan->name,
-                    'description' => 'Atualização de valores dos procedimentos para o plano ' . $health_plan->name,
-                    'start_date' => now()->format('Y-m-d'),
-                    'end_date' => now()->addMonths(3)->format('Y-m-d'),
-                    'status' => 'draft',
-                    'contract_template_id' => $contractTemplate->id,
-                    'items' => array_map(function($procedure) {
-                        return [
-                            'tuss_id' => $procedure['tuss_id'],
-                            'proposed_value' => $procedure['value'],
-                            'notes' => $procedure['notes'] ?? null,
-                        ];
-                    }, $request->procedures)
-                ];
-
-                // Create the negotiation
-                $negotiationRequest = new Request($negotiationData);
-                $negotiationResult = $negotiationController->store($negotiationRequest);
-
-                if ($negotiationResult->getStatusCode() !== 201) {
-                    Log::warning('Failed to create negotiation for procedure updates: ' . $health_plan->id);
-                    Log::warning(json_encode($negotiationResult->getData()));
-                }
-            }
-
             DB::commit();
 
-            // Load updated pricing contracts
-            $health_plan->load(['pricingContracts.procedure']);
+            // Load updated procedures
+            $health_plan->load(['procedures.procedure']);
 
             return response()->json([
                 'success' => true,
@@ -1156,7 +1111,7 @@ class HealthPlanController extends Controller
     }
 
     /**
-     * Get the pricing contracts (negotiated procedures) for the health plan.
+     * Get the procedures with pricing for the health plan.
      *
      * @param HealthPlan $health_plan
      * @return JsonResponse
@@ -1164,36 +1119,38 @@ class HealthPlanController extends Controller
     public function getProcedures(HealthPlan $health_plan): JsonResponse
     {
         try {
-            // Carregar os contratos de preço com os procedimentos relacionados
-            $pricingContracts = $health_plan->pricingContracts()
+            // Carregar os procedimentos com os relacionamentos
+            $procedures = $health_plan->procedures()
                 ->with('procedure')
                 ->where('is_active', true)
                 ->get();
 
             // Formatar os dados para a resposta
-            $formattedProcedures = $pricingContracts->map(function ($contract) {
+            $formattedProcedures = $procedures->map(function ($healthPlanProcedure) {
                 return [
-                    'id' => $contract->id,
-                    'tuss_procedure_id' => $contract->tuss_procedure_id,
-                    'price' => $contract->price,
-                    'notes' => $contract->notes,
-                    'is_active' => $contract->is_active,
-                    'created_at' => $contract->created_at,
-                    'updated_at' => $contract->updated_at,
+                    'id' => $healthPlanProcedure->id,
+                    'tuss_procedure_id' => $healthPlanProcedure->tuss_procedure_id,
+                    'price' => $healthPlanProcedure->price,
+                    'notes' => $healthPlanProcedure->notes,
+                    'is_active' => $healthPlanProcedure->is_active,
+                    'start_date' => $healthPlanProcedure->start_date,
+                    'end_date' => $healthPlanProcedure->end_date,
+                    'created_at' => $healthPlanProcedure->created_at,
+                    'updated_at' => $healthPlanProcedure->updated_at,
                     'procedure' => [
-                        'id' => $contract->procedure->id,
-                        'code' => $contract->procedure->code,
-                        'name' => $contract->procedure->name,
-                        'description' => $contract->procedure->description,
-                        'category' => $contract->procedure->category,
-                        'is_active' => $contract->procedure->is_active,
+                        'id' => $healthPlanProcedure->procedure->id,
+                        'code' => $healthPlanProcedure->procedure->code,
+                        'name' => $healthPlanProcedure->procedure->name,
+                        'description' => $healthPlanProcedure->procedure->description,
+                        'category' => $healthPlanProcedure->procedure->category,
+                        'is_active' => $healthPlanProcedure->procedure->is_active,
                     ]
                 ];
             });
 
             return response()->json([
                 'success' => true,
-                'message' => 'Negotiated procedures retrieved successfully',
+                'message' => 'Health plan procedures retrieved successfully',
                 'data' => $formattedProcedures,
                 'health_plan' => [
                     'id' => $health_plan->id,
@@ -1828,6 +1785,516 @@ class HealthPlanController extends Controller
             }
             
             $opRep->update($opRepUpdates);
+        }
+    }
+
+    /**
+     * Validate TUSS codes for CSV import.
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function validateTussCodes(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'codes' => 'required|array',
+                'codes.*' => 'required|string|max:20',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $codes = $request->codes;
+            
+            // Buscar códigos TUSS existentes
+            $existingTuss = \App\Models\Tuss::whereIn('code', $codes)
+                ->where('is_active', true)
+                ->get(['id', 'code', 'name']);
+            
+            $existingCodes = $existingTuss->pluck('code')->toArray();
+            $missingCodes = array_diff($codes, $existingCodes);
+            
+            $validationResult = [
+                'valid_codes' => $existingTuss->toArray(),
+                'invalid_codes' => array_values($missingCodes),
+                'total_requested' => count($codes),
+                'total_valid' => count($existingCodes),
+                'total_invalid' => count($missingCodes),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'message' => 'TUSS codes validation completed',
+                'data' => $validationResult
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error validating TUSS codes: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to validate TUSS codes',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Store a new procedure for the health plan.
+     *
+     * @param Request $request
+     * @param HealthPlan $health_plan
+     * @return JsonResponse
+     */
+    public function storeProcedure(Request $request, HealthPlan $health_plan): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'tuss_procedure_id' => 'required|exists:tuss_procedures,id',
+                'price' => 'required|numeric|min:0',
+                'notes' => 'nullable|string|max:500',
+                'start_date' => 'nullable|date',
+                'end_date' => 'nullable|date|after:start_date',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Check if procedure already exists for this health plan
+            $existingProcedure = $health_plan->procedures()
+                ->where('tuss_procedure_id', $request->tuss_procedure_id)
+                ->where('is_active', true)
+                ->first();
+
+            if ($existingProcedure) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Procedure already exists for this health plan'
+                ], 422);
+            }
+
+            $procedure = $health_plan->procedures()->create([
+                'tuss_procedure_id' => $request->tuss_procedure_id,
+                'price' => $request->price,
+                'notes' => $request->notes,
+                'start_date' => $request->start_date ?? now(),
+                'end_date' => $request->end_date,
+                'is_active' => true,
+                'created_by' => Auth::id(),
+            ]);
+
+            $procedure->load('procedure');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Procedure added successfully',
+                'data' => $procedure
+            ], 201);
+
+        } catch (\Exception $e) {
+            Log::error('Error storing health plan procedure: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to store procedure',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Show a specific procedure for the health plan.
+     *
+     * @param HealthPlan $health_plan
+     * @param int $procedure
+     * @return JsonResponse
+     */
+    public function showProcedure(HealthPlan $health_plan, int $procedure): JsonResponse
+    {
+        try {
+            $healthPlanProcedure = $health_plan->procedures()
+                ->with('procedure')
+                ->findOrFail($procedure);
+
+            return response()->json([
+                'success' => true,
+                'data' => $healthPlanProcedure
+            ]);
+
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Procedure not found'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Error showing health plan procedure: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve procedure',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update a specific procedure for the health plan.
+     *
+     * @param Request $request
+     * @param HealthPlan $health_plan
+     * @param int $procedure
+     * @return JsonResponse
+     */
+    public function updateProcedure(Request $request, HealthPlan $health_plan, int $procedure): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'price' => 'required|numeric|min:0',
+                'notes' => 'nullable|string|max:500',
+                'start_date' => 'nullable|date',
+                'end_date' => 'nullable|date|after:start_date',
+                'is_active' => 'boolean',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $healthPlanProcedure = $health_plan->procedures()->findOrFail($procedure);
+
+            $healthPlanProcedure->update([
+                'price' => $request->price,
+                'notes' => $request->notes,
+                'start_date' => $request->start_date,
+                'end_date' => $request->end_date,
+                'is_active' => $request->has('is_active') ? $request->is_active : $healthPlanProcedure->is_active,
+            ]);
+
+            $healthPlanProcedure->load('procedure');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Procedure updated successfully',
+                'data' => $healthPlanProcedure
+            ]);
+
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Procedure not found'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Error updating health plan procedure: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update procedure',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a specific procedure for the health plan.
+     *
+     * @param HealthPlan $health_plan
+     * @param int $procedure
+     * @return JsonResponse
+     */
+    public function deleteProcedure(HealthPlan $health_plan, int $procedure): JsonResponse
+    {
+        try {
+            $healthPlanProcedure = $health_plan->procedures()->findOrFail($procedure);
+
+            // Soft delete
+            $healthPlanProcedure->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Procedure deleted successfully'
+            ]);
+
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Procedure not found'
+            ], 404);
+        } catch (\Exception $e) {
+            Log::error('Error deleting health plan procedure: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete procedure',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Import procedures from CSV file.
+     *
+     * @param Request $request
+     * @param HealthPlan $health_plan
+     * @return JsonResponse
+     */
+    public function importProceduresCsv(Request $request, HealthPlan $health_plan): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'file' => 'required|file|mimes:csv,txt|max:10240', // 10MB max
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $file = $request->file('file');
+            $csvData = array_map('str_getcsv', file($file->getPathname()));
+            
+            // Remove header row
+            $headers = array_shift($csvData);
+            
+            // Validate headers
+            $expectedHeaders = ['codigo_tuss', 'descricao_procedimento', 'valor', 'observacoes'];
+            if (count(array_intersect($headers, $expectedHeaders)) < 3) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid CSV format. Expected columns: codigo_tuss, descricao_procedimento, valor, observacoes'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            $imported = 0;
+            $errors = [];
+            $codes = [];
+
+            foreach ($csvData as $index => $row) {
+                if (count($row) < 3) continue;
+
+                $code = trim($row[0]);
+                $price = trim($row[2]);
+                $notes = isset($row[3]) ? trim($row[3]) : '';
+
+                if (empty($code) || empty($price)) continue;
+
+                $codes[] = $code;
+            }
+
+            // Get all TUSS procedures in one query
+            $tussProcedures = \App\Models\Tuss::whereIn('code', $codes)
+                ->where('is_active', true)
+                ->get(['id', 'code', 'name']);
+
+            $tussMap = $tussProcedures->keyBy('code');
+
+            foreach ($csvData as $index => $row) {
+                if (count($row) < 3) continue;
+
+                $code = trim($row[0]);
+                $price = trim($row[2]);
+                $notes = isset($row[3]) ? trim($row[3]) : '';
+
+                if (empty($code) || empty($price)) continue;
+
+                $tussProcedure = $tussMap->get($code);
+                if (!$tussProcedure) {
+                    $errors[] = "Row " . ($index + 2) . ": TUSS code '$code' not found";
+                    continue;
+                }
+
+                $priceValue = (float) str_replace(['R$', ' ', ','], ['', '', '.'], $price);
+                if ($priceValue <= 0) {
+                    $errors[] = "Row " . ($index + 2) . ": Invalid price '$price'";
+                    continue;
+                }
+
+                // Check if procedure already exists
+                $existingProcedure = $health_plan->procedures()
+                    ->where('tuss_procedure_id', $tussProcedure->id)
+                    ->where('is_active', true)
+                    ->first();
+
+                if ($existingProcedure) {
+                    // Update existing procedure
+                    $existingProcedure->update([
+                        'price' => $priceValue,
+                        'notes' => $notes,
+                    ]);
+                } else {
+                    // Create new procedure
+                    $health_plan->procedures()->create([
+                        'tuss_procedure_id' => $tussProcedure->id,
+                        'price' => $priceValue,
+                        'notes' => $notes,
+                        'start_date' => now(),
+                        'is_active' => true,
+                        'created_by' => Auth::id(),
+                    ]);
+                }
+
+                $imported++;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "CSV import completed. $imported procedures processed.",
+                'data' => [
+                    'imported' => $imported,
+                    'errors' => $errors,
+                    'total_rows' => count($csvData)
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error importing CSV procedures: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to import CSV',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Export procedures to CSV file.
+     *
+     * @param HealthPlan $health_plan
+     * @return JsonResponse
+     */
+    public function exportProceduresCsv(HealthPlan $health_plan): JsonResponse
+    {
+        try {
+            $procedures = $health_plan->procedures()
+                ->with('procedure')
+                ->where('is_active', true)
+                ->get();
+
+            $csvData = [];
+            $csvData[] = ['codigo_tuss', 'descricao_procedimento', 'valor', 'observacoes'];
+
+            foreach ($procedures as $procedure) {
+                $csvData[] = [
+                    $procedure->procedure->code,
+                    $procedure->procedure->name,
+                    number_format($procedure->price, 2, ',', '.'),
+                    $procedure->notes ?? ''
+                ];
+            }
+
+            $filename = "procedures_{$health_plan->id}_" . date('Y-m-d_H-i-s') . ".csv";
+            $filepath = storage_path("app/public/exports/{$filename}");
+
+            // Ensure directory exists
+            if (!file_exists(dirname($filepath))) {
+                mkdir(dirname($filepath), 0755, true);
+            }
+
+            $file = fopen($filepath, 'w');
+            foreach ($csvData as $row) {
+                fputcsv($file, $row);
+            }
+            fclose($file);
+
+            $url = Storage::disk('public')->url("exports/{$filename}");
+
+            return response()->json([
+                'success' => true,
+                'message' => 'CSV export completed',
+                'data' => [
+                    'filename' => $filename,
+                    'download_url' => $url,
+                    'total_procedures' => $procedures->count()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error exporting CSV procedures: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to export CSV',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Bulk update procedures for the health plan.
+     *
+     * @param Request $request
+     * @param HealthPlan $health_plan
+     * @return JsonResponse
+     */
+    public function bulkUpdateProcedures(Request $request, HealthPlan $health_plan): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'procedures' => 'required|array',
+                'procedures.*.id' => 'required|exists:health_plan_procedures,id',
+                'procedures.*.price' => 'required|numeric|min:0',
+                'procedures.*.notes' => 'nullable|string|max:500',
+                'procedures.*.is_active' => 'boolean',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation error',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            $updated = 0;
+            foreach ($request->procedures as $procedureData) {
+                $procedure = $health_plan->procedures()->find($procedureData['id']);
+                if ($procedure) {
+                    $procedure->update([
+                        'price' => $procedureData['price'],
+                        'notes' => $procedureData['notes'] ?? $procedure->notes,
+                        'is_active' => $procedureData['is_active'] ?? $procedure->is_active,
+                    ]);
+                    $updated++;
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "$updated procedures updated successfully",
+                'data' => [
+                    'updated' => $updated,
+                    'total_requested' => count($request->procedures)
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error bulk updating procedures: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to bulk update procedures',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 } 

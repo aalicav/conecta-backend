@@ -18,12 +18,13 @@ class TussResource extends JsonResource
         return [
             'id' => $this->id,
             'code' => $this->code,
+            'name' => $this->name,
             'description' => $this->description,
             'category' => $this->category,
-            'subcategory' => $this->subcategory,
-            'type' => $this->type,
-            'amb_code' => $this->amb_code,
-            'amb_description' => $this->amb_description,
+            'chapter' => $this->chapter,
+            'group' => $this->group,
+            'subgroup' => $this->subgroup,
+            'is_active' => $this->is_active,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
