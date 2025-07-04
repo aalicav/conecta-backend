@@ -269,8 +269,10 @@ class NFeController extends Controller
             }
 
             // Verificar se já existe uma NFe para este agendamento
-            $existingNFe = BillingBatch::where('entity_type', Appointment::class)
-                ->where('entity_id', $appointmentId)
+            $existingNFe = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
+                ->whereHas('items', function($query) use ($appointmentId) {
+                    $query->where('appointment_id', $appointmentId);
+                })
                 ->whereNotNull('nfe_number')
                 ->first();
 
@@ -281,10 +283,12 @@ class NFeController extends Controller
                 ], 400);
             }
 
-            // Buscar o lote de faturamento existente para este agendamento
-            $billingBatch = BillingBatch::where('entity_type', Appointment::class)
-                ->where('entity_id', $appointmentId)
+            // Buscar o lote de faturamento existente para este plano de saúde
+            $billingBatch = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
                 ->whereNull('nfe_number')
+                ->whereHas('items', function($query) use ($appointmentId) {
+                    $query->where('appointment_id', $appointmentId);
+                })
                 ->first();
 
             if (!$billingBatch) {
@@ -447,8 +451,8 @@ class NFeController extends Controller
             $query->whereNotExists(function($subQuery) {
                 $subQuery->select(DB::raw(1))
                     ->from('billing_batches')
-                    ->whereRaw('billing_batches.entity_type = ?', [Appointment::class])
-                    ->whereRaw('billing_batches.entity_id = appointments.id')
+                    ->join('billing_items', 'billing_batches.id', '=', 'billing_items.billing_batch_id')
+                    ->whereRaw('billing_items.appointment_id = appointments.id')
                     ->whereNotNull('billing_batches.nfe_number');
             });
 
@@ -456,8 +460,8 @@ class NFeController extends Controller
             $query->whereExists(function($subQuery) {
                 $subQuery->select(DB::raw(1))
                     ->from('billing_batches')
-                    ->whereRaw('billing_batches.entity_type = ?', [Appointment::class])
-                    ->whereRaw('billing_batches.entity_id = appointments.id')
+                    ->join('billing_items', 'billing_batches.id', '=', 'billing_items.billing_batch_id')
+                    ->whereRaw('billing_items.appointment_id = appointments.id')
                     ->whereNull('billing_batches.nfe_number')
                     ->whereHas('billingRule', function($ruleQuery) {
                         $ruleQuery->where('is_active', true)
@@ -486,9 +490,11 @@ class NFeController extends Controller
 
             // Adicionar valor do lote de faturamento para cada agendamento
             $appointments->getCollection()->transform(function($appointment) {
-                $billingBatch = BillingBatch::where('entity_type', Appointment::class)
-                    ->where('entity_id', $appointment->id)
+                $billingBatch = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
                     ->whereNull('nfe_number')
+                    ->whereHas('items', function($query) use ($appointment) {
+                        $query->where('appointment_id', $appointment->id);
+                    })
                     ->first();
                 
                 $appointment->amount = $billingBatch ? $billingBatch->total_amount : 0;
