@@ -271,7 +271,8 @@ class NFeController extends Controller
             // Verificar se já existe uma NFe para este agendamento
             $existingNFe = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
                 ->whereHas('items', function($query) use ($appointmentId) {
-                    $query->where('appointment_id', $appointmentId);
+                    $query->where('item_type', Appointment::class)
+                          ->where('item_id', $appointmentId);
                 })
                 ->whereNotNull('nfe_number')
                 ->first();
@@ -287,7 +288,8 @@ class NFeController extends Controller
             $billingBatch = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
                 ->whereNull('nfe_number')
                 ->whereHas('items', function($query) use ($appointmentId) {
-                    $query->where('appointment_id', $appointmentId);
+                    $query->where('item_type', Appointment::class)
+                          ->where('item_id', $appointmentId);
                 })
                 ->first();
 
@@ -452,7 +454,8 @@ class NFeController extends Controller
                 $subQuery->select(DB::raw(1))
                     ->from('billing_batches')
                     ->join('billing_items', 'billing_batches.id', '=', 'billing_items.billing_batch_id')
-                    ->whereRaw('billing_items.appointment_id = appointments.id')
+                    ->whereRaw('billing_items.item_type = ?', [Appointment::class])
+                    ->whereRaw('billing_items.item_id = appointments.id')
                     ->whereNotNull('billing_batches.nfe_number');
             });
 
@@ -461,7 +464,8 @@ class NFeController extends Controller
                 $subQuery->select(DB::raw(1))
                     ->from('billing_batches')
                     ->join('billing_items', 'billing_batches.id', '=', 'billing_items.billing_batch_id')
-                    ->whereRaw('billing_items.appointment_id = appointments.id')
+                    ->whereRaw('billing_items.item_type = ?', [Appointment::class])
+                    ->whereRaw('billing_items.item_id = appointments.id')
                     ->whereNull('billing_batches.nfe_number')
                     ->whereHas('billingRule', function($ruleQuery) {
                         $ruleQuery->where('is_active', true)
@@ -493,7 +497,8 @@ class NFeController extends Controller
                 $billingBatch = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
                     ->whereNull('nfe_number')
                     ->whereHas('items', function($query) use ($appointment) {
-                        $query->where('appointment_id', $appointment->id);
+                        $query->where('item_type', Appointment::class)
+                              ->where('item_id', $appointment->id);
                     })
                     ->first();
                 
