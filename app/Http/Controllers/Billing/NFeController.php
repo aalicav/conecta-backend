@@ -281,46 +281,24 @@ class NFeController extends Controller
                 ], 400);
             }
 
-            // Calcular valor do agendamento
-            $amount = $this->calculateAppointmentPrice($appointment);
-
-            // Buscar regra de faturamento
-            $billingRule = BillingRule::where('health_plan_id', $appointment->solicitation->health_plan_id)
-                ->where('is_active', true)
+            // Buscar o lote de faturamento existente para este agendamento
+            $billingBatch = BillingBatch::where('entity_type', Appointment::class)
+                ->where('entity_id', $appointmentId)
+                ->whereNull('nfe_number')
                 ->first();
 
-            if (!$billingRule || !$billingRule->generate_nfe) {
+            if (!$billingBatch) {
+                return response()->json([
+                    'message' => 'Lote de faturamento não encontrado para este agendamento'
+                ], 400);
+            }
+
+            // Verificar se o lote tem regra de faturamento com NFe habilitada
+            if (!$billingBatch->billingRule || !$billingBatch->billingRule->generate_nfe) {
                 return response()->json([
                     'message' => 'Regra de faturamento não encontrada ou NFe não habilitada'
                 ], 400);
             }
-
-            // Criar lote de faturamento
-            $billingBatch = BillingBatch::create([
-                'entity_type' => Appointment::class,
-                'entity_id' => $appointmentId,
-                'reference_period_start' => $appointment->scheduled_date,
-                'reference_period_end' => $appointment->scheduled_date,
-                'billing_date' => now(),
-                'due_date' => now()->addDays(30),
-                'total_amount' => $amount,
-                'status' => 'pending',
-                'items_count' => 1,
-                'created_by' => auth()->id(),
-                'billing_rule_id' => $billingRule->id,
-                'health_plan_id' => $appointment->solicitation->health_plan_id,
-            ]);
-
-            // Criar item de faturamento
-            BillingItem::create([
-                'billing_batch_id' => $billingBatch->id,
-                'procedure_id' => $appointment->solicitation->tuss_id,
-                'description' => $appointment->solicitation->tuss->description,
-                'quantity' => 1,
-                'unit_price' => $amount,
-                'total_price' => $amount,
-                'tuss_code' => $appointment->solicitation->tuss->code,
-            ]);
 
             // Gerar NFe usando o serviço
             $nfeData = [
@@ -328,7 +306,7 @@ class NFeController extends Controller
                 'health_plan' => $appointment->solicitation->healthPlan,
                 'patient' => $appointment->solicitation->patient,
                 'procedure' => $appointment->solicitation->tuss,
-                'amount' => $amount,
+                'amount' => $billingBatch->total_amount,
                 'appointment_date' => $appointment->scheduled_date,
             ];
 
@@ -445,5 +423,89 @@ class NFeController extends Controller
 
         // Return standard procedure price if no specialty pricing found
         return (float) $basePrice;
+    }
+
+    /**
+     * Get appointments eligible for NFe generation
+     */
+    public function getEligibleAppointments(Request $request)
+    {
+        try {
+            $query = Appointment::with([
+                'solicitation.healthPlan',
+                'solicitation.patient',
+                'solicitation.tuss',
+                'provider.medicalSpecialty'
+            ])
+            ->where('status', 'completed')
+            ->where('patient_attended', true)
+            ->whereHas('solicitation', function($q) {
+                $q->whereHas('healthPlan');
+            });
+
+            // Verificar se já existe NFe para o agendamento
+            $query->whereNotExists(function($subQuery) {
+                $subQuery->select(DB::raw(1))
+                    ->from('billing_batches')
+                    ->whereRaw('billing_batches.entity_type = ?', [Appointment::class])
+                    ->whereRaw('billing_batches.entity_id = appointments.id')
+                    ->whereNotNull('billing_batches.nfe_number');
+            });
+
+            // Verificar se existe lote de faturamento criado para o agendamento
+            $query->whereExists(function($subQuery) {
+                $subQuery->select(DB::raw(1))
+                    ->from('billing_batches')
+                    ->whereRaw('billing_batches.entity_type = ?', [Appointment::class])
+                    ->whereRaw('billing_batches.entity_id = appointments.id')
+                    ->whereNull('billing_batches.nfe_number')
+                    ->whereHas('billingRule', function($ruleQuery) {
+                        $ruleQuery->where('is_active', true)
+                                  ->where('generate_nfe', true);
+                    });
+            });
+
+            // Filtrar por plano de saúde se especificado
+            if ($request->has('health_plan_id')) {
+                $query->whereHas('solicitation', function($q) use ($request) {
+                    $q->where('health_plan_id', $request->health_plan_id);
+                });
+            }
+
+            // Filtrar por data se especificado
+            if ($request->has('date_from')) {
+                $query->where('scheduled_date', '>=', $request->date_from);
+            }
+
+            if ($request->has('date_to')) {
+                $query->where('scheduled_date', '<=', $request->date_to);
+            }
+
+            $appointments = $query->orderBy('scheduled_date', 'desc')
+                ->paginate($request->get('per_page', 15));
+
+            // Adicionar valor do lote de faturamento para cada agendamento
+            $appointments->getCollection()->transform(function($appointment) {
+                $billingBatch = BillingBatch::where('entity_type', Appointment::class)
+                    ->where('entity_id', $appointment->id)
+                    ->whereNull('nfe_number')
+                    ->first();
+                
+                $appointment->amount = $billingBatch ? $billingBatch->total_amount : 0;
+                return $appointment;
+            });
+
+            return response()->json($appointments);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao buscar agendamentos elegíveis para NFe', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Erro ao buscar agendamentos elegíveis'
+            ], 500);
+        }
     }
 } 
