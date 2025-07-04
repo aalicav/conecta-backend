@@ -9,6 +9,7 @@ use App\Models\Appointment;
 use App\Models\PaymentGloss;
 use App\Models\FiscalDocument;
 use App\Notifications\BillingBatchCreated;
+use App\Notifications\BillingEmitted;
 use App\Notifications\PaymentReceived;
 use App\Notifications\PaymentOverdue;
 use App\Notifications\GlosaReceived;
@@ -1048,51 +1049,89 @@ class BillingController extends Controller
     }
 
     /**
+     * Envia notificação de cobrança emitida
+     */
+    public function sendBillingEmittedNotification(Request $request)
+    {
+        $request->validate([
+            'billing_batch_id' => 'required|exists:billing_batches,id',
+            'recipient_ids' => 'required|array',
+            'recipient_ids.*' => 'exists:users,id'
+        ]);
+
+        try {
+            $billingBatch = BillingBatch::with(['items.appointment.solicitation.patient'])->findOrFail($request->billing_batch_id);
+            $recipients = User::whereIn('id', $request->recipient_ids)->get();
+            
+            // Get the first appointment from the batch for notification
+            $firstItem = $billingBatch->items->first();
+            $appointment = $firstItem ? $firstItem->appointment : null;
+            
+            // Send notification to each recipient
+            foreach ($recipients as $recipient) {
+                $recipient->notify(new BillingEmitted($billingBatch, $appointment));
+            }
+
+            return response()->json([
+                'message' => 'Notificação de cobrança emitida enviada com sucesso',
+                'data' => [
+                    'recipients_count' => $recipients->count(),
+                    'billing_batch_id' => $billingBatch->id,
+                    'appointment_id' => $appointment?->id
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Erro ao enviar notificação de cobrança emitida',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Envia notificação relacionada a cobrança
      */
     public function sendNotification(Request $request)
     {
         $request->validate([
-            'billing_item_id' => 'required|exists:billing_items,id',
+            'billing_batch_id' => 'required|exists:billing_batches,id',
             'message' => 'required|string|min:10',
-            'type' => 'required|string|in:billing_notification,payment_reminder,gloss_notification'
+            'type' => 'required|string|in:billing_notification,payment_reminder,gloss_notification,status_update,custom',
+            'recipients' => 'required|string|in:all,patients,providers,financial,custom'
         ]);
 
         try {
-            $billingItem = BillingItem::findOrFail($request->billing_item_id);
+            $billingBatch = BillingBatch::with(['items.appointment.solicitation.patient'])->findOrFail($request->billing_batch_id);
             
-            // Get users with director role
-            $directors = User::role(['director', 'super_admin'])->get();
+            // Get recipients based on selection
+            $recipients = $this->getRecipients($request->recipients, $billingBatch);
             
-            // Send notification to directors
-            foreach ($directors as $director) {
-                $director->notify(new \Illuminate\Notifications\DatabaseNotification([
-                    'id' => \Illuminate\Support\Str::uuid()->toString(),
-                    'type' => 'App\\Notifications\\BillingNotification',
-                    'notifiable_type' => get_class($director),
-                    'notifiable_id' => $director->id,
-                    'data' => json_encode([
-                        'title' => 'Notificação de Cobrança',
-                        'body' => $request->message,
-                        'action_url' => "/billing/batches/{$billingItem->billing_batch_id}",
-                        'action_text' => 'Ver Cobrança',
-                        'icon' => 'dollar-sign',
-                        'priority' => 'normal',
-                        'type' => $request->type,
-                        'billing_item_id' => $billingItem->id,
-                        'billing_batch_id' => $billingItem->billing_batch_id
-                    ]),
-                    'read_at' => null,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]));
+            // Get the first billing item for notification
+            $firstItem = $billingBatch->items->first();
+            
+            if (!$firstItem) {
+                return response()->json([
+                    'message' => 'Nenhum item de cobrança encontrado no lote',
+                ], 422);
+            }
+            
+            // Send notification to each recipient
+            foreach ($recipients as $recipient) {
+                $recipient->notify(new \App\Notifications\BillingCustomNotification(
+                    $firstItem,
+                    $request->message,
+                    $request->type
+                ));
             }
 
             return response()->json([
                 'message' => 'Notificação enviada com sucesso',
                 'data' => [
-                    'recipients_count' => $directors->count(),
-                    'billing_item_id' => $billingItem->id
+                    'recipients_count' => $recipients->count(),
+                    'billing_batch_id' => $billingBatch->id,
+                    'message' => $request->message,
+                    'type' => $request->type
                 ]
             ]);
 
@@ -1101,6 +1140,45 @@ class BillingController extends Controller
                 'message' => 'Erro ao enviar notificação',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Get recipients based on selection
+     */
+    private function getRecipients(string $recipientsType, BillingBatch $billingBatch)
+    {
+        switch ($recipientsType) {
+            case 'all':
+                return User::role(['director', 'super_admin', 'financial', 'plan_admin'])->get();
+                
+            case 'patients':
+                // Get patients from billing batch
+                $patientIds = $billingBatch->items()
+                    ->with('appointment.solicitation.patient')
+                    ->get()
+                    ->pluck('appointment.solicitation.patient.user_id')
+                    ->filter();
+                return User::whereIn('id', $patientIds)->get();
+                
+            case 'providers':
+                // Get providers from billing batch
+                $providerIds = $billingBatch->items()
+                    ->with('appointment.provider')
+                    ->get()
+                    ->pluck('appointment.provider.user_id')
+                    ->filter();
+                return User::whereIn('id', $providerIds)->get();
+                
+            case 'financial':
+                return User::role(['financial', 'financial_supervisor', 'director', 'super_admin'])->get();
+                
+            case 'custom':
+                // For custom recipients, you might want to add a recipients_ids field to the request
+                return User::role(['director', 'super_admin'])->get();
+                
+            default:
+                return User::role(['director', 'super_admin'])->get();
         }
     }
 

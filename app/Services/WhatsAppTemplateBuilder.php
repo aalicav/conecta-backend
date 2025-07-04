@@ -761,4 +761,27 @@ class WhatsAppTemplateBuilder
             '2' => $confirmed ? 'Aguardamos você no horário agendado' : 'Se precisar reagendar, entre em contato conosco'
         ];
     }
+
+    /**
+     * Build the billing emitted template data
+     *
+     * @param string $recipientName
+     * @param string $patientName
+     * @param string $appointmentDate
+     * @param string $billingId
+     * @return array
+     */
+    public function buildBillingEmitted(
+        string $recipientName,
+        string $patientName,
+        string $appointmentDate,
+        string $billingId
+    ): array {
+        return [
+            '1' => $recipientName,
+            '2' => $patientName,
+            '3' => $appointmentDate,
+            '4' => $billingId
+        ];
+    }
 } 

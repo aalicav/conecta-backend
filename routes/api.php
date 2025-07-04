@@ -684,4 +684,30 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/environment-options', [App\Http\Controllers\Billing\NFeConfigController::class, 'getEnvironmentOptions']);
         Route::post('/initialize-defaults', [App\Http\Controllers\Billing\NFeConfigController::class, 'initializeDefaults']);
     });
+    
+    // Billing Routes
+    Route::prefix('billing')->group(function () {
+        Route::get('/batches', [BillingController::class, 'index']);
+        Route::post('/batches', [BillingController::class, 'generateBatch']);
+        Route::get('/batches/{batch}', [BillingController::class, 'show']);
+        Route::post('/batches/{batch}/register-payment', [BillingController::class, 'registerPayment']);
+        Route::post('/batches/{batch}/check-overdue', [BillingController::class, 'checkOverduePayments']);
+        Route::get('/batches/overview', [BillingController::class, 'overview']);
+        Route::get('/batches/export', [BillingController::class, 'exportReport']);
+        
+        // Billing Items
+        Route::post('/items/{item}/register-glosa', [BillingController::class, 'registerGlosa']);
+        Route::delete('/items/{item}', [BillingController::class, 'deleteBillingItem']);
+        
+        // Value Verifications
+        Route::get('/value-verifications', [BillingController::class, 'pendingValueVerifications']);
+        Route::post('/value-verifications/{verification}/verify', [BillingController::class, 'verifyValue']);
+        Route::post('/value-verifications/{verification}/reject', [BillingController::class, 'rejectValue']);
+        Route::post('/items/{item}/create-verification', [BillingController::class, 'createValueVerification']);
+        Route::get('/value-verifications/statistics', [BillingController::class, 'valueVerificationStatistics']);
+        
+        // Notifications
+        Route::post('/notifications', [BillingController::class, 'sendNotification']);
+        Route::post('/billing-emitted-notification', [BillingController::class, 'sendBillingEmittedNotification']);
+    });
 }); 
