@@ -454,7 +454,7 @@ class NFeController extends Controller
                 $subQuery->select(DB::raw(1))
                     ->from('billing_batches')
                     ->join('billing_items', 'billing_batches.id', '=', 'billing_items.billing_batch_id')
-                    ->whereRaw('billing_items.item_type = ?', [Appointment::class])
+                    ->whereRaw('billing_items.item_type = ?', 'appointment')
                     ->whereRaw('billing_items.item_id = appointments.id')
                     ->whereNotNull('billing_batches.nfe_number');
             });
