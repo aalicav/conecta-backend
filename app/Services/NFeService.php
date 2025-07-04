@@ -194,13 +194,18 @@ class NFeService
     /**
      * Generate NFe for a billing batch
      */
-    public function generateNFe(BillingBatch $batch)
+    public function generateNFe($data)
     {
         try {
             $this->initializeNFe();
             
             if (!$this->initialized) {
                 throw new \Exception('NFe não está configurada corretamente');
+            }
+
+            $batch = BillingBatch::find($data['billing_batch_id']);
+            if (!$batch) {
+                throw new \Exception('Lote de faturamento não encontrado');
             }
 
             $nfe = new Make();
@@ -220,21 +225,24 @@ class NFeService
             $nfeNumber = $this->generateNFeNumber();
             $nfeKey = $this->generateNFeKey($nfeNumber);
 
-            // Save NFe information to database
-            $batch->update([
+            return [
+                'success' => true,
                 'nfe_number' => $nfeNumber,
                 'nfe_key' => $nfeKey,
-                'nfe_xml' => $xml,
-                'nfe_status' => 'issued'
-            ]);
-
-            return true;
+                'xml_path' => $xml,
+                'status' => 'issued',
+                'protocol' => null,
+                'authorization_date' => now()
+            ];
         } catch (\Exception $e) {
             Log::error('Error generating NFe: ' . $e->getMessage(), [
-                'batch_id' => $batch->id,
+                'data' => $data,
                 'error' => $e->getMessage()
             ]);
-            return false;
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
         }
     }
 

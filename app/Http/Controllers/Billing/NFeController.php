@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\BillingBatch;
 use App\Models\Appointment;
 use App\Models\BillingItem;
-use App\Models\Contract;
 use App\Models\BillingRule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -25,7 +24,7 @@ class NFeController extends Controller
 
     public function index(Request $request)
     {
-        $query = BillingBatch::with(['healthPlan', 'contract'])
+        $query = BillingBatch::with(['healthPlan'])
             ->whereNotNull('nfe_number')
             ->orderBy('created_at', 'desc');
 
@@ -36,9 +35,6 @@ class NFeController extends Controller
                     ->orWhere('nfe_key', 'like', "%{$search}%")
                     ->orWhereHas('healthPlan', function ($q) use ($search) {
                         $q->where('name', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('contract', function ($q) use ($search) {
-                        $q->where('number', 'like', "%{$search}%");
                     });
             });
         }
@@ -63,7 +59,7 @@ class NFeController extends Controller
 
     public function show($id)
     {
-        $nfe = BillingBatch::with(['healthPlan', 'contract', 'items.procedure'])
+        $nfe = BillingBatch::with(['healthPlan', 'items.procedure'])
             ->whereNotNull('nfe_number')
             ->findOrFail($id);
 
@@ -196,7 +192,7 @@ class NFeController extends Controller
      */
     public function findSubstituteNFes($id)
     {
-        $nfe = BillingBatch::with(['healthPlan', 'contract'])
+        $nfe = BillingBatch::with(['healthPlan'])
             ->whereNotNull('nfe_number')
             ->findOrFail($id);
 
@@ -217,7 +213,7 @@ class NFeController extends Controller
             $minAmount = $nfe->total_amount - $tolerance;
             $maxAmount = $nfe->total_amount + $tolerance;
 
-            $substituteNFes = BillingBatch::with(['healthPlan', 'contract'])
+            $substituteNFes = BillingBatch::with(['healthPlan'])
                 ->where('id', '!=', $nfe->id)
                 ->where('health_plan_id', $nfe->health_plan_id)
                 ->where('nfe_status', 'authorized')
@@ -285,17 +281,8 @@ class NFeController extends Controller
                 ], 400);
             }
 
-            // Buscar contrato ativo entre o plano de saúde e o profissional
-            $contract = Contract::where('health_plan_id', $appointment->solicitation->health_plan_id)
-                ->where('professional_id', $appointment->provider_id)
-                ->where('status', 'active')
-                ->first();
-
-            if (!$contract) {
-                return response()->json([
-                    'message' => 'Não foi encontrado um contrato ativo para este agendamento'
-                ], 400);
-            }
+            // Calcular valor do agendamento
+            $amount = $this->calculateAppointmentPrice($appointment);
 
             // Buscar regra de faturamento
             $billingRule = BillingRule::where('health_plan_id', $appointment->solicitation->health_plan_id)
@@ -307,9 +294,6 @@ class NFeController extends Controller
                     'message' => 'Regra de faturamento não encontrada ou NFe não habilitada'
                 ], 400);
             }
-
-            // Calcular valor baseado no contrato ou preço padrão
-            $amount = $contract->price ?? 0;
 
             // Criar lote de faturamento
             $billingBatch = BillingBatch::create([
@@ -325,7 +309,6 @@ class NFeController extends Controller
                 'created_by' => auth()->id(),
                 'billing_rule_id' => $billingRule->id,
                 'health_plan_id' => $appointment->solicitation->health_plan_id,
-                'contract_id' => $contract->id,
             ]);
 
             // Criar item de faturamento
@@ -351,13 +334,13 @@ class NFeController extends Controller
 
             $nfeResult = $this->nfeService->generateNFe($nfeData);
 
-            if ($nfeResult['success']) {
+            if (is_array($nfeResult) && isset($nfeResult['success']) && $nfeResult['success']) {
                 // Atualizar lote com informações da NFe
                 $billingBatch->update([
-                    'nfe_number' => $nfeResult['nfe_number'],
-                    'nfe_key' => $nfeResult['nfe_key'],
-                    'nfe_xml' => $nfeResult['xml_path'],
-                    'nfe_status' => $nfeResult['status'],
+                    'nfe_number' => $nfeResult['nfe_number'] ?? null,
+                    'nfe_key' => $nfeResult['nfe_key'] ?? null,
+                    'nfe_xml' => $nfeResult['xml_path'] ?? null,
+                    'nfe_status' => $nfeResult['status'] ?? 'pending',
                     'nfe_protocol' => $nfeResult['protocol'] ?? null,
                     'nfe_authorization_date' => $nfeResult['authorization_date'] ?? null,
                     'status' => 'completed',
@@ -368,13 +351,14 @@ class NFeController extends Controller
                 return response()->json([
                     'message' => 'Nota fiscal gerada com sucesso',
                     'nfe_id' => $billingBatch->id,
-                    'nfe_number' => $nfeResult['nfe_number'],
-                    'nfe_key' => $nfeResult['nfe_key'],
+                    'nfe_number' => $nfeResult['nfe_number'] ?? null,
+                    'nfe_key' => $nfeResult['nfe_key'] ?? null,
                 ]);
             } else {
                 DB::rollBack();
+                $errorMessage = is_array($nfeResult) ? ($nfeResult['error'] ?? 'Erro desconhecido') : 'Erro ao gerar nota fiscal';
                 return response()->json([
-                    'message' => 'Erro ao gerar nota fiscal: ' . $nfeResult['error']
+                    'message' => 'Erro ao gerar nota fiscal: ' . $errorMessage
                 ], 500);
             }
 
@@ -390,5 +374,76 @@ class NFeController extends Controller
                 'message' => 'Erro interno ao gerar nota fiscal'
             ], 500);
         }
+    }
+
+    /**
+     * Calculate appointment price based on rules and contracts
+     */
+    private function calculateAppointmentPrice(Appointment $appointment): float
+    {
+        // Get the base procedure price, defaulting to 0 if null
+        $basePrice = $appointment->procedure_price ?? 0.0;
+        
+        // If not a consultation (10101012), return standard procedure price
+        if ($appointment->solicitation->tuss->code !== '10101012') {
+            // Busca o preço na nova tabela health_plan_procedures
+            if ($appointment->solicitation && $appointment->solicitation->health_plan_id) {
+                $healthPlan = \App\Models\HealthPlan::find($appointment->solicitation->health_plan_id);
+                if ($healthPlan) {
+                    $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                    if ($price !== null) {
+                        return (float) $price;
+                    }
+                }
+            }
+            return (float) $basePrice;
+        }
+
+        // Check for specialty-specific pricing
+        if ($appointment->provider && $appointment->provider->medical_specialty_id) {
+            $specialty = $appointment->provider->medicalSpecialty;
+            
+            if ($specialty) {
+                // Try to get price in order:
+                // 1. Professional specific price
+                $price = $specialty->getPriceForEntity('professional', $appointment->provider_id);
+                if ($price !== null && $price > 0) {
+                    return (float) $price;
+                }
+
+                // 2. Clinic specific price
+                if ($appointment->clinic_id) {
+                    $price = $specialty->getPriceForEntity('clinic', $appointment->clinic_id);
+                    if ($price !== null && $price > 0) {
+                        return (float) $price;
+                    }
+                }
+
+                // 3. Health plan specific price (nova tabela)
+                if ($appointment->solicitation && $appointment->solicitation->health_plan_id) {
+                    $healthPlan = \App\Models\HealthPlan::find($appointment->solicitation->health_plan_id);
+                    if ($healthPlan) {
+                        $price = $healthPlan->getProcedurePrice($appointment->solicitation->tuss_id);
+                        if ($price !== null && $price > 0) {
+                            return (float) $price;
+                        }
+                    }
+                    
+                    // Fallback para especialidade
+                    $price = $specialty->getPriceForEntity('health_plan', $appointment->solicitation->health_plan_id);
+                    if ($price !== null && $price > 0) {
+                        return (float) $price;
+                    }
+                }
+
+                // 4. Specialty default price
+                if ($specialty->default_price && $specialty->default_price > 0) {
+                    return (float) $specialty->default_price;
+                }
+            }
+        }
+
+        // Return standard procedure price if no specialty pricing found
+        return (float) $basePrice;
     }
 } 
