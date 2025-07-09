@@ -632,11 +632,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('medical-specialties')->group(function () {
         // Rotas públicas (apenas autenticação necessária)
         Route::get('/', [MedicalSpecialtyController::class, 'index']);
+        Route::get('/{specialty}', [MedicalSpecialtyController::class, 'show']);
         
         // Rotas que requerem permissões específicas
         Route::middleware('permission:manage medical specialties')->group(function () {
             Route::post('/', [MedicalSpecialtyController::class, 'store']);
             Route::put('/{specialty}', [MedicalSpecialtyController::class, 'update']);
+            Route::delete('/{specialty}', [MedicalSpecialtyController::class, 'destroy']);
         });
 
         // Rotas relacionadas a negociações

@@ -40,6 +40,14 @@ class MedicalSpecialtyController extends Controller
     }
 
     /**
+     * Obtém uma especialidade médica específica
+     */
+    public function show(MedicalSpecialty $specialty)
+    {
+        return response()->json($specialty);
+    }
+
+    /**
      * Cria uma nova especialidade médica
      */
     public function store(Request $request)
@@ -100,6 +108,25 @@ class MedicalSpecialtyController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['message' => 'Erro ao atualizar especialidade', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Exclui uma especialidade médica
+     */
+    public function destroy(MedicalSpecialty $specialty)
+    {
+        try {
+            DB::beginTransaction();
+
+            $specialty->delete();
+
+            DB::commit();
+
+            return response()->json(['message' => 'Especialidade excluída com sucesso']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Erro ao excluir especialidade', 'error' => $e->getMessage()], 500);
         }
     }
 
