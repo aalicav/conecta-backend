@@ -396,44 +396,28 @@ class NFeService
         $nItem = 1;
 
         foreach ($batch->items as $item) {
+            $valor = (float)($item->total_amount ?? $item->unit_price ?? 0);
+            $descricao = $item->description ?? $item->tuss_description ?? 'Serviço médico';
+            $codigo = $item->tuss_code ?? '00000000'; // Código TUSS ou outro código
+            $ncm = '99999999'; // NCM para serviços médicos (ou o correto para seu caso)
+            $cfop = '5933'; // CFOP para prestação de serviço
+            $unidade = 'UN'; // Unidade padrão
+            $quantidade = 1.0000; // Normalmente 1 para serviços
+
             $items[] = [
-                'nItem' => $nItem++,
-                'prod' => [
-                    'cProd' => $item->appointment->procedure->code,
-                    'xProd' => $item->appointment->procedure->name,
-                    'NCM' => '85149090',
-                    'CFOP' => '5933',
-                    'uCom' => 'UN',
-                    'qCom' => '1.0000',
-                    'vUnCom' => number_format((float)$item->amount, 2, '.', ''),
-                    'vProd' => number_format((float)$item->amount, 2, '.', ''),
-                    'indTot' => '1'
-                ],
-                'imposto' => [
-                    'vTotTrib' => '0.00',
-                    'ICMS' => [
-                        'ICMS00' => [
-                            'orig' => '0',
-                            'CST' => '41',
-                            'modBC' => '0',
-                            'vBC' => '0.00',
-                            'pICMS' => '0.00',
-                            'vICMS' => '0.00'
-                        ]
-                    ],
-                    'PIS' => [
-                        'CST' => '07',
-                        'vBC' => '0.00',
-                        'pPIS' => '0.00',
-                        'vPIS' => '0.00'
-                    ],
-                    'COFINS' => [
-                        'CST' => '07',
-                        'vBC' => '0.00',
-                        'pCOFINS' => '0.00',
-                        'vCOFINS' => '0.00'
-                    ]
-                ]
+                'nItem'   => $nItem++,
+                'cProd'   => $codigo,
+                'xProd'   => $descricao,
+                'NCM'     => $ncm,
+                'CFOP'    => $cfop,
+                'uCom'    => $unidade,
+                'qCom'    => $quantidade,
+                'vUnCom'  => number_format($valor, 2, '.', ''),
+                'vProd'   => number_format($valor, 2, '.', ''),
+                'uTrib'   => $unidade,
+                'qTrib'   => $quantidade,
+                'vUnTrib' => number_format($valor, 2, '.', ''),
+                'indTot'  => 1,
             ];
         }
 
