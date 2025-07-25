@@ -357,8 +357,7 @@ class NFeService
      */
     protected function getNFeDest(BillingBatch $batch)
     {
-        $healthPlan = $batch->healthPlan;
-        $contract = $batch->contract;
+        $healthPlan = HealthPlan::findOrFail($batch->entity_id);
 
         return [
             'CNPJ' => $healthPlan->cnpj,
