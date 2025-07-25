@@ -54,6 +54,7 @@ class BillingItem extends Model
         'unit_price' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'tax_amount' => 'decimal:2',
+        'item_id' => 'integer',
         'total_amount' => 'decimal:2',
         'verified_by_operator' => 'boolean',
         'verified_at' => 'datetime',
