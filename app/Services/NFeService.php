@@ -221,7 +221,7 @@ class NFeService
             $xml = $nfe->getXML();
             $errors = $nfe->getErrors();
             if (!empty($errors)) {
-                Log::error('Erros ao gerar NFe:', $errors);
+                Log::error('Erros ao gerar NFe: ' . print_r($errors, true));
                 return [
                     'success' => false,
                     'error' => 'Erros ao gerar NFe: ' . implode('; ', $errors)
