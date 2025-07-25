@@ -269,7 +269,7 @@ class NFeController extends Controller
             }
 
             // Verificar se já existe uma NFe para este agendamento
-            $existingNFe = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
+            $existingNFe = BillingBatch::where('entity_id', $appointment->solicitation->health_plan_id)
                 ->whereHas('items', function($query) use ($appointmentId) {
                     $query->where('item_type', 'appointment')
                           ->where('item_id', $appointmentId);
@@ -284,23 +284,13 @@ class NFeController extends Controller
                 ], 400);
             }
 
-            Log::info('appointment', ['health_plan_id' => $appointment->solicitation->health_plan_id]);
-
             // Buscar o lote de faturamento existente para este plano de saúde
-            $billingBatch = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
+            $billingBatch = BillingBatch::where('entity_id', $appointment->solicitation->health_plan_id)
                 ->whereNull('nfe_number')
                 ->whereHas('items', function($query) use ($appointmentId) {
-                    Log::info('appointmentId', ['appointmentId' => $appointmentId]);
                     $query->where('item_type', 'appointment')
                           ->where('item_id', intval($appointmentId));
-                });
-                $sql = $billingBatch->toSql();
-$bindings = $billingBatch->getBindings();
-$fullSql = vsprintf(str_replace('?', '%s', $sql), array_map(function ($binding) {
-    return is_numeric($binding) ? $binding : "'$binding'";
-}, $bindings));
-
-                Log::info('billingBatch', ['billingBatch' => $fullSql]);
+                })->first();
 
             if (!$billingBatch) {
                 return response()->json([
