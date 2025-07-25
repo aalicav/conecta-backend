@@ -288,7 +288,7 @@ class NFeController extends Controller
             $billingBatch = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
                 ->whereNull('nfe_number')
                 ->whereHas('items', function($query) use ($appointmentId) {
-                    Log::info('appointmentId', $appointmentId);
+                    Log::info('appointmentId', ['appointmentId' => $appointmentId]);
                     $query->where('item_type', 'appointment')
                           ->where('item_id', $appointmentId);
                 })
