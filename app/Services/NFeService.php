@@ -219,6 +219,14 @@ class NFeService
             $nfe->tagpag((object)$this->getNFePayment($batch));
 
             $xml = $nfe->getXML();
+            $errors = $nfe->getErrors();
+            if (!empty($errors)) {
+                Log::error('Erros ao gerar NFe:', $errors);
+                return [
+                    'success' => false,
+                    'error' => 'Erros ao gerar NFe: ' . implode('; ', $errors)
+                ];
+            }
             $this->tools->sefazEnviaLote([$xml]);
 
             // Generate NFe number and key
