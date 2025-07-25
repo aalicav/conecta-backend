@@ -307,7 +307,7 @@ class NFeService
         
         return [
             'cUF' => $this->getStateCode(),
-            'cNF' => $nfeNumber,
+            'cNF' => $this->generateCNF($nfeNumber),
             'natOp' => 'PRESTAÇÃO DE SERVIÇOS MÉDICOS',
             'mod' => '55',
             'serie' => '1',
@@ -642,5 +642,16 @@ class NFeService
                 'error' => $e->getMessage()
             ];
         }
+    }
+
+    /**
+     * Generate a random 8-digit CNF (Código Numérico da NF-e)
+     * This CNF must be different from the NNF (Número da NF-e).
+     */
+    protected function generateCNF($nNF) {
+        do {
+            $cNF = str_pad(mt_rand(0, 99999999), 8, '0', STR_PAD_LEFT);
+        } while ($cNF == $nNF);
+        return $cNF;
     }
 } 
