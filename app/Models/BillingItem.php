@@ -74,7 +74,7 @@ class BillingItem extends Model
      */
     public function appointment(): BelongsTo
     {
-        return $this->belongsTo(Appointment::class);
+        return $this->belongsTo(Appointment::class, 'item_id');
     }
 
     /**
