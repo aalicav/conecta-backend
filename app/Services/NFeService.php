@@ -399,7 +399,7 @@ class NFeService
             $valor = (float)($item->total_amount ?? $item->unit_price ?? 0);
             $descricao = $item->description ?? $item->tuss_description ?? 'Serviço médico';
             $codigo = $item->tuss_code ?? '00000000'; // Código TUSS ou outro código
-            $ncm = '99999999'; // NCM para serviços médicos (ou o correto para seu caso)
+            $ncm = '99999999'; // NCM para serviços médicos (ou consulte seu contador)
             $cfop = '5933'; // CFOP para prestação de serviço
             $unidade = 'UN'; // Unidade padrão
             $quantidade = 1.0000; // Normalmente 1 para serviços
