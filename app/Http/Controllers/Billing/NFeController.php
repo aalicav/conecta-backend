@@ -315,6 +315,17 @@ class NFeController extends Controller
                 'appointment_date' => $appointment->scheduled_date,
             ];
 
+            // Gerar nNF (número da nota fiscal)
+            $nNF = $billingBatch->nfe_number ?? null;
+            // Gerar cNF (código numérico da nota fiscal) diferente de nNF
+            $cNF = null;
+            if ($nNF) {
+                do {
+                    $cNF = str_pad(mt_rand(0, 99999999), 8, '0', STR_PAD_LEFT);
+                } while ($cNF == $nNF);
+                $nfeData['cNF'] = $cNF;
+            }
+
             $nfeResult = $this->nfeService->generateNFe($nfeData);
 
             if (is_array($nfeResult) && isset($nfeResult['success']) && $nfeResult['success']) {
