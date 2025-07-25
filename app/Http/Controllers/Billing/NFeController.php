@@ -290,7 +290,7 @@ class NFeController extends Controller
                 ->whereHas('items', function($query) use ($appointmentId) {
                     Log::info('appointmentId', ['appointmentId' => $appointmentId]);
                     $query->where('item_type', 'appointment')
-                          ->where('item_id', $appointmentId);
+                          ->where('item_id', intval($appointmentId));
                 })
                 ->first();
 
