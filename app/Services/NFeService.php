@@ -399,25 +399,27 @@ class NFeService
             $valor = (float)($item->total_amount ?? $item->unit_price ?? 0);
             $descricao = $item->description ?? $item->tuss_description ?? 'Serviço médico';
             $codigo = $item->tuss_code ?? '00000000'; // Código TUSS ou outro código
-            $ncm = '00'; // NCM para serviços médicos (ou consulte seu contador)
+            $ncm = '99999999'; // NCM para serviços médicos (8 dígitos)
             $cfop = '5933'; // CFOP para prestação de serviço
             $unidade = 'UN'; // Unidade padrão
             $quantidade = 1.0000; // Normalmente 1 para serviços
 
             $items[] = [
-                'nItem'   => $nItem++,
-                'cProd'   => $codigo,
-                'xProd'   => $descricao,
-                'NCM'     => $ncm,
-                'CFOP'    => $cfop,
-                'uCom'    => $unidade,
-                'qCom'    => $quantidade,
-                'vUnCom'  => number_format($valor, 2, '.', ''),
-                'vProd'   => number_format($valor, 2, '.', ''),
-                'uTrib'   => $unidade,
-                'qTrib'   => $quantidade,
-                'vUnTrib' => number_format($valor, 2, '.', ''),
-                'indTot'  => 1,
+                'nItem'     => $nItem++,
+                'cProd'     => (string)$codigo,
+                'cEAN'      => '', // ou 'SEM GTIN'
+                'xProd'     => (string)$descricao,
+                'NCM'       => (string)$ncm,
+                'CFOP'      => (string)$cfop,
+                'uCom'      => (string)$unidade,
+                'qCom'      => number_format($quantidade, 4, '.', ''),
+                'vUnCom'    => number_format($valor, 2, '.', ''),
+                'vProd'     => number_format($valor, 2, '.', ''),
+                'cEANTrib'  => '', // ou 'SEM GTIN'
+                'uTrib'     => (string)$unidade,
+                'qTrib'     => number_format($quantidade, 4, '.', ''),
+                'vUnTrib'   => number_format($valor, 2, '.', ''),
+                'indTot'    => 1,
             ];
         }
 
