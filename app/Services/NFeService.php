@@ -245,7 +245,6 @@ class NFeService
             ];
         } catch (\Exception $e) {
             Log::error('Error generating NFe: ' . $e->getMessage(), [
-                'data' => $data,
                 'error' => $e->getMessage()
             ]);
             return [
