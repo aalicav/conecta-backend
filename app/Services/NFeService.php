@@ -218,7 +218,7 @@ class NFeService
             $nfe->tagtransp((object)$this->getNFeTransp());
             $nfe->tagpag((object)$this->getNFePayment($batch));
 
-            $xml = $nfe->getXML();
+            
             $errors = $nfe->getErrors();
             Log::info('Errors: ', $errors);
             if (!empty($errors)) {
@@ -228,6 +228,7 @@ class NFeService
                     'error' => 'Erros ao gerar NFe: ' . implode('; ', $errors)
                 ];
             }
+            $xml = $nfe->getXML();
             $this->tools->sefazEnviaLote([$xml]);
 
             // Generate NFe number and key
