@@ -300,9 +300,7 @@ $fullSql = vsprintf(str_replace('?', '%s', $sql), array_map(function ($binding) 
     return is_numeric($binding) ? $binding : "'$binding'";
 }, $bindings));
 
-dd($fullSql);
-        
-                Log::info('billingBatch', ['billingBatch' => $billingBatch]);
+                Log::info('billingBatch', ['billingBatch' => $fullSql]);
 
             if (!$billingBatch) {
                 return response()->json([
