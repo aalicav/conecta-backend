@@ -293,7 +293,7 @@ class NFeController extends Controller
                     Log::info('appointmentId', ['appointmentId' => $appointmentId]);
                     $query->where('item_type', 'appointment')
                           ->where('item_id', intval($appointmentId));
-                })->get()->first();
+                })->get();
         
                 Log::info('billingBatch', ['billingBatch' => $billingBatch]);
 
