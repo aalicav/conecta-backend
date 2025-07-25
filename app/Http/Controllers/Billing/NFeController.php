@@ -295,6 +295,7 @@ class NFeController extends Controller
                 ->first();
 
             if (!$billingBatch) {
+                Log::info('billingBatch', ['billingBatch' => $billingBatch]);
                 return response()->json([
                     'message' => 'Lote de faturamento não encontrado para este agendamento'
                 ], 400);
