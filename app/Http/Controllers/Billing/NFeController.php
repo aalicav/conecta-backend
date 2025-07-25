@@ -271,7 +271,7 @@ class NFeController extends Controller
             // Verificar se já existe uma NFe para este agendamento
             $existingNFe = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
                 ->whereHas('items', function($query) use ($appointmentId) {
-                    $query->where('item_type', Appointment::class)
+                    $query->where('item_type', 'appointment')
                           ->where('item_id', $appointmentId);
                 })
                 ->whereNotNull('nfe_number')
@@ -288,6 +288,7 @@ class NFeController extends Controller
             $billingBatch = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
                 ->whereNull('nfe_number')
                 ->whereHas('items', function($query) use ($appointmentId) {
+                    Log::info('appointmentId', $appointmentId);
                     $query->where('item_type', 'appointment')
                           ->where('item_id', $appointmentId);
                 })
