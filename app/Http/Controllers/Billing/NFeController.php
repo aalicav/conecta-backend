@@ -284,6 +284,8 @@ class NFeController extends Controller
                 ], 400);
             }
 
+            Log::info('appointment', ['health_plan_id' => $appointment->solicitation->health_plan_id]);
+
             // Buscar o lote de faturamento existente para este plano de saúde
             $billingBatch = BillingBatch::where('health_plan_id', $appointment->solicitation->health_plan_id)
                 ->whereNull('nfe_number')
