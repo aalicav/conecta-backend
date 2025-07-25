@@ -293,7 +293,14 @@ class NFeController extends Controller
                     Log::info('appointmentId', ['appointmentId' => $appointmentId]);
                     $query->where('item_type', 'appointment')
                           ->where('item_id', intval($appointmentId));
-                })->get();
+                });
+                $sql = $billingBatch->toSql();
+$bindings = $billingBatch->getBindings();
+$fullSql = vsprintf(str_replace('?', '%s', $sql), array_map(function ($binding) {
+    return is_numeric($binding) ? $binding : "'$binding'";
+}, $bindings));
+
+dd($fullSql);
         
                 Log::info('billingBatch', ['billingBatch' => $billingBatch]);
 
