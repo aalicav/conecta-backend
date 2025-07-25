@@ -294,9 +294,10 @@ class NFeController extends Controller
                     $query->where('item_type', 'appointment')
                           ->where('item_id', intval($appointmentId));
                 });
+        
+                Log::info('billingBatch', ['billingBatch' => $billingBatch]);
 
             if (!$billingBatch) {
-                Log::info('billingBatch', ['billingBatch' => $billingBatch]);
                 return response()->json([
                     'message' => 'Lote de faturamento não encontrado para este agendamento'
                 ], 400);
