@@ -209,11 +209,12 @@ class NFeService
             }
 
             $nfeNumber = $this->generateNFeNumber();
-            $nfeKey = $this->generateNFeKey($nfeNumber);
+            $cNF = $this->generateCNF($nfeNumber);
+            $nfeKey = $this->generateNFeKey($nfeNumber, $cNF);
 
             $nfe = new Make();
             $nfe->taginfNFe((object)$this->getNFeInfo($batch, $nfeNumber, $nfeKey));
-            $nfe->tagide((object)$this->getNFeIde($batch, $nfeNumber, $nfeKey));
+            $nfe->tagide((object)$this->getNFeIde($batch, $nfeNumber, $nfeKey, $cNF));
             $nfe->tagemit((object)$this->getNFeEmit());
             $nfe->tagdest((object)$this->getNFeDest($batch));
             foreach ($this->getNFeItems($batch) as $item) {
@@ -278,7 +279,7 @@ class NFeService
     /**
      * Generate NFe key
      */
-    protected function generateNFeKey($nfeNumber)
+    protected function generateNFeKey($nfeNumber, $cNF)
     {
         $uf = $this->getStateCode();
         $date = date('ym');
@@ -286,9 +287,9 @@ class NFeService
         $model = '55';
         $series = '001';
         $number = str_pad($nfeNumber, 9, '0', STR_PAD_LEFT);
-        $code = '00000000';
+        $cNF = str_pad($cNF, 8, '0', STR_PAD_LEFT);
         
-        $key = $uf . $date . $cnpj . $model . $series . $number . $code;
+        $key = $uf . $date . $cnpj . $model . $series . $number . $cNF;
         
         // Calculate check digit
         $sum = 0;
@@ -318,11 +319,11 @@ class NFeService
     /**
      * Get NFe identification information
      */
-    protected function getNFeIde(BillingBatch $batch, $nfeNumber, $nfeKey)
+    protected function getNFeIde(BillingBatch $batch, $nfeNumber, $nfeKey, $cNF)
     {
         return [
             'cUF' => $this->getStateCode(),
-            'cNF' => $this->generateCNF($nfeNumber),
+            'cNF' => $cNF,
             'natOp' => 'PRESTAÇÃO DE SERVIÇOS MÉDICOS',
             'mod' => '55',
             'serie' => '1',
