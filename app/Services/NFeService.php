@@ -326,8 +326,8 @@ class NFeService
             'cNF' => $cNF,
             'natOp' => 'PRESTAÇÃO DE SERVIÇOS MÉDICOS',
             'mod' => '55',
-            'serie' => '1',
-            'nNF' => $nfeNumber,
+            'serie' => '001', // <-- Corrigido
+            'nNF' => str_pad($nfeNumber, 9, '0', STR_PAD_LEFT), // <-- Corrigido
             'dhEmi' => date('Y-m-d\TH:i:sP'),
             'tpNF' => '1',
             'idDest' => '1',
