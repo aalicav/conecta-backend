@@ -210,11 +210,10 @@ class NFeService
 
             $nfeNumber = $this->generateNFeNumber();
             $cNF = $this->generateCNF($nfeNumber);
-            $nfeKey = $this->generateNFeKey($nfeNumber, $cNF, '1');
 
             $nfe = new Make();
-            $nfe->taginfNFe((object)$this->getNFeInfo($batch, $nfeNumber, $nfeKey));
-            $nfe->tagide((object)$this->getNFeIde($batch, $nfeNumber, $nfeKey, $cNF));
+            $nfe->taginfNFe((object)$this->getNFeInfo($batch, $nfeNumber));
+            $nfe->tagide((object)$this->getNFeIde($batch, $nfeNumber, $cNF));
             $nfe->tagemit((object)$this->getNFeEmit());
             $nfe->tagdest((object)$this->getNFeDest($batch));
             foreach ($this->getNFeItems($batch) as $item) {
@@ -226,15 +225,16 @@ class NFeService
 
             $errors = $nfe->getErrors();
             if (!empty($errors)) {
-                Log::error('Erros ao gerar NFe: ' . print_r($errors, true)); // <-- print_r força o array como string
+                Log::error('Erros ao gerar NFe: ' . print_r($errors, true));
                 return [
                     'success' => false,
                     'error' => 'Erros ao gerar NFe: ' . implode('; ', $errors)
                 ];
             }
+
             $xml = '';
-            try{
-               $xml = $nfe->getXML(); 
+            try {
+                $xml = $nfe->getXML();
             } catch (\Exception $e) {
                 Log::error('Error generating NFe: ' . $e->getMessage(), [
                     'error' => $e->getMessage(),
@@ -245,9 +245,20 @@ class NFeService
                     'error' => $e->getMessage()
                 ];
             }
+
+            // Extract NFe key from XML
+            $nfeKey = $this->extractNFeKeyFromXML($xml);
+            
+            if (!$nfeKey) {
+                Log::error('Could not extract NFe key from XML');
+                return [
+                    'success' => false,
+                    'error' => 'Não foi possível extrair a chave da NFe do XML'
+                ];
+            }
+
             $this->tools->sefazEnviaLote([$xml]);
 
-            // Generate NFe number and key
             return [
                 'success' => true,
                 'nfe_number' => $nfeNumber,
@@ -353,10 +364,10 @@ class NFeService
     /**
      * Get NFe basic information
      */
-    protected function getNFeInfo(BillingBatch $batch, $nfeNumber, $nfeKey)
+    protected function getNFeInfo(BillingBatch $batch, $nfeNumber)
     {
         return [
-            'Id' => 'NFe' . $nfeKey,
+            'Id' => '', // Let NFePHP generate the ID automatically
             'versao' => '4.00'
         ];
     }
@@ -364,22 +375,22 @@ class NFeService
     /**
      * Get NFe identification information
      */
-    protected function getNFeIde(BillingBatch $batch, $nfeNumber, $nfeKey, $cNF)
+    protected function getNFeIde(BillingBatch $batch, $nfeNumber, $cNF)
     {
         return [
             'cUF' => $this->getStateCode(),
             'cNF' => $cNF,
             'natOp' => 'PRESTAÇÃO DE SERVIÇOS MÉDICOS',
             'mod' => '55',
-            'serie' => '001', // <-- Corrigido
-            'nNF' => str_pad($nfeNumber, 9, '0', STR_PAD_LEFT), // <-- Corrigido
+            'serie' => '001',
+            'nNF' => str_pad($nfeNumber, 9, '0', STR_PAD_LEFT),
             'dhEmi' => date('Y-m-d\TH:i:sP'),
             'tpNF' => '1',
             'idDest' => '1',
             'cMunFG' => $this->getCityCode(),
             'tpImp' => '1',
             'tpEmis' => '1',
-            'cDV' => substr($nfeKey, -1),
+            'cDV' => '', // Let NFePHP calculate the check digit
             'tpAmb' => $this->config['tpAmb'],
             'finNFe' => '1',
             'indFinal' => '1',
@@ -701,5 +712,30 @@ class NFeService
             $cNF = str_pad(mt_rand(0, 99999999), 8, '0', STR_PAD_LEFT);
         } while ($cNF == $nNF);
         return $cNF;
+    }
+
+    /**
+     * Extract NFe key from XML string.
+     * This method is needed because the NFePHP library generates the key in the XML.
+     * We need to parse the XML to find it.
+     */
+    protected function extractNFeKeyFromXML($xml)
+    {
+        $xml = simplexml_load_string($xml);
+        if ($xml === false) {
+            Log::error('Failed to parse XML for key extraction.');
+            return null;
+        }
+
+        // Look for the taginfNFe and its Id attribute
+        $nfeId = $xml->taginfNFe->Id;
+        if (empty($nfeId)) {
+            Log::error('NFe Id not found in XML.');
+            return null;
+        }
+
+        // The key is the last part of the Id, after "NFe"
+        $key = substr($nfeId, 3); // Remove "NFe" prefix
+        return $key;
     }
 } 
