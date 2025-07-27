@@ -213,12 +213,9 @@ class NFeService
             $nfe->tagide((object)$this->getNFeIde($batch));
             $nfe->tagemit((object)$this->getNFeEmit());
             $nfe->tagdest((object)$this->getNFeDest($batch));
-
-            // Adiciona cada item individualmente
             foreach ($this->getNFeItems($batch) as $item) {
                 $nfe->tagprod((object)$item);
             }
-
             $nfe->tagICMSTot((object)$this->getNFeTotal($batch));
             $nfe->tagtransp((object)$this->getNFeTransp());
             $nfe->tagpag((object)$this->getNFePayment($batch));
@@ -399,13 +396,13 @@ class NFeService
         $nItem = 1;
 
         foreach ($batch->items as $item) {
-            $valor = (float)($item->total_amount ?? $item->unit_price ?? 0.01); // nunca zero
-            $descricao = trim($item->description ?? $item->tuss_description ?? 'Serviço médico');
-            $codigo = trim($item->tuss_code ?? '00000001'); // nunca vazio
-            $ncm = preg_match('/^\d{8}$/', $item->ncm ?? '') ? $item->ncm : '99999999'; // 8 dígitos
-            $cfop = $item->cfop ?? '5933'; // padrão para serviço
-            $unidade = $item->unit ?? 'UN'; // unidade padrão
-            $quantidade = (float)($item->quantity ?? 1.0000); // nunca zero
+            $valor = (float)($item->total_amount ?? $item->unit_price ?? 0);
+            $descricao = $item->description ?? $item->tuss_description ?? 'Serviço médico';
+            $codigo = $item->tuss_code ?? '00000000'; // Código TUSS ou outro código
+            $ncm = '99999999'; // NCM para serviços médicos (8 dígitos)
+            $cfop = '5933'; // CFOP para prestação de serviço
+            $unidade = 'UN'; // Unidade padrão
+            $quantidade = 1.0000; // Normalmente 1 para serviços
 
             $items[] = [
                 'nItem'     => $nItem++,
