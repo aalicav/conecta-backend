@@ -226,7 +226,19 @@ class NFeService
                     'error' => 'Erros ao gerar NFe: ' . implode('; ', $errors)
                 ];
             }
-            $xml = $nfe->getXML();
+            $xml = '';
+            try{
+               $xml = $nfe->getXML(); 
+            } catch (\Exception $e) {
+                Log::error('Error generating NFe: ' . $e->getMessage(), [
+                    'error' => $e->getMessage(),
+                    'errors' => $nfe->getErrors(),
+                ]);
+                return [
+                    'success' => false,
+                    'error' => $e->getMessage()
+                ];
+            }
             $this->tools->sefazEnviaLote([$xml]);
 
             // Generate NFe number and key
