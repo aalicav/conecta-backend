@@ -247,7 +247,7 @@ class NFeService
             }
 
             // Extract NFe key from XML
-            $nfeKey = $this->extractNFeKeyFromXML($xml);
+            $nfeKey = $nfe->getChave();
             
             if (!$nfeKey) {
                 Log::error('Could not extract NFe key from XML');
@@ -257,7 +257,7 @@ class NFeService
                 ];
             }
 
-            $this->tools->sefazEnviaLote([$xml]);
+            // $this->tools->sefazEnviaLote([$xml]);
 
             return [
                 'success' => true,
