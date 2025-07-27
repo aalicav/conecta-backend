@@ -273,7 +273,11 @@ class NFeService
      */
     protected function generateNFeNumber()
     {
-        return date('Ymd') . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
+        // Generate a number that fits in 9 digits
+        // Use current date (8 digits) + random number (1 digit)
+        $datePart = date('Ymd'); // 8 digits
+        $randomPart = rand(1, 9); // 1 digit
+        return $datePart . $randomPart; // 9 digits total
     }
 
     /**
@@ -298,6 +302,10 @@ class NFeService
         if (strlen($tpEmis) !== 1) {
             Log::error('tpEmis length incorrect: ' . strlen($tpEmis) . ' - value: ' . $tpEmis);
             $tpEmis = substr($tpEmis, 0, 1);
+        }
+        if (strlen($number) !== 9) {
+            Log::error('Number length incorrect: ' . strlen($number) . ' - value: ' . $number);
+            $number = str_pad($number, 9, '0', STR_PAD_LEFT);
         }
 
         $key = $uf . $date . $cnpj . $model . $series . $number . $cNF . $tpEmis;
