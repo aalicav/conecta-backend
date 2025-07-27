@@ -292,6 +292,20 @@ class NFeService
 
         $key = $uf . $date . $cnpj . $model . $series . $number . $cNF . $tpEmis;
 
+        // Debug logging
+        Log::info('NFe Key Debug', [
+            'uf' => $uf,
+            'date' => $date,
+            'cnpj' => $cnpj,
+            'model' => $model,
+            'series' => $series,
+            'number' => $number,
+            'cNF' => $cNF,
+            'tpEmis' => $tpEmis,
+            'key_before_dv' => $key,
+            'key_length' => strlen($key)
+        ]);
+
         // Calculate check digit
         $sum = 0;
         $weights = [2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5];
@@ -301,7 +315,13 @@ class NFeService
         $remainder = $sum % 11;
         $checkDigit = ($remainder < 2) ? 0 : (11 - $remainder);
 
-        return $key . $checkDigit;
+        $finalKey = $key . $checkDigit;
+        Log::info('NFe Key Final', [
+            'final_key' => $finalKey,
+            'check_digit' => $checkDigit
+        ]);
+
+        return $finalKey;
     }
 
     /**
