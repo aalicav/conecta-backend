@@ -218,9 +218,7 @@ class NFeService
             $nfe->tagtransp((object)$this->getNFeTransp());
             $nfe->tagpag((object)$this->getNFePayment($batch));
 
-            Log::info('NFe: ' . print_r($nfe, true));
             $errors = $nfe->getErrors();
-            Log::info('Errors: ', $errors);
             if (!empty($errors)) {
                 Log::error('Erros ao gerar NFe: ' . print_r($errors, true)); // <-- print_r força o array como string
                 return [
