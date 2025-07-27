@@ -290,6 +290,16 @@ class NFeService
         $cNF = str_pad($cNF, 8, '0', STR_PAD_LEFT);
         $tpEmis = (string)$tpEmis;
 
+        // Ensure exact lengths
+        if (strlen($cNF) !== 8) {
+            Log::error('cNF length incorrect: ' . strlen($cNF) . ' - value: ' . $cNF);
+            $cNF = str_pad($cNF, 8, '0', STR_PAD_LEFT);
+        }
+        if (strlen($tpEmis) !== 1) {
+            Log::error('tpEmis length incorrect: ' . strlen($tpEmis) . ' - value: ' . $tpEmis);
+            $tpEmis = substr($tpEmis, 0, 1);
+        }
+
         $key = $uf . $date . $cnpj . $model . $series . $number . $cNF . $tpEmis;
 
         // Debug logging
@@ -303,8 +313,15 @@ class NFeService
             'cNF' => $cNF,
             'tpEmis' => $tpEmis,
             'key_before_dv' => $key,
-            'key_length' => strlen($key)
+            'key_length' => strlen($key),
+            'expected_length' => 43
         ]);
+
+        // Verify key length
+        if (strlen($key) !== 43) {
+            Log::error('Key length is incorrect! Expected 43, got ' . strlen($key));
+            Log::error('Key breakdown: UF(' . strlen($uf) . ') + Date(' . strlen($date) . ') + CNPJ(' . strlen($cnpj) . ') + Model(' . strlen($model) . ') + Series(' . strlen($series) . ') + Number(' . strlen($number) . ') + cNF(' . strlen($cNF) . ') + tpEmis(' . strlen($tpEmis) . ') = ' . strlen($key));
+        }
 
         // Calculate check digit
         $sum = 0;
@@ -318,7 +335,8 @@ class NFeService
         $finalKey = $key . $checkDigit;
         Log::info('NFe Key Final', [
             'final_key' => $finalKey,
-            'check_digit' => $checkDigit
+            'check_digit' => $checkDigit,
+            'final_length' => strlen($finalKey)
         ]);
 
         return $finalKey;
