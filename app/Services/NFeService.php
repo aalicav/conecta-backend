@@ -213,9 +213,6 @@ class NFeService
             $nfe->tagide((object)$this->getNFeIde($batch));
             $nfe->tagemit((object)$this->getNFeEmit());
             $nfe->tagdest((object)$this->getNFeDest($batch));
-            foreach ($this->getNFeItems($batch) as $item) {
-                $nfe->tagprod((object)$item);
-            }
             $nfe->tagICMSTot((object)$this->getNFeTotal($batch));
             $nfe->tagtransp((object)$this->getNFeTransp());
             $nfe->tagpag((object)$this->getNFePayment($batch));
@@ -227,6 +224,9 @@ class NFeService
                     'success' => false,
                     'error' => 'Erros ao gerar NFe: ' . implode('; ', $errors)
                 ];
+            }
+            foreach ($this->getNFeItems($batch) as $item) {
+                $nfe->tagprod((object)$item);
             }
             $xml = $nfe->getXML();
             $this->tools->sefazEnviaLote([$xml]);
