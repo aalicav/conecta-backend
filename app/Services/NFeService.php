@@ -208,9 +208,12 @@ class NFeService
                 throw new \Exception('Lote de faturamento não encontrado');
             }
 
+            $nfeNumber = $this->generateNFeNumber();
+            $nfeKey = $this->generateNFeKey($nfeNumber);
+
             $nfe = new Make();
-            $nfe->taginfNFe((object)$this->getNFeInfo($batch));
-            $nfe->tagide((object)$this->getNFeIde($batch));
+            $nfe->taginfNFe((object)$this->getNFeInfo($batch, $nfeNumber, $nfeKey));
+            $nfe->tagide((object)$this->getNFeIde($batch, $nfeNumber, $nfeKey));
             $nfe->tagemit((object)$this->getNFeEmit());
             $nfe->tagdest((object)$this->getNFeDest($batch));
             foreach ($this->getNFeItems($batch) as $item) {
@@ -244,9 +247,6 @@ class NFeService
             $this->tools->sefazEnviaLote([$xml]);
 
             // Generate NFe number and key
-            $nfeNumber = $this->generateNFeNumber();
-            $nfeKey = $this->generateNFeKey($nfeNumber);
-
             return [
                 'success' => true,
                 'nfe_number' => $nfeNumber,
@@ -307,11 +307,8 @@ class NFeService
     /**
      * Get NFe basic information
      */
-    protected function getNFeInfo(BillingBatch $batch)
+    protected function getNFeInfo(BillingBatch $batch, $nfeNumber, $nfeKey)
     {
-        $nfeNumber = $this->generateNFeNumber();
-        $nfeKey = $this->generateNFeKey($nfeNumber);
-        
         return [
             'Id' => 'NFe' . $nfeKey,
             'versao' => '4.00'
@@ -321,11 +318,8 @@ class NFeService
     /**
      * Get NFe identification information
      */
-    protected function getNFeIde(BillingBatch $batch)
+    protected function getNFeIde(BillingBatch $batch, $nfeNumber, $nfeKey)
     {
-        $nfeNumber = $this->generateNFeNumber();
-        $nfeKey = $this->generateNFeKey($nfeNumber);
-        
         return [
             'cUF' => $this->getStateCode(),
             'cNF' => $this->generateCNF($nfeNumber),
