@@ -213,7 +213,7 @@ class NFeService
             $nfe->tagide((object)$this->getNFeIde($batch));
             $nfe->tagemit((object)$this->getNFeEmit());
             $nfe->tagdest((object)$this->getNFeDest($batch));
-            // $nfe->tagprod((object)$this->getNFeItems($batch));
+            $nfe->tagprod((object)$this->getNFeItems($batch));
             $nfe->tagICMSTot((object)$this->getNFeTotal($batch));
             $nfe->tagtransp((object)$this->getNFeTransp());
             $nfe->tagpag((object)$this->getNFePayment($batch));
