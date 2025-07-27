@@ -423,6 +423,8 @@ class NFeService
             ];
         }
 
+        Log::info('Items: ' . print_r($items, true));
+
         return $items;
     }
 
