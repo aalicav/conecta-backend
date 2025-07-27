@@ -210,7 +210,7 @@ class NFeService
 
             $nfeNumber = $this->generateNFeNumber();
             $cNF = $this->generateCNF($nfeNumber);
-            $nfeKey = $this->generateNFeKey($nfeNumber, $cNF);
+            $nfeKey = $this->generateNFeKey($nfeNumber, $cNF, '1');
 
             $nfe = new Make();
             $nfe->taginfNFe((object)$this->getNFeInfo($batch, $nfeNumber, $nfeKey));
@@ -279,7 +279,7 @@ class NFeService
     /**
      * Generate NFe key
      */
-    protected function generateNFeKey($nfeNumber, $cNF)
+    protected function generateNFeKey($nfeNumber, $cNF, $tpEmis = '1')
     {
         $uf = $this->getStateCode();
         $date = date('ym');
@@ -288,20 +288,19 @@ class NFeService
         $series = '001';
         $number = str_pad($nfeNumber, 9, '0', STR_PAD_LEFT);
         $cNF = str_pad($cNF, 8, '0', STR_PAD_LEFT);
-        
-        $key = $uf . $date . $cnpj . $model . $series . $number . $cNF;
-        
+        $tpEmis = (string)$tpEmis;
+
+        $key = $uf . $date . $cnpj . $model . $series . $number . $cNF . $tpEmis;
+
         // Calculate check digit
         $sum = 0;
         $weights = [2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5];
-        
         for ($i = 0; $i < 43; $i++) {
             $sum += intval($key[$i]) * $weights[$i];
         }
-        
         $remainder = $sum % 11;
         $checkDigit = ($remainder < 2) ? 0 : (11 - $remainder);
-        
+
         return $key . $checkDigit;
     }
 
