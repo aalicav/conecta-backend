@@ -15,7 +15,7 @@ use App\Services\NFeService;
 
 class NFeController extends Controller
 {
-    protected $nfeService;
+    protected NFEService $nfeService;
 
     public function __construct(NFeService $nfeService)
     {
