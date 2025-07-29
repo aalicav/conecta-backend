@@ -1501,7 +1501,6 @@ class ReportController extends Controller
             // Transform the data to include the latest generation status
             $data = $reports->through(function ($report) {
                 $report->latest_generation = $report->generations->first();
-                unset($report->generations);
                 return $report;
             });
 
