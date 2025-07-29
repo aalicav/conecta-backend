@@ -45,7 +45,7 @@ class ReportController extends Controller
     {
         try {
             $query = Report::with(['creator', 'generations' => function ($query) {
-                $query->latest('completed_at')->limit(1);
+                $query->latest('created_at')->limit(1);
             }]);
             
             // Apply filters
