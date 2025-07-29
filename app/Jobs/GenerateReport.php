@@ -15,6 +15,7 @@ use App\Notifications\ReportGenerated;
 use App\Notifications\ReportGenerationFailed;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class GenerateReport implements ShouldQueue
 {
@@ -45,15 +46,32 @@ class GenerateReport implements ShouldQueue
      */
     public function handle(ReportGenerationService $reportService)
     {
+        Log::info('Starting report generation job', [
+            'type' => $this->type,
+            'format' => $this->format,
+            'user_id' => $this->userId,
+            'report_id' => $this->reportId,
+            'generation_id' => $this->generationId,
+            'filters' => $this->filters
+        ]);
+
         // Get the user and generation record
         $user = User::find($this->userId);
         $generation = ReportGeneration::with('report')->find($this->generationId);
 
         if (!$generation) {
+            Log::error('Report generation record not found', [
+                'generation_id' => $this->generationId
+            ]);
             throw new \Exception("Report generation record not found");
         }
 
         try {
+            Log::info('Generating report using ReportGenerationService', [
+                'type' => $this->type,
+                'format' => $this->format
+            ]);
+
             // Generate the report
             $filePath = $reportService->generateReport(
                 $this->type,
@@ -61,8 +79,18 @@ class GenerateReport implements ShouldQueue
                 $this->format
             );
 
+            Log::info('Report generated successfully', [
+                'file_path' => $filePath,
+                'generation_id' => $this->generationId
+            ]);
+
             // Get file size if available
             $fileSize = Storage::exists($filePath) ? Storage::size($filePath) : null;
+
+            Log::info('Updating generation record with success', [
+                'generation_id' => $this->generationId,
+                'file_size' => $fileSize
+            ]);
 
             // Update generation record with success
             $generation->update([
@@ -73,17 +101,45 @@ class GenerateReport implements ShouldQueue
             ]);
 
             // Update report's last generation time
-            $generation->report->updateNextScheduledTime();
+            if ($generation->report) {
+                $generation->report->updateNextScheduledTime();
+            }
+
+            Log::info('Report generation completed successfully', [
+                'generation_id' => $this->generationId,
+                'report_id' => $this->reportId
+            ]);
 
             // Send notification
             if ($user) {
-                Notification::send($user, new ReportGenerated(
-                    $this->type,
-                    $filePath,
-                    url("storage/{$filePath}")
-                ));
+                try {
+                    Notification::send($user, new ReportGenerated(
+                        $this->type,
+                        $filePath,
+                        url("storage/{$filePath}")
+                    ));
+                    Log::info('Notification sent successfully', [
+                        'user_id' => $this->userId
+                    ]);
+                } catch (\Exception $e) {
+                    Log::warning('Failed to send notification', [
+                        'user_id' => $this->userId,
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
         } catch (\Exception $e) {
+            Log::error('Error generating report', [
+                'type' => $this->type,
+                'filters' => $this->filters,
+                'format' => $this->format,
+                'user_id' => $this->userId,
+                'report_id' => $this->reportId,
+                'generation_id' => $this->generationId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             // Update generation record with failure
             $generation->update([
                 'status' => 'failed',
@@ -92,23 +148,63 @@ class GenerateReport implements ShouldQueue
             ]);
 
             // Log error and notify user
-            \Log::error('Error generating report: ' . $e->getMessage(), [
-                'type' => $this->type,
-                'filters' => $this->filters,
-                'format' => $this->format,
-                'user_id' => $this->userId,
-                'report_id' => $this->reportId,
-                'generation_id' => $this->generationId
-            ]);
-
             if ($user) {
-                Notification::send($user, new ReportGenerationFailed(
-                    $this->type,
-                    $e->getMessage()
-                ));
+                try {
+                    Notification::send($user, new ReportGenerationFailed(
+                        $this->type,
+                        $e->getMessage()
+                    ));
+                } catch (\Exception $notificationError) {
+                    Log::error('Failed to send failure notification', [
+                        'user_id' => $this->userId,
+                        'error' => $notificationError->getMessage()
+                    ]);
+                }
             }
 
             throw $e;
+        }
+    }
+
+    /**
+     * Handle a job failure.
+     */
+    public function failed(\Throwable $exception)
+    {
+        Log::error('Report generation job failed', [
+            'type' => $this->type,
+            'format' => $this->format,
+            'user_id' => $this->userId,
+            'report_id' => $this->reportId,
+            'generation_id' => $this->generationId,
+            'error' => $exception->getMessage(),
+            'trace' => $exception->getTraceAsString()
+        ]);
+
+        // Update generation record with failure
+        $generation = ReportGeneration::find($this->generationId);
+        if ($generation) {
+            $generation->update([
+                'status' => 'failed',
+                'completed_at' => now(),
+                'error_message' => $exception->getMessage()
+            ]);
+        }
+
+        // Try to notify user about failure
+        $user = User::find($this->userId);
+        if ($user) {
+            try {
+                Notification::send($user, new ReportGenerationFailed(
+                    $this->type,
+                    $exception->getMessage()
+                ));
+            } catch (\Exception $notificationError) {
+                Log::error('Failed to send failure notification in failed method', [
+                    'user_id' => $this->userId,
+                    'error' => $notificationError->getMessage()
+                ]);
+            }
         }
     }
 } 

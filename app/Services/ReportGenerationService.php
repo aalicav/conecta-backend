@@ -18,8 +18,39 @@ class ReportGenerationService
      */
     public function generateReport(string $type, array $filters, string $format = 'pdf')
     {
-        $data = $this->getReportData($type, $filters);
-        return $this->exportReport($data, $type, $format);
+        \Log::info('ReportGenerationService: Starting report generation', [
+            'type' => $type,
+            'format' => $format,
+            'filters' => $filters
+        ]);
+
+        try {
+            $data = $this->getReportData($type, $filters);
+            
+            \Log::info('ReportGenerationService: Data retrieved successfully', [
+                'type' => $type,
+                'data_count' => is_array($data) ? count($data) : (is_object($data) ? $data->count() : 0)
+            ]);
+
+            $filePath = $this->exportReport($data, $type, $format);
+            
+            \Log::info('ReportGenerationService: Report exported successfully', [
+                'type' => $type,
+                'format' => $format,
+                'file_path' => $filePath
+            ]);
+
+            return $filePath;
+        } catch (\Exception $e) {
+            \Log::error('ReportGenerationService: Error generating report', [
+                'type' => $type,
+                'format' => $format,
+                'filters' => $filters,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
     }
 
     /**
@@ -347,19 +378,46 @@ class ReportGenerationService
     }
 
     /**
-     * Export report data to specified format
+     * Export report data to file
      */
     private function exportReport($data, string $type, string $format)
     {
-        switch ($format) {
-            case 'pdf':
-                return $this->exportToPdf($data, $type);
-            case 'csv':
-                return $this->exportToCsv($data, $type);
-            case 'xlsx':
-                return $this->exportToXlsx($data, $type);
-            default:
-                throw new \Exception("Invalid export format: {$format}");
+        \Log::info('ReportGenerationService: Starting export', [
+            'type' => $type,
+            'format' => $format,
+            'data_type' => gettype($data)
+        ]);
+
+        try {
+            switch ($format) {
+                case 'pdf':
+                    $filePath = $this->exportToPdf($data, $type);
+                    break;
+                case 'csv':
+                    $filePath = $this->exportToCsv($data, $type);
+                    break;
+                case 'xlsx':
+                    $filePath = $this->exportToXlsx($data, $type);
+                    break;
+                default:
+                    throw new \Exception("Unsupported format: {$format}");
+            }
+
+            \Log::info('ReportGenerationService: Export completed', [
+                'type' => $type,
+                'format' => $format,
+                'file_path' => $filePath
+            ]);
+
+            return $filePath;
+        } catch (\Exception $e) {
+            \Log::error('ReportGenerationService: Export failed', [
+                'type' => $type,
+                'format' => $format,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
         }
     }
 
