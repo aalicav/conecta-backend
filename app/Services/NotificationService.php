@@ -1253,6 +1253,10 @@ class NotificationService
                 
                 Log::info("Sent negotiation created notification and email for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
             }
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendNegotiationCreatedWhatsApp($negotiation);
+            
         } catch (\Exception $e) {
             Log::error('Error sending negotiation created notification', [
                 'error' => $e->getMessage(),
@@ -1359,6 +1363,10 @@ class NotificationService
                 
                 Log::info("Sent negotiation submitted notification and email for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
             }
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendNegotiationSubmittedWhatsApp($negotiation);
+            
         } catch (\Exception $e) {
             Log::error('Error sending negotiation submitted notification', [
                 'error' => $e->getMessage(),
@@ -1458,6 +1466,10 @@ class NotificationService
                 
                 Log::info("Sent negotiation cancelled notification and email for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
             }
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendNegotiationCancelledWhatsApp($negotiation, $reason);
+            
         } catch (\Exception $e) {
             Log::error('Error sending negotiation cancelled notification', [
                 'error' => $e->getMessage(),
@@ -1646,6 +1658,10 @@ class NotificationService
                     'negotiation_id' => $negotiation->id
                 ]);
             }
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendCounterOfferWhatsApp($item);
+            
         } catch (\Exception $e) {
             Log::error('Error sending counter offer notification', [
                 'error' => $e->getMessage(),
@@ -3036,6 +3052,10 @@ class NotificationService
             ]);
             
             Log::info("Sent negotiation approved notification for negotiation #{$negotiation->id}");
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendNegotiationApprovedWhatsApp($negotiation);
+            
         } catch (\Exception $e) {
             Log::error('Error sending negotiation approved notification', [
                 'error' => $e->getMessage(),
@@ -3143,6 +3163,10 @@ class NotificationService
             }
             
             Log::info("Sent status rollback notification for negotiation #{$negotiation->id} to " . $usersToNotify->count() . " users");
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendStatusChangeWhatsApp($negotiation, $previousStatus, $newStatus);
+            
         } catch (\Exception $e) {
             Log::error("Failed to send status rollback notification: " . $e->getMessage(), [
                 'negotiation_id' => $negotiation->id,
@@ -3771,5 +3795,340 @@ class NotificationService
             
             return false;
         }
+    }
+
+    /**
+     * Send negotiation notification via WhatsApp conversations.
+     *
+     * @param Negotiation $negotiation
+     * @param string $eventType
+     * @param array $additionalData
+     * @return void
+     */
+    public function sendNegotiationWhatsAppNotification(Negotiation $negotiation, string $eventType, array $additionalData = []): void
+    {
+        try {
+            // Get the entity involved in the negotiation
+            $entity = $negotiation->negotiable;
+            if (!$entity) {
+                Log::warning("No entity found for negotiation #{$negotiation->id}");
+                return;
+            }
+
+            // Get phone number from entity
+            $phone = $this->getEntityPhone($entity);
+            if (!$phone) {
+                Log::warning("No phone number found for entity in negotiation #{$negotiation->id}");
+                return;
+            }
+
+            // Build message based on event type
+            $message = $this->buildNegotiationMessage($negotiation, $eventType, $additionalData);
+            
+            // Send via WhatsApp conversations
+            $result = $this->whatsAppService->sendMessageViaConversations($phone, $message);
+            
+            Log::info("Sent negotiation WhatsApp notification", [
+                'negotiation_id' => $negotiation->id,
+                'event_type' => $eventType,
+                'phone' => $phone,
+                'result' => $result
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error("Failed to send negotiation WhatsApp notification", [
+                'negotiation_id' => $negotiation->id,
+                'event_type' => $eventType,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Get phone number from entity.
+     *
+     * @param mixed $entity
+     * @return string|null
+     */
+    protected function getEntityPhone($entity): ?string
+    {
+        if ($entity instanceof HealthPlan) {
+            return $entity->phone;
+        } elseif ($entity instanceof Professional) {
+            return $entity->phone;
+        } elseif ($entity instanceof Clinic) {
+            return $entity->phone;
+        }
+        
+        return null;
+    }
+
+    /**
+     * Build negotiation message based on event type.
+     *
+     * @param Negotiation $negotiation
+     * @param string $eventType
+     * @param array $additionalData
+     * @return string
+     */
+    protected function buildNegotiationMessage(Negotiation $negotiation, string $eventType, array $additionalData = []): string
+    {
+        $title = $negotiation->title;
+        $id = $negotiation->id;
+        
+        switch ($eventType) {
+            case 'created':
+                return "🔔 *Nova Negociação Criada*\n\n" .
+                       "Uma nova negociação foi criada:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Status: Rascunho\n\n" .
+                       "Aguarde o envio para aprovação.";
+
+            case 'submitted':
+                return "📤 *Negociação Enviada para Aprovação*\n\n" .
+                       "A negociação foi enviada para aprovação:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Status: Aguardando Aprovação\n\n" .
+                       "Você será notificado sobre o resultado.";
+
+            case 'approved':
+                return "✅ *Negociação Aprovada*\n\n" .
+                       "Sua negociação foi aprovada:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Status: Aprovada\n\n" .
+                       "A negociação está pronta para execução.";
+
+            case 'rejected':
+                $reason = $additionalData['reason'] ?? 'Não especificado';
+                return "❌ *Negociação Rejeitada*\n\n" .
+                       "Sua negociação foi rejeitada:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Motivo: {$reason}\n\n" .
+                       "Entre em contato para mais informações.";
+
+            case 'cancelled':
+                $reason = $additionalData['reason'] ?? 'Não especificado';
+                return "🚫 *Negociação Cancelada*\n\n" .
+                       "A negociação foi cancelada:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Motivo: {$reason}\n\n" .
+                       "Entre em contato para mais informações.";
+
+            case 'completed':
+                return "🎉 *Negociação Concluída*\n\n" .
+                       "Sua negociação foi concluída com sucesso:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Status: Concluída\n\n" .
+                       "Obrigado pela parceria!";
+
+            case 'partially_completed':
+                return "⚠️ *Negociação Parcialmente Concluída*\n\n" .
+                       "Sua negociação foi parcialmente concluída:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Status: Parcialmente Concluída\n\n" .
+                       "Entre em contato para finalizar os itens pendentes.";
+
+            case 'contract_generated':
+                return "📄 *Contrato Gerado*\n\n" .
+                       "O contrato da sua negociação foi gerado:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Status: Contrato Gerado\n\n" .
+                       "Aguarde a assinatura digital.";
+
+            case 'formalized':
+                return "📋 *Negociação Formalizada*\n\n" .
+                       "Sua negociação foi formalizada:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Status: Formalizada\n\n" .
+                       "A negociação está ativa e operacional.";
+
+            case 'approval_required':
+                $level = $additionalData['level'] ?? 'Aprovação';
+                return "⏳ *Aprovação Necessária*\n\n" .
+                       "Uma negociação aguarda sua aprovação:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• Nível: {$level}\n\n" .
+                       "Acesse o sistema para revisar.";
+
+            case 'counter_offer':
+                $itemName = $additionalData['item_name'] ?? 'Item';
+                return "💼 *Contraproposta Recebida*\n\n" .
+                       "Uma contraproposta foi recebida:\n" .
+                       "• Negociação: #{$id}\n" .
+                       "• Item: {$itemName}\n" .
+                       "• Título: {$title}\n\n" .
+                       "Acesse o sistema para revisar.";
+
+            case 'status_changed':
+                $oldStatus = $additionalData['old_status'] ?? 'Anterior';
+                $newStatus = $additionalData['new_status'] ?? 'Novo';
+                return "🔄 *Status Alterado*\n\n" .
+                       "O status da negociação foi alterado:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n" .
+                       "• De: {$oldStatus}\n" .
+                       "• Para: {$newStatus}\n\n" .
+                       "Acesse o sistema para mais detalhes.";
+
+            default:
+                return "📢 *Atualização de Negociação*\n\n" .
+                       "Sua negociação foi atualizada:\n" .
+                       "• ID: #{$id}\n" .
+                       "• Título: {$title}\n\n" .
+                       "Acesse o sistema para mais informações.";
+        }
+    }
+
+    /**
+     * Send negotiation created notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function sendNegotiationCreatedWhatsApp(Negotiation $negotiation): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'created');
+    }
+
+    /**
+     * Send negotiation submitted notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function sendNegotiationSubmittedWhatsApp(Negotiation $negotiation): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'submitted');
+    }
+
+    /**
+     * Send negotiation approved notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function sendNegotiationApprovedWhatsApp(Negotiation $negotiation): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'approved');
+    }
+
+    /**
+     * Send negotiation rejected notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @param string $reason
+     * @return void
+     */
+    public function sendNegotiationRejectedWhatsApp(Negotiation $negotiation, string $reason = ''): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'rejected', ['reason' => $reason]);
+    }
+
+    /**
+     * Send negotiation cancelled notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @param string $reason
+     * @return void
+     */
+    public function sendNegotiationCancelledWhatsApp(Negotiation $negotiation, string $reason = ''): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'cancelled', ['reason' => $reason]);
+    }
+
+    /**
+     * Send negotiation completed notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function sendNegotiationCompletedWhatsApp(Negotiation $negotiation): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'completed');
+    }
+
+    /**
+     * Send negotiation partially completed notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function sendNegotiationPartiallyCompletedWhatsApp(Negotiation $negotiation): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'partially_completed');
+    }
+
+    /**
+     * Send contract generated notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function sendContractGeneratedWhatsApp(Negotiation $negotiation): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'contract_generated');
+    }
+
+    /**
+     * Send negotiation formalized notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @return void
+     */
+    public function sendNegotiationFormalizedWhatsApp(Negotiation $negotiation): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'formalized');
+    }
+
+    /**
+     * Send approval required notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @param string $level
+     * @return void
+     */
+    public function sendApprovalRequiredWhatsApp(Negotiation $negotiation, string $level): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'approval_required', ['level' => $level]);
+    }
+
+    /**
+     * Send counter offer notification via WhatsApp.
+     *
+     * @param NegotiationItem $item
+     * @return void
+     */
+    public function sendCounterOfferWhatsApp(NegotiationItem $item): void
+    {
+        $negotiation = $item->negotiation;
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'counter_offer', [
+            'item_name' => $item->name ?? 'Item'
+        ]);
+    }
+
+    /**
+     * Send status change notification via WhatsApp.
+     *
+     * @param Negotiation $negotiation
+     * @param string $oldStatus
+     * @param string $newStatus
+     * @return void
+     */
+    public function sendStatusChangeWhatsApp(Negotiation $negotiation, string $oldStatus, string $newStatus): void
+    {
+        $this->sendNegotiationWhatsAppNotification($negotiation, 'status_changed', [
+            'old_status' => $oldStatus,
+            'new_status' => $newStatus
+        ]);
     }
 }
