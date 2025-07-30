@@ -632,19 +632,21 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::prefix('medical-specialties')->group(function () {
         // Rotas públicas (apenas autenticação necessária)
         Route::get('/', [MedicalSpecialtyController::class, 'index']);
-        Route::get('/{specialty}', [MedicalSpecialtyController::class, 'show']);
+        Route::get('/statistics', [MedicalSpecialtyController::class, 'statistics']);
+        Route::get('/{id}', [MedicalSpecialtyController::class, 'show']);
         
         // Rotas que requerem permissões específicas
         Route::middleware('permission:manage medical specialties')->group(function () {
             Route::post('/', [MedicalSpecialtyController::class, 'store']);
-            Route::put('/{specialty}', [MedicalSpecialtyController::class, 'update']);
-            Route::delete('/{specialty}', [MedicalSpecialtyController::class, 'destroy']);
+            Route::put('/{id}', [MedicalSpecialtyController::class, 'update']);
+            Route::delete('/{id}', [MedicalSpecialtyController::class, 'destroy']);
+            Route::patch('/{id}/toggle-active', [MedicalSpecialtyController::class, 'toggleActive']);
         });
 
         // Rotas relacionadas a negociações
         Route::middleware('permission:manage negotiations')->group(function () {
-            Route::get('/{specialty}/negotiations', [MedicalSpecialtyController::class, 'getActiveNegotiations']);
-            Route::post('/prices/{price}/approve', [MedicalSpecialtyController::class, 'approvePrice']);
+            Route::get('/{id}/negotiations', [MedicalSpecialtyController::class, 'getActiveNegotiations']);
+            Route::post('/prices/{priceId}/approve', [MedicalSpecialtyController::class, 'approvePrice']);
         });
     });
 });
