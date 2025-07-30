@@ -369,12 +369,12 @@ class WhatsAppService
      */
     public function getConversations(int $limit = 20)
     {
-        // Get the latest message from each conversation
+        // Get the latest message from each conversation by grouping by sender/recipient phone
         $conversations = Message::select('*')
             ->whereIn('id', function ($query) {
                 $query->selectRaw('MAX(id)')
                       ->from('messages')
-                      ->groupBy('conversation_partner');
+                      ->groupBy('sender_phone', 'recipient_phone');
             })
             ->orderBy('created_at', 'desc')
             ->limit($limit)
@@ -3537,5 +3537,77 @@ class WhatsAppService
         ?int $relatedModelId = null
     ) {
         return $this->sendManualMessage($to, $content, $relatedModelType, $relatedModelId);
+    }
+
+    /**
+     * Simple public method for sending messages via Twilio Conversations
+     *
+     * @param string $to Recipient phone number
+     * @param string $content Message content
+     * @param string|null $relatedModelType Related model type
+     * @param int|null $relatedModelId Related model ID
+     * @return Message
+     */
+    public function sendMessageViaConversations(
+        string $to, 
+        string $content, 
+        ?string $relatedModelType = null, 
+        ?int $relatedModelId = null
+    ) {
+        // Normalize phone number
+        $normalizedTo = $this->normalizePhoneNumber($to);
+        
+        // Get or create conversation
+        $conversationSid = $this->getOrCreateConversation($normalizedTo);
+        
+        // Create message record
+        $message = Message::create([
+            'sender_phone' => $this->fromNumber,
+            'recipient_phone' => $normalizedTo,
+            'content' => $content,
+            'direction' => Message::DIRECTION_OUTBOUND,
+            'status' => Message::STATUS_PENDING,
+            'message_type' => Message::TYPE_TEXT,
+            'related_model_type' => $relatedModelType,
+            'related_model_id' => $relatedModelId,
+            'metadata' => [
+                'conversation_sid' => $conversationSid,
+                'twilio_conversations' => true,
+            ],
+        ]);
+
+        try {
+            // Send message through Conversations
+            $twilioMessage = $this->sendConversationMessage($conversationSid, $content, 'system');
+            
+            // Update the message status
+            $message->update([
+                'status' => Message::STATUS_SENT,
+                'external_id' => $twilioMessage->sid,
+                'sent_at' => now(),
+            ]);
+            
+            Log::info('Message sent via Conversations', [
+                'message_id' => $message->id,
+                'to' => $normalizedTo,
+                'conversation_sid' => $conversationSid,
+                'twilio_message_sid' => $twilioMessage->sid,
+            ]);
+        } catch (Exception $e) {
+            // Update the message with error information
+            $message->update([
+                'status' => Message::STATUS_FAILED,
+                'error_message' => $e->getMessage(),
+            ]);
+
+            Log::error('Failed to send message via Conversations', [
+                'message_id' => $message->id,
+                'to' => $normalizedTo,
+                'conversation_sid' => $conversationSid,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $message;
     }
 }

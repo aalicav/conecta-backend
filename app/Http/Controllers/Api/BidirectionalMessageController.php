@@ -76,7 +76,7 @@ class BidirectionalMessageController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function sendMessage(Request $request)
+    public function sendBidirectionalMessage(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'recipient_phone' => 'required|string',
@@ -90,7 +90,7 @@ class BidirectionalMessageController extends Controller
         }
 
         try {
-            $message = $this->whatsappService->sendManualMessage(
+            $message = $this->whatsappService->sendMessageViaConversations(
                 $request->recipient_phone,
                 $request->content,
                 $request->related_model_type,
