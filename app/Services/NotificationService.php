@@ -1846,6 +1846,10 @@ class NotificationService
             }
             
             Log::info("Sent negotiation completed notification and email for negotiation #{$negotiation->id} to " . $recipients->count() . " users");
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendNegotiationCompletedWhatsApp($negotiation);
+            
         } catch (\Exception $e) {
             Log::error('Error sending negotiation completed notification', [
                 'error' => $e->getMessage(),
@@ -1967,6 +1971,10 @@ class NotificationService
             }
             
             Log::info("Sent negotiation partially completed notification and email for negotiation #{$negotiation->id} to " . $recipients->count() . " users");
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendNegotiationPartiallyCompletedWhatsApp($negotiation);
+            
         } catch (\Exception $e) {
             Log::error('Error sending negotiation partially completed notification', [
                 'error' => $e->getMessage(),
@@ -3681,6 +3689,10 @@ class NotificationService
             ]);
             
             Log::info("Sent contract generated notification for negotiation #{$negotiation->id}");
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendContractGeneratedWhatsApp($negotiation);
+            
         } catch (\Exception $e) {
             Log::error('Error sending contract generated notification', [
                 'error' => $e->getMessage(),
@@ -3747,6 +3759,10 @@ class NotificationService
             }
             
             Log::info("Sent negotiation formalized notification for negotiation #{$negotiation->id}");
+            
+            // Enviar notificação via WhatsApp para a entidade
+            $this->sendNegotiationFormalizedWhatsApp($negotiation);
+            
         } catch (\Exception $e) {
             Log::error('Error sending negotiation formalized notification', [
                 'error' => $e->getMessage(),
