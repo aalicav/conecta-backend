@@ -211,21 +211,61 @@ class WhatsAppService
     public function getTwilioConversationMessages(string $conversationSid, int $limit = 50, string $pageToken = null): array
     {
         try {
+            Log::info('Getting Twilio conversation messages', [
+                'conversation_sid' => $conversationSid,
+                'limit' => $limit,
+                'page_token' => $pageToken,
+            ]);
+
             $params = [];
             if ($pageToken) {
                 $params['pageToken'] = $pageToken;
             }
 
+            Log::info('Twilio API parameters', [
+                'conversation_sid' => $conversationSid,
+                'params' => $params,
+                'limit' => $limit,
+            ]);
+
             $messages = $this->client->conversations->v1->conversations($conversationSid)
                 ->messages->read($params, $limit);
 
+            Log::info('Twilio API response', [
+                'conversation_sid' => $conversationSid,
+                'messages_count' => count($messages),
+                'messages' => array_map(function($msg) {
+                    return [
+                        'sid' => $msg->sid,
+                        'body' => $msg->body,
+                        'author' => $msg->author,
+                        'date_created' => $msg->dateCreated->format('Y-m-d H:i:s'),
+                    ];
+                }, $messages),
+            ]);
+
             $formattedMessages = [];
             foreach ($messages as $message) {
+                // Debug delivery object
+                Log::info('Message delivery object', [
+                    'conversation_sid' => $conversationSid,
+                    'message_sid' => $message->sid,
+                    'delivery_type' => gettype($message->delivery),
+                    'delivery_value' => $message->delivery,
+                    'has_delivery' => isset($message->delivery),
+                ]);
+                
+                // Safely get delivery status
+                $deliveryStatus = 'sent';
+                if (isset($message->delivery) && is_object($message->delivery) && isset($message->delivery->status)) {
+                    $deliveryStatus = $message->delivery->status;
+                }
+                
                 $formattedMessages[] = [
                     'id' => $message->sid,
                     'content' => $message->body,
                     'direction' => $message->author === 'system' ? 'outbound' : 'inbound',
-                    'status' => $message->delivery ? $message->delivery->status : 'sent',
+                    'status' => $deliveryStatus,
                     'timestamp' => $message->dateCreated->format('Y-m-d H:i:s'),
                     'sender' => $message->author,
                     'conversation_sid' => $conversationSid,
@@ -246,7 +286,7 @@ class WhatsAppService
                 }
             }
 
-            return [
+            $result = [
                 'messages' => $formattedMessages,
                 'pagination' => [
                     'has_more' => $hasMore,
@@ -255,10 +295,23 @@ class WhatsAppService
                     'limit' => $limit,
                 ]
             ];
+
+            Log::info('Formatted result', [
+                'conversation_sid' => $conversationSid,
+                'formatted_messages_count' => count($formattedMessages),
+                'has_more' => $hasMore,
+                'next_page_token' => $nextPageToken,
+                'result' => $result,
+            ]);
+
+            return $result;
         } catch (Exception $e) {
             Log::error('Failed to get Twilio conversation messages', [
                 'conversation_sid' => $conversationSid,
+                'limit' => $limit,
+                'page_token' => $pageToken,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             return [
                 'messages' => [],
