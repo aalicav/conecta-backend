@@ -141,16 +141,22 @@ class WhatsAppService
         try {
             $formattedPhone = $this->formatNumber($phone);
             
+            // Use the messaging service SID if available, otherwise use the from number
+            $proxyAddress = $this->messagingServiceSid 
+                ? "whatsapp:{$this->messagingServiceSid}"
+                : $this->formatNumber($this->fromNumber);
+            
             $participant = $this->client->conversations->v1->conversations($conversationSid)
                 ->participants->create([
                     'messagingBinding.address' => $formattedPhone,
-                    'messagingBinding.proxyAddress' => $this->formatNumber($this->fromNumber),
+                    'messagingBinding.proxyAddress' => $proxyAddress,
                 ]);
 
             Log::info('Added WhatsApp participant to conversation', [
                 'conversation_sid' => $conversationSid,
                 'participant_sid' => $participant->sid,
                 'phone' => $phone,
+                'proxy_address' => $proxyAddress,
             ]);
         } catch (Exception $e) {
             Log::error('Failed to add WhatsApp participant', [
