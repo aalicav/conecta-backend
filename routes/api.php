@@ -673,6 +673,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/billing/nfe/{id}/substitute-nfes', [NFeController::class, 'findSubstituteNFes']);
     Route::post('/billing/nfe/{id}/cancel', [NFeController::class, 'cancel']);
     Route::post('/billing/nfe/{id}/cancel-by-substitution', [NFeController::class, 'cancelBySubstitution']);
+    Route::post('/billing/nfe/{id}/send-to-sefaz', [NFeController::class, 'sendToSefaz']);
+    Route::post('/billing/nfe/send-multiple-to-sefaz', [NFeController::class, 'sendMultipleToSefaz']);
     Route::get('/appointments/eligible-for-nfe', [NFeController::class, 'getEligibleAppointments']);
     Route::post('/appointments/{appointment}/generate-nfe', [NFeController::class, 'generateFromAppointment']);
     Route::post('/appointments/{appointment}/generate-billing', [AppointmentController::class, 'generateBilling']);

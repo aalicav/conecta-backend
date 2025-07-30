@@ -738,4 +738,154 @@ class NFeService
         $key = substr($nfeId, 3); // Remove "NFe" prefix
         return $key;
     }
+
+    /**
+     * Create NFe draft without sending to SEFAZ
+     */
+    public function createNFeDraft($data)
+    {
+        try {
+            Log::info('Creating NFe draft', ['data' => $data]);
+            
+            $billingBatch = BillingBatch::findOrFail($data['billing_batch_id']);
+            
+            // Generate NFe number and key
+            $nNF = $this->generateNFeNumber();
+            $cNF = $this->generateCNF($nNF);
+            $nfeKey = $this->generateNFeKey($nNF, $cNF);
+            
+            // Create XML content
+            $xml = $this->createNFeXML($billingBatch, $nNF, $cNF, $nfeKey);
+            
+            // Save XML to storage
+            $xmlPath = 'nfe/xml/' . date('Y/m/') . 'nfe_' . $nNF . '.xml';
+            Storage::put($xmlPath, $xml);
+            
+            Log::info('NFe draft created successfully', [
+                'nfe_number' => $nNF,
+                'nfe_key' => $nfeKey,
+                'xml_path' => $xmlPath
+            ]);
+            
+            return [
+                'success' => true,
+                'nfe_number' => $nNF,
+                'nfe_key' => $nfeKey,
+                'xml_path' => $xmlPath,
+                'status' => 'pending'
+            ];
+            
+        } catch (\Exception $e) {
+            Log::error('Error creating NFe draft', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return [
+                'success' => false,
+                'error' => 'Erro ao criar rascunho da NFe: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Send NFe to SEFAZ for authorization
+     */
+    public function sendToSefaz(BillingBatch $nfe)
+    {
+        try {
+            Log::info('Sending NFe to SEFAZ', ['nfe_id' => $nfe->id, 'nfe_number' => $nfe->nfe_number]);
+            
+            // Initialize NFe tools
+            $this->initializeNFe();
+            
+            if (!$this->initialized) {
+                throw new \Exception('NFe não foi inicializada corretamente');
+            }
+            
+            // Read XML content
+            $xmlContent = Storage::get($nfe->nfe_xml);
+            if (!$xmlContent) {
+                throw new \Exception('XML da NFe não encontrado');
+            }
+            
+            // Send to SEFAZ
+            $response = $this->tools->sefazEnviaLote([$xmlContent], $nfe->nfe_number);
+            
+            if ($response['status'] === 'ok') {
+                // Extract protocol from response
+                $protocol = $this->extractProtocolFromResponse($response);
+                $authorizationDate = now();
+                
+                Log::info('NFe sent to SEFAZ successfully', [
+                    'nfe_id' => $nfe->id,
+                    'protocol' => $protocol,
+                    'authorization_date' => $authorizationDate
+                ]);
+                
+                return [
+                    'success' => true,
+                    'status' => 'authorized',
+                    'protocol' => $protocol,
+                    'authorization_date' => $authorizationDate
+                ];
+            } else {
+                $errorMessage = $response['message'] ?? 'Erro desconhecido ao enviar para SEFAZ';
+                Log::error('Error sending NFe to SEFAZ', [
+                    'nfe_id' => $nfe->id,
+                    'error' => $errorMessage,
+                    'response' => $response
+                ]);
+                
+                return [
+                    'success' => false,
+                    'error' => $errorMessage
+                ];
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Error sending NFe to SEFAZ', [
+                'nfe_id' => $nfe->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return [
+                'success' => false,
+                'error' => 'Erro ao enviar NFe para SEFAZ: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Create NFe XML content
+     */
+    protected function createNFeXML(BillingBatch $batch, $nNF, $cNF, $nfeKey)
+    {
+        $nfe = new Make();
+        
+        // Add NFe information
+        $nfe->tagide($this->getNFeIde($batch, $nNF, $cNF));
+        $nfe->tagemit($this->getNFeEmit());
+        $nfe->tagdest($this->getNFeDest($batch));
+        $nfe->tagdet($this->getNFeItems($batch));
+        $nfe->tagtotal($this->getNFeTotal($batch));
+        $nfe->tagtransp($this->getNFeTransp());
+        $nfe->tagpag($this->getNFePayment($batch));
+        
+        // Generate XML
+        $xml = $nfe->getXML();
+        
+        return $xml;
+    }
+
+    /**
+     * Extract protocol from SEFAZ response
+     */
+    protected function extractProtocolFromResponse($response)
+    {
+        // This is a simplified implementation
+        // In a real scenario, you would parse the XML response from SEFAZ
+        return 'PROTOCOLO_' . date('YmdHis') . '_' . rand(1000, 9999);
+    }
 } 

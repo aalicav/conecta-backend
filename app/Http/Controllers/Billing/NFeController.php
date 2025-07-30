@@ -305,7 +305,7 @@ class NFeController extends Controller
                 ], 400);
             }
 
-            // Gerar NFe usando o serviço
+            // Gerar dados da NFe (sem enviar para SEFAZ ainda)
             $nfeData = [
                 'billing_batch_id' => $billingBatch->id,
                 'health_plan' => $appointment->solicitation->healthPlan,
@@ -326,27 +326,30 @@ class NFeController extends Controller
                 $nfeData['cNF'] = $cNF;
             }
 
-            $nfeResult = $this->nfeService->generateNFe($nfeData);
+            // Criar NFe com status pending (sem enviar para SEFAZ)
+            $nfeResult = $this->nfeService->createNFeDraft($nfeData);
 
             if (is_array($nfeResult) && isset($nfeResult['success']) && $nfeResult['success']) {
-                // Atualizar lote com informações da NFe
+                // Atualizar lote com informações da NFe (status pending)
                 $billingBatch->update([
                     'nfe_number' => $nfeResult['nfe_number'] ?? null,
                     'nfe_key' => $nfeResult['nfe_key'] ?? null,
                     'nfe_xml' => $nfeResult['xml_path'] ?? null,
-                    'nfe_status' => $nfeResult['status'] ?? 'pending',
-                    'nfe_protocol' => $nfeResult['protocol'] ?? null,
-                    'nfe_authorization_date' => $nfeResult['authorization_date'] ?? null,
-                    'status' => 'completed',
+                    'nfe_status' => 'pending', // Status inicial
+                    'nfe_protocol' => null,
+                    'nfe_authorization_date' => null,
+                    'status' => 'pending', // Lote também fica pending até autorização
                 ]);
 
                 DB::commit();
 
                 return response()->json([
-                    'message' => 'Nota fiscal gerada com sucesso',
+                    'message' => 'Nota fiscal criada com sucesso. Aguardando envio para SEFAZ.',
                     'nfe_id' => $billingBatch->id,
                     'nfe_number' => $nfeResult['nfe_number'] ?? null,
                     'nfe_key' => $nfeResult['nfe_key'] ?? null,
+                    'status' => 'pending',
+                    'requires_sefaz_submission' => true
                 ]);
             } else {
                 DB::rollBack();
@@ -366,6 +369,149 @@ class NFeController extends Controller
 
             return response()->json([
                 'message' => 'Erro interno ao gerar nota fiscal'
+            ], 500);
+        }
+    }
+
+    /**
+     * Send NFe to SEFAZ for authorization
+     */
+    public function sendToSefaz($id)
+    {
+        try {
+            $nfe = BillingBatch::with(['healthPlan', 'items.procedure'])
+                ->whereNotNull('nfe_number')
+                ->findOrFail($id);
+
+            if ($nfe->nfe_status !== 'pending') {
+                return response()->json([
+                    'message' => 'Apenas NFes com status pending podem ser enviadas para SEFAZ'
+                ], 400);
+            }
+
+            // Enviar para SEFAZ usando o serviço
+            $result = $this->nfeService->sendToSefaz($nfe);
+
+            if ($result['success']) {
+                // Atualizar status da NFe
+                $nfe->update([
+                    'nfe_status' => $result['status'] ?? 'authorized',
+                    'nfe_protocol' => $result['protocol'] ?? null,
+                    'nfe_authorization_date' => $result['authorization_date'] ?? now(),
+                    'status' => 'completed', // Lote completado após autorização
+                ]);
+
+                return response()->json([
+                    'message' => 'NFe enviada para SEFAZ com sucesso',
+                    'nfe_id' => $nfe->id,
+                    'status' => $result['status'] ?? 'authorized',
+                    'protocol' => $result['protocol'] ?? null,
+                    'authorization_date' => $result['authorization_date'] ?? now(),
+                ]);
+            } else {
+                return response()->json([
+                    'message' => 'Erro ao enviar NFe para SEFAZ: ' . $result['error']
+                ], 500);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar NFe para SEFAZ', [
+                'nfe_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Erro interno ao enviar NFe para SEFAZ'
+            ], 500);
+        }
+    }
+
+    /**
+     * Send multiple pending NFes to SEFAZ
+     */
+    public function sendMultipleToSefaz(Request $request)
+    {
+        try {
+            $request->validate([
+                'nfe_ids' => 'required|array',
+                'nfe_ids.*' => 'integer|exists:billing_batches,id'
+            ]);
+
+            $nfeIds = $request->input('nfe_ids');
+            $pendingNfes = BillingBatch::whereIn('id', $nfeIds)
+                ->where('nfe_status', 'pending')
+                ->whereNotNull('nfe_number')
+                ->get();
+
+            if ($pendingNfes->isEmpty()) {
+                return response()->json([
+                    'message' => 'Nenhuma NFe pendente encontrada para envio'
+                ], 400);
+            }
+
+            $results = [];
+            $successCount = 0;
+            $errorCount = 0;
+
+            foreach ($pendingNfes as $nfe) {
+                try {
+                    $result = $this->nfeService->sendToSefaz($nfe);
+                    
+                    if ($result['success']) {
+                        $nfe->update([
+                            'nfe_status' => $result['status'] ?? 'authorized',
+                            'nfe_protocol' => $result['protocol'] ?? null,
+                            'nfe_authorization_date' => $result['authorization_date'] ?? now(),
+                            'status' => 'completed',
+                        ]);
+                        
+                        $results[] = [
+                            'nfe_id' => $nfe->id,
+                            'nfe_number' => $nfe->nfe_number,
+                            'status' => 'success',
+                            'message' => 'Enviada com sucesso',
+                            'protocol' => $result['protocol'] ?? null,
+                        ];
+                        $successCount++;
+                    } else {
+                        $results[] = [
+                            'nfe_id' => $nfe->id,
+                            'nfe_number' => $nfe->nfe_number,
+                            'status' => 'error',
+                            'message' => $result['error'] ?? 'Erro desconhecido',
+                        ];
+                        $errorCount++;
+                    }
+                } catch (\Exception $e) {
+                    $results[] = [
+                        'nfe_id' => $nfe->id,
+                        'nfe_number' => $nfe->nfe_number,
+                        'status' => 'error',
+                        'message' => $e->getMessage(),
+                    ];
+                    $errorCount++;
+                }
+            }
+
+            return response()->json([
+                'message' => "Processamento concluído. {$successCount} enviadas com sucesso, {$errorCount} com erro.",
+                'results' => $results,
+                'summary' => [
+                    'total' => count($pendingNfes),
+                    'success' => $successCount,
+                    'error' => $errorCount,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar múltiplas NFes para SEFAZ', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Erro interno ao processar envio para SEFAZ'
             ], 500);
         }
     }
