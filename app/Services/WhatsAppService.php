@@ -220,52 +220,55 @@ class WhatsAppService
     }
 
     /**
-     * Process incoming WhatsApp message from webhook using Conversations
+     * Process incoming message and save to database
      *
-     * @param string $from Phone number of sender
-     * @param string $content Message content
-     * @param array $metadata Additional metadata
+     * @param string $from
+     * @param string $content
+     * @param array $metadata
      * @return Message
      */
     public function processIncomingMessage(string $from, string $content, array $metadata = [])
     {
-        // Normalize phone number
-        $normalizedFrom = $this->normalizePhoneNumber($from);
+        $normalizedPhone = $this->normalizePhoneNumber($from);
         
-        // Get or create conversation
-        $conversationSid = $this->getOrCreateConversation($normalizedFrom);
+        // Get or create Twilio conversation
+        $conversationSid = $this->getOrCreateConversation($normalizedPhone);
+        
+        // Identify sender entity
+        $senderEntity = $this->identifySenderEntity($normalizedPhone);
         
         // Create message record
         $message = Message::create([
-            'sender_phone' => $normalizedFrom,
+            'sender_phone' => $normalizedPhone,
             'recipient_phone' => $this->fromNumber,
             'content' => $content,
             'direction' => Message::DIRECTION_INBOUND,
-            'status' => Message::STATUS_DELIVERED, // Incoming messages are considered delivered
-            'message_type' => Message::TYPE_TEXT,
+            'status' => Message::STATUS_DELIVERED,
+            'message_type' => 'text',
+            'external_id' => $metadata['message_id'] ?? null,
             'metadata' => array_merge($metadata, [
                 'conversation_sid' => $conversationSid,
-                'twilio_conversations' => true,
+                'profile_name' => $metadata['profile_name'] ?? null,
+                'wa_id' => $metadata['wa_id'] ?? null,
             ]),
-            'delivered_at' => now(),
         ]);
-
-        Log::info('Incoming WhatsApp message processed via Conversations', [
-            'message_id' => $message->id,
-            'from' => $normalizedFrom,
-            'content' => $content,
-            'conversation_sid' => $conversationSid,
-        ]);
-
-        // Try to identify the sender entity
-        $senderEntity = $this->identifySenderEntity($normalizedFrom);
+        
+        // Update related model if sender entity is found
         if ($senderEntity) {
             $message->update([
-                'related_model_type' => get_class($senderEntity),
-                'related_model_id' => $senderEntity->id,
+                'related_model_type' => $senderEntity['type'],
+                'related_model_id' => $senderEntity['id'],
             ]);
         }
-
+        
+        Log::info('Incoming message processed', [
+            'from' => $normalizedPhone,
+            'content' => $content,
+            'conversation_sid' => $conversationSid,
+            'sender_entity' => $senderEntity ? $senderEntity['type'] : 'Unknown',
+            'message_id' => $message->id,
+        ]);
+        
         return $message;
     }
 
@@ -453,31 +456,57 @@ class WhatsAppService
     }
 
     /**
-     * Identify the entity that sent a message based on phone number
+     * Identify the sender entity (Patient, Professional, or Clinic) by phone number
      *
-     * @param string $phone Phone number
-     * @return Patient|Professional|Clinic|null
+     * @param string $phone
+     * @return array|null
      */
     public function identifySenderEntity(string $phone)
     {
-        // Check if it's a patient
-        $patient = Patient::where('phone', $phone)->first();
+        $normalizedPhone = $this->normalizePhoneNumber($phone);
+        
+        // Search in Patient phones
+        $patient = Patient::whereHas('phones', function ($query) use ($normalizedPhone) {
+            $query->where('number', $normalizedPhone);
+        })->first();
+        
         if ($patient) {
-            return $patient;
+            return [
+                'type' => 'Patient',
+                'id' => $patient->id,
+                'name' => $patient->name,
+                'entity' => $patient
+            ];
         }
-
-        // Check if it's a professional
-        $professional = Professional::where('phone', $phone)->first();
+        
+        // Search in Professional phones
+        $professional = Professional::whereHas('phones', function ($query) use ($normalizedPhone) {
+            $query->where('number', $normalizedPhone);
+        })->first();
+        
         if ($professional) {
-            return $professional;
+            return [
+                'type' => 'Professional',
+                'id' => $professional->id,
+                'name' => $professional->name,
+                'entity' => $professional
+            ];
         }
-
-        // Check if it's a clinic
-        $clinic = Clinic::where('phone', $phone)->first();
+        
+        // Search in Clinic phones
+        $clinic = Clinic::whereHas('phones', function ($query) use ($normalizedPhone) {
+            $query->where('number', $normalizedPhone);
+        })->first();
+        
         if ($clinic) {
-            return $clinic;
+            return [
+                'type' => 'Clinic',
+                'id' => $clinic->id,
+                'name' => $clinic->name,
+                'entity' => $clinic
+            ];
         }
-
+        
         return null;
     }
 

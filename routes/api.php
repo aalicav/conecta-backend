@@ -495,6 +495,9 @@ Route::middleware(['auth:sanctum'])->prefix('messages')->group(function () {
     Route::post('sync-template/{phone}', [BidirectionalMessageController::class, 'syncTemplateMessages']);
     Route::get('complete-history/{phone}', [BidirectionalMessageController::class, 'getCompleteHistory']);
     
+    // Conversation management routes
+    Route::post('conversations/{phone}/read', [BidirectionalMessageController::class, 'markAsRead']);
+    
     // Twilio Conversations specific routes
     Route::get('twilio/{phone}/messages', [BidirectionalMessageController::class, 'getTwilioMessages']);
     Route::post('twilio/{phone}/webhook', [BidirectionalMessageController::class, 'setupWebhook']);

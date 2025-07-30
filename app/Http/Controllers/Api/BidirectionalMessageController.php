@@ -435,4 +435,50 @@ class BidirectionalMessageController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Mark conversation as read
+     *
+     * @param Request $request
+     * @param string $phone
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function markAsRead(Request $request, string $phone)
+    {
+        $validator = Validator::make(['phone' => $phone], [
+            'phone' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            // Mark all inbound messages for this phone as read
+            $updated = Message::where('recipient_phone', $phone)
+                ->where('direction', Message::DIRECTION_INBOUND)
+                ->whereNull('read_at')
+                ->update([
+                    'status' => Message::STATUS_READ,
+                    'read_at' => now(),
+                ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Conversa marcada como lida',
+                'data' => [
+                    'phone' => $phone,
+                    'messages_updated' => $updated,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to mark conversation as read: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao marcar conversa como lida',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 
