@@ -3610,4 +3610,208 @@ class WhatsAppService
 
         return $message;
     }
+
+    /**
+     * Migrate existing template messages to Conversations system
+     *
+     * @param string $phone Phone number to migrate
+     * @return array Migration results
+     */
+    public function migrateTemplateMessagesToConversations(string $phone): array
+    {
+        $normalizedPhone = $this->normalizePhoneNumber($phone);
+        $results = [
+            'migrated' => 0,
+            'errors' => [],
+            'conversation_sid' => null
+        ];
+
+        try {
+            // Get or create conversation
+            $conversationSid = $this->getOrCreateConversation($normalizedPhone);
+            $results['conversation_sid'] = $conversationSid;
+
+            // Get existing template messages from WhatsappMessage table
+            $templateMessages = WhatsappMessage::where('recipient', $normalizedPhone)
+                ->where('status', 'sent')
+                ->orderBy('created_at', 'asc')
+                ->get();
+
+            foreach ($templateMessages as $templateMsg) {
+                try {
+                    // Create message record in new system
+                    $message = Message::create([
+                        'sender_phone' => $this->fromNumber,
+                        'recipient_phone' => $normalizedPhone,
+                        'content' => $templateMsg->content,
+                        'direction' => Message::DIRECTION_OUTBOUND,
+                        'status' => Message::STATUS_SENT,
+                        'message_type' => Message::TYPE_TEMPLATE,
+                        'external_id' => $templateMsg->message_sid,
+                        'sent_at' => $templateMsg->sent_at ?? $templateMsg->created_at,
+                        'delivered_at' => $templateMsg->delivered_at,
+                        'read_at' => $templateMsg->read_at,
+                        'related_model_type' => $templateMsg->related_model_type,
+                        'related_model_id' => $templateMsg->related_model_id,
+                        'template_name' => $templateMsg->template_name ?? 'legacy_template',
+                        'metadata' => [
+                            'conversation_sid' => $conversationSid,
+                            'twilio_conversations' => false,
+                            'migrated_from_template' => true,
+                            'original_message_id' => $templateMsg->id,
+                        ],
+                    ]);
+
+                    $results['migrated']++;
+                    
+                    Log::info('Migrated template message to Conversations', [
+                        'original_id' => $templateMsg->id,
+                        'new_id' => $message->id,
+                        'phone' => $normalizedPhone,
+                        'conversation_sid' => $conversationSid,
+                    ]);
+
+                } catch (Exception $e) {
+                    $results['errors'][] = [
+                        'message_id' => $templateMsg->id,
+                        'error' => $e->getMessage()
+                    ];
+                    
+                    Log::error('Failed to migrate template message', [
+                        'message_id' => $templateMsg->id,
+                        'phone' => $normalizedPhone,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+        } catch (Exception $e) {
+            $results['errors'][] = [
+                'type' => 'conversation_creation',
+                'error' => $e->getMessage()
+            ];
+            
+            Log::error('Failed to create conversation for migration', [
+                'phone' => $normalizedPhone,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $results;
+    }
+
+    /**
+     * Get complete conversation history including template messages
+     *
+     * @param string $phone Phone number
+     * @param int $limit Number of messages to return
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function getCompleteConversationHistory(string $phone, int $limit = 50)
+    {
+        $normalizedPhone = $this->normalizePhoneNumber($phone);
+        
+        // Get all messages (both new bidirectional and migrated template messages)
+        return Message::where(function ($query) use ($normalizedPhone) {
+            $query->where('sender_phone', $normalizedPhone)
+                  ->orWhere('recipient_phone', $normalizedPhone);
+        })
+        ->orderBy('created_at', 'asc')
+        ->limit($limit)
+        ->get();
+    }
+
+    /**
+     * Sync template messages with Conversations for a specific phone
+     *
+     * @param string $phone Phone number
+     * @return array Sync results
+     */
+    public function syncTemplateMessagesWithConversations(string $phone): array
+    {
+        $normalizedPhone = $this->normalizePhoneNumber($phone);
+        $results = [
+            'synced' => 0,
+            'errors' => [],
+            'conversation_sid' => null
+        ];
+
+        try {
+            // Get or create conversation
+            $conversationSid = $this->getOrCreateConversation($normalizedPhone);
+            $results['conversation_sid'] = $conversationSid;
+
+            // Get template messages that haven't been migrated yet
+            $templateMessages = WhatsappMessage::where('recipient', $normalizedPhone)
+                ->where('status', 'sent')
+                ->whereNotExists(function ($query) use ($normalizedPhone) {
+                    $query->select('id')
+                          ->from('messages')
+                          ->whereRaw('messages.metadata->>"$.original_message_id" = whatsapp_messages.id');
+                })
+                ->orderBy('created_at', 'asc')
+                ->get();
+
+            foreach ($templateMessages as $templateMsg) {
+                try {
+                    // Create message record in new system
+                    $message = Message::create([
+                        'sender_phone' => $this->fromNumber,
+                        'recipient_phone' => $normalizedPhone,
+                        'content' => $templateMsg->content,
+                        'direction' => Message::DIRECTION_OUTBOUND,
+                        'status' => Message::STATUS_SENT,
+                        'message_type' => Message::TYPE_TEMPLATE,
+                        'external_id' => $templateMsg->message_sid,
+                        'sent_at' => $templateMsg->sent_at ?? $templateMsg->created_at,
+                        'delivered_at' => $templateMsg->delivered_at,
+                        'read_at' => $templateMsg->read_at,
+                        'related_model_type' => $templateMsg->related_model_type,
+                        'related_model_id' => $templateMsg->related_model_id,
+                        'template_name' => $templateMsg->template_name ?? 'legacy_template',
+                        'metadata' => [
+                            'conversation_sid' => $conversationSid,
+                            'twilio_conversations' => false,
+                            'migrated_from_template' => true,
+                            'original_message_id' => $templateMsg->id,
+                        ],
+                    ]);
+
+                    $results['synced']++;
+                    
+                    Log::info('Synced template message with Conversations', [
+                        'original_id' => $templateMsg->id,
+                        'new_id' => $message->id,
+                        'phone' => $normalizedPhone,
+                        'conversation_sid' => $conversationSid,
+                    ]);
+
+                } catch (Exception $e) {
+                    $results['errors'][] = [
+                        'message_id' => $templateMsg->id,
+                        'error' => $e->getMessage()
+                    ];
+                    
+                    Log::error('Failed to sync template message', [
+                        'message_id' => $templateMsg->id,
+                        'phone' => $normalizedPhone,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+        } catch (Exception $e) {
+            $results['errors'][] = [
+                'type' => 'conversation_creation',
+                'error' => $e->getMessage()
+            ];
+            
+            Log::error('Failed to create conversation for sync', [
+                'phone' => $normalizedPhone,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $results;
+    }
 }

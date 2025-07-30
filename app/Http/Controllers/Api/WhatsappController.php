@@ -577,12 +577,6 @@ class WhatsappController extends Controller
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
-     * 
-     * Enhanced to provide comprehensive feedback and notifications:
-     * 1. Send detailed feedback messages via WhatsApp to patients
-     * 2. Notify appointment creators via email and database
-     * 3. Notify health plan admins via email and database  
-     * 4. Improved logging and error handling
      */
     public function webhook(Request $request)
     {
@@ -605,58 +599,96 @@ class WhatsappController extends Controller
             // Process the webhook data
             $webhookData = $request->all();
             
-            Log::info('WhatsApp webhook received', $webhookData);
+            Log::info('Processing WhatsApp webhook', $webhookData);
             
-            // Handle Twilio webhook for interactive messages (buttons)
+            // Handle Twilio webhook format
+            if (isset($webhookData['MessageType']) && $webhookData['MessageType'] === 'text') {
+                $from = str_replace('whatsapp:+', '', $webhookData['From'] ?? '');
+                $body = $webhookData['Body'] ?? '';
+                $messageSid = $webhookData['MessageSid'] ?? '';
+                $profileName = $webhookData['ProfileName'] ?? '';
+                $waId = $webhookData['WaId'] ?? '';
+                
+                Log::info('Processing Twilio text message', [
+                    'from' => $from,
+                    'body' => $body,
+                    'message_sid' => $messageSid,
+                    'profile_name' => $profileName,
+                    'wa_id' => $waId
+                ]);
+                
+                // Check if this is an appointment verification response
+                if (preg_match('/^(confirm|reject)-\d+$/', $body)) {
+                    Log::info('Processing appointment verification response', [
+                        'from' => $from,
+                        'body' => $body
+                    ]);
+                    
+                    $this->whatsappService->processAppointmentVerificationResponse($body, $from);
+                } else {
+                    // Process as regular incoming message with Conversations
+                    $this->whatsappService->processIncomingMessage($from, $body, [
+                        'message_id' => $messageSid,
+                        'profile_name' => $profileName,
+                        'wa_id' => $waId,
+                        'timestamp' => now(),
+                        'type' => 'text',
+                        'source' => 'twilio_webhook',
+                    ]);
+                    
+                    // Emit notification event for real-time updates
+                    event(new \App\Events\NewWhatsAppMessageReceived($from, $body, $profileName));
+                }
+                
+                return response()->json(['success' => true]);
+            }
+            
+            // Handle interactive messages (buttons)
             if (isset($webhookData['MessageType']) && $webhookData['MessageType'] === 'interactive') {
                 $from = str_replace('whatsapp:+', '', $webhookData['From'] ?? '');
                 $buttonPayload = $webhookData['ButtonPayload'] ?? '';
                 
+                Log::info('Processing interactive message', [
+                    'from' => $from,
+                    'payload' => $buttonPayload
+                ]);
+                
                 // Check if this is an appointment verification response
                 if (preg_match('/^(confirm|reject)-\d+$/', $buttonPayload)) {
-                    Log::info('Processing appointment verification response', [
-                        'from' => $from,
-                        'payload' => $buttonPayload
-                    ]);
-                    
-                    // Process the response with enhanced notifications
-                    // This will now trigger:
-                    // - Detailed WhatsApp feedback to patient
-                    // - Email + database notifications to appointment creator
-                    // - Email + database notifications to health plan admins
                     $this->whatsappService->processAppointmentVerificationResponse($buttonPayload, $from);
-                    return response()->json(['success' => true]);
                 }
+                
+                return response()->json(['success' => true]);
             }
             
-            // Check if this is a message from a user (Facebook webhook format)
+            // Handle Facebook webhook format (legacy)
             if (isset($webhookData['entry'][0]['changes'][0]['value']['messages'])) {
                 $messages = $webhookData['entry'][0]['changes'][0]['value']['messages'];
                 
                 foreach ($messages as $message) {
-                    // Check if this is a text message
                     if ($message['type'] === 'text') {
                         $from = $message['from'];
                         $text = $message['text']['body'];
                         
-                        // Check if this is an appointment verification response
                         if (preg_match('/^(confirm|reject)-\d+$/', $text)) {
-                            // Process the response with enhanced notifications
                             $this->whatsappService->processAppointmentVerificationResponse($text, $from);
                         } else {
-                            // Process as regular incoming message
                             $this->whatsappService->processIncomingMessage($from, $text, [
                                 'message_id' => $message['id'] ?? null,
                                 'timestamp' => $message['timestamp'] ?? null,
                                 'type' => $message['type'] ?? 'text',
+                                'source' => 'facebook_webhook',
                             ]);
+                            
+                            // Emit notification event
+                            event(new \App\Events\NewWhatsAppMessageReceived($from, $text));
                         }
                     }
                 }
             }
             
-            // Process other webhook data (status updates, etc.) - but only if it's not an interactive message
-            if (!isset($webhookData['MessageType']) || $webhookData['MessageType'] !== 'interactive') {
+            // Process status updates and other webhook data
+            if (!isset($webhookData['MessageType']) || !in_array($webhookData['MessageType'], ['text', 'interactive'])) {
                 $this->whatsappService->handleWebhook($webhookData);
             }
             
@@ -665,6 +697,7 @@ class WhatsappController extends Controller
             Log::error('WhatsApp webhook error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+                'data' => $request->all()
             ]);
             
             return response()->json(['error' => $e->getMessage()], 500);

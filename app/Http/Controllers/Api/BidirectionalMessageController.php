@@ -327,4 +327,112 @@ class BidirectionalMessageController extends Controller
             ]
         ]);
     }
+
+    /**
+     * Migrate template messages to Conversations system
+     *
+     * @param Request $request
+     * @param string $phone
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function migrateTemplateMessages(Request $request, string $phone)
+    {
+        $validator = Validator::make(['phone' => $phone], [
+            'phone' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $results = $this->whatsappService->migrateTemplateMessagesToConversations($phone);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Migração de mensagens de template concluída',
+                'data' => $results
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to migrate template messages: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao migrar mensagens de template',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Sync template messages with Conversations
+     *
+     * @param Request $request
+     * @param string $phone
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function syncTemplateMessages(Request $request, string $phone)
+    {
+        $validator = Validator::make(['phone' => $phone], [
+            'phone' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $results = $this->whatsappService->syncTemplateMessagesWithConversations($phone);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Sincronização de mensagens de template concluída',
+                'data' => $results
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to sync template messages: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao sincronizar mensagens de template',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get complete conversation history including template messages
+     *
+     * @param Request $request
+     * @param string $phone
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getCompleteHistory(Request $request, string $phone)
+    {
+        $validator = Validator::make(['phone' => $phone], [
+            'phone' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $limit = $request->input('limit', 50);
+            $messages = $this->whatsappService->getCompleteConversationHistory($phone, $limit);
+
+            return response()->json([
+                'success' => true,
+                'data' => MessageResource::collection($messages)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to get complete conversation history: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao obter histórico completo',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 

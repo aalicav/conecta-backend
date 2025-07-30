@@ -485,10 +485,15 @@ Route::middleware(['auth:sanctum'])->prefix('whatsapp')->group(function () {
 Route::middleware(['auth:sanctum'])->prefix('messages')->group(function () {
     Route::get('conversations', [BidirectionalMessageController::class, 'getConversations']);
     Route::get('conversations/{phone}/history', [BidirectionalMessageController::class, 'getConversationHistory']);
-    Route::post('send', [BidirectionalMessageController::class, 'sendMessage']);
+    Route::post('send', [BidirectionalMessageController::class, 'sendBidirectionalMessage']);
     Route::get('entity/{type}/{id}', [BidirectionalMessageController::class, 'getMessagesByEntity']);
     Route::get('statistics', [BidirectionalMessageController::class, 'getStatistics']);
     Route::get('/', [BidirectionalMessageController::class, 'getMessages']);
+    
+    // Template message migration and sync routes
+    Route::post('migrate-template/{phone}', [BidirectionalMessageController::class, 'migrateTemplateMessages']);
+    Route::post('sync-template/{phone}', [BidirectionalMessageController::class, 'syncTemplateMessages']);
+    Route::get('complete-history/{phone}', [BidirectionalMessageController::class, 'getCompleteHistory']);
     
     // Twilio Conversations specific routes
     Route::get('twilio/{phone}/messages', [BidirectionalMessageController::class, 'getTwilioMessages']);
