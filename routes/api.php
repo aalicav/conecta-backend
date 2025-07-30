@@ -407,6 +407,22 @@ Route::middleware(['auth:sanctum'])->group(function () {
             ->middleware('permission:submit negotiations');
         Route::post('/{negotiation}/process-approval', [NegotiationController::class, 'processApproval'])
             ->middleware('permission:approve negotiations');
+        Route::post('/{negotiation}/process-external-approval', [NegotiationController::class, 'processExternalApproval'])
+            ->middleware('permission:approve negotiations');
+        Route::post('/{negotiation}/submit-director-approval', [NegotiationController::class, 'submitForDirectorApproval'])
+            ->middleware('permission:approve negotiations');
+        Route::post('/{negotiation}/director-approve', [NegotiationController::class, 'directorApprove'])
+            ->middleware('permission:approve negotiations');
+        Route::post('/{negotiation}/cancel', [NegotiationController::class, 'cancel'])
+            ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/mark-complete', [NegotiationController::class, 'markAsComplete'])
+            ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/mark-partially-complete', [NegotiationController::class, 'markAsPartiallyComplete'])
+            ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/rollback-status', [NegotiationController::class, 'rollbackStatus'])
+            ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/fork', [NegotiationController::class, 'forkNegotiation'])
+            ->middleware('permission:edit negotiations');
         
         // Extemporaneous negotiations
         Route::post('/extemporaneous', [NegotiationController::class, 'storeExtemporaneous'])
