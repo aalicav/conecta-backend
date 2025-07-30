@@ -132,23 +132,29 @@ class Message extends Model
             return null;
         }
 
-        // Try to find the entity by phone number
+        // Try to find the entity by phone number using polymorphic relationships
         $phone = $this->sender_phone;
         
         // Check if it's a patient
-        $patient = Patient::where('phone', $phone)->first();
+        $patient = Patient::whereHas('phones', function ($query) use ($phone) {
+            $query->where('number', $phone);
+        })->first();
         if ($patient) {
             return $patient;
         }
 
         // Check if it's a professional
-        $professional = Professional::where('phone', $phone)->first();
+        $professional = Professional::whereHas('phones', function ($query) use ($phone) {
+            $query->where('number', $phone);
+        })->first();
         if ($professional) {
             return $professional;
         }
 
         // Check if it's a clinic
-        $clinic = Clinic::where('phone', $phone)->first();
+        $clinic = Clinic::whereHas('phones', function ($query) use ($phone) {
+            $query->where('number', $phone);
+        })->first();
         if ($clinic) {
             return $clinic;
         }
