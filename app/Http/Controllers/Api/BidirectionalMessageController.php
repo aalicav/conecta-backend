@@ -49,13 +49,16 @@ class BidirectionalMessageController extends Controller
     {
         try {
             $limit = $request->get('limit', 50);
-            $messages = $this->whatsappService->getConversationHistory($phone, $limit);
+            $pageToken = $request->get('page_token');
+            
+            $result = $this->whatsappService->getConversationHistory($phone, $limit, $pageToken);
 
             return response()->json([
                 'success' => true,
-                'data' => $messages,
+                'data' => $result['messages'],
+                'pagination' => $result['pagination'],
                 'phone' => $phone,
-                'total' => count($messages),
+                'total' => $result['pagination']['total_count'],
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to get conversation history: ' . $e->getMessage());

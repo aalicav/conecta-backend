@@ -206,13 +206,18 @@ class WhatsAppService
     }
 
     /**
-     * Get messages from Twilio Conversation
+     * Get messages from Twilio Conversation with pagination
      */
-    public function getTwilioConversationMessages(string $conversationSid, int $limit = 50): array
+    public function getTwilioConversationMessages(string $conversationSid, int $limit = 50, string $pageToken = null): array
     {
         try {
+            $params = [];
+            if ($pageToken) {
+                $params['pageToken'] = $pageToken;
+            }
+
             $messages = $this->client->conversations->v1->conversations($conversationSid)
-                ->messages->read([], $limit);
+                ->messages->read($params, $limit);
 
             $formattedMessages = [];
             foreach ($messages as $message) {
@@ -227,13 +232,43 @@ class WhatsAppService
                 ];
             }
 
-            return $formattedMessages;
+            // Get pagination info
+            $hasMore = false;
+            $nextPageToken = null;
+            
+            if (count($messages) === $limit) {
+                // Check if there are more messages
+                $nextPage = $this->client->conversations->v1->conversations($conversationSid)
+                    ->messages->read(['pageToken' => end($messages)->sid], 1);
+                $hasMore = count($nextPage) > 0;
+                if ($hasMore) {
+                    $nextPageToken = end($messages)->sid;
+                }
+            }
+
+            return [
+                'messages' => $formattedMessages,
+                'pagination' => [
+                    'has_more' => $hasMore,
+                    'next_page_token' => $nextPageToken,
+                    'total_count' => count($formattedMessages),
+                    'limit' => $limit,
+                ]
+            ];
         } catch (Exception $e) {
             Log::error('Failed to get Twilio conversation messages', [
                 'conversation_sid' => $conversationSid,
                 'error' => $e->getMessage(),
             ]);
-            return [];
+            return [
+                'messages' => [],
+                'pagination' => [
+                    'has_more' => false,
+                    'next_page_token' => null,
+                    'total_count' => 0,
+                    'limit' => $limit,
+                ]
+            ];
         }
     }
 
@@ -315,14 +350,15 @@ class WhatsAppService
     }
 
     /**
-     * Get conversation history for a specific phone
+     * Get conversation history for a specific phone with pagination
      */
-    public function getConversationHistory(string $phone, int $limit = 50): array
+    public function getConversationHistory(string $phone, int $limit = 50, string $pageToken = null): array
     {
         try {
             Log::info('Getting conversation history', [
                 'phone' => $phone,
                 'limit' => $limit,
+                'page_token' => $pageToken,
             ]);
 
             $conversation = $this->findConversationByPhone($phone);
@@ -331,7 +367,15 @@ class WhatsAppService
                 Log::warning('Conversation not found for phone', [
                     'phone' => $phone,
                 ]);
-                return [];
+                return [
+                    'messages' => [],
+                    'pagination' => [
+                        'has_more' => false,
+                        'next_page_token' => null,
+                        'total_count' => 0,
+                        'limit' => $limit,
+                    ]
+                ];
             }
 
             Log::info('Found conversation', [
@@ -339,20 +383,29 @@ class WhatsAppService
                 'conversation_sid' => $conversation->sid,
             ]);
 
-            $messages = $this->getTwilioConversationMessages($conversation->sid, $limit);
+            $result = $this->getTwilioConversationMessages($conversation->sid, $limit, $pageToken);
             
             Log::info('Retrieved messages', [
                 'phone' => $phone,
-                'message_count' => count($messages),
+                'message_count' => count($result['messages']),
+                'has_more' => $result['pagination']['has_more'],
             ]);
 
-            return $messages;
+            return $result;
         } catch (Exception $e) {
             Log::error('Failed to get conversation history', [
                 'phone' => $phone,
                 'error' => $e->getMessage(),
             ]);
-            return [];
+            return [
+                'messages' => [],
+                'pagination' => [
+                    'has_more' => false,
+                    'next_page_token' => null,
+                    'total_count' => 0,
+                    'limit' => $limit,
+                ]
+            ];
         }
     }
 
@@ -380,6 +433,23 @@ class WhatsAppService
     public function processIncomingMessage(string $phone, string $content, array $metadata = []): void
     {
         try {
+            $messageId = $metadata['message_id'] ?? null;
+            
+            // Check if we already processed this message
+            if ($messageId) {
+                $cacheKey = "processed_message_{$messageId}";
+                if (cache()->has($cacheKey)) {
+                    Log::info('Message already processed, skipping', [
+                        'message_id' => $messageId,
+                        'phone' => $phone,
+                    ]);
+                    return;
+                }
+                
+                // Mark as processed for 5 minutes
+                cache()->put($cacheKey, true, 300);
+            }
+            
             $conversationSid = $this->getOrCreateConversation($phone);
             
             // Send the incoming message to the conversation
