@@ -73,11 +73,65 @@ class WhatsAppService
     public function findConversationByPhone(string $phone): ?object
     {
         try {
+            Log::info('Finding conversation by phone', [
+                'phone' => $phone,
+                'unique_name' => "whatsapp_{$phone}",
+            ]);
+
+            // First try to find by unique name
             $conversations = $this->client->conversations->v1->conversations->read([
                 'uniqueName' => "whatsapp_{$phone}"
             ]);
 
-            return $conversations[0] ?? null;
+            if (!empty($conversations)) {
+                Log::info('Found conversation by unique name', [
+                    'phone' => $phone,
+                    'conversation_sid' => $conversations[0]->sid,
+                ]);
+                return $conversations[0];
+            }
+
+            // If not found by unique name, try to find by participants
+            Log::info('Conversation not found by unique name, searching by participants', [
+                'phone' => $phone,
+            ]);
+
+            $allConversations = $this->client->conversations->v1->conversations->read([], 100);
+            
+            foreach ($allConversations as $conversation) {
+                try {
+                    $participants = $this->client->conversations->v1->conversations($conversation->sid)
+                        ->participants->read();
+                    
+                    foreach ($participants as $participant) {
+                        if (isset($participant->messagingBinding) && 
+                            isset($participant->messagingBinding['address'])) {
+                            $address = $participant->messagingBinding['address'];
+                            if (preg_match('/whatsapp:\+(\d+)/', $address, $matches)) {
+                                $participantPhone = $matches[1];
+                                if ($participantPhone === $phone) {
+                                    Log::info('Found conversation by participant', [
+                                        'phone' => $phone,
+                                        'conversation_sid' => $conversation->sid,
+                                    ]);
+                                    return $conversation;
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception $e) {
+                    Log::warning('Failed to check participants for conversation', [
+                        'conversation_sid' => $conversation->sid,
+                        'error' => $e->getMessage(),
+                    ]);
+                    continue;
+                }
+            }
+
+            Log::warning('Conversation not found for phone', [
+                'phone' => $phone,
+            ]);
+            return null;
         } catch (Exception $e) {
             Log::error('Failed to find conversation by phone', [
                 'phone' => $phone,
@@ -198,16 +252,51 @@ class WhatsAppService
                 $latestMessage = $messages[0] ?? null;
                 
                 if ($latestMessage) {
-                    // Extract phone from conversation unique name
+                    // Try to extract phone from conversation unique name first
                     $phone = str_replace('whatsapp_', '', $conversation->uniqueName);
                     
-                    $formattedConversations[] = [
-                        'conversation_sid' => $conversation->sid,
-                        'phone' => $phone,
-                        'latest_message' => $latestMessage,
-                        'contact_info' => $this->identifySenderEntity($phone),
-                        'created_at' => $conversation->dateCreated->format('Y-m-d H:i:s'),
-                    ];
+                    // If phone is empty, try to extract from the latest message sender
+                    if (empty($phone) && isset($latestMessage['sender'])) {
+                        $sender = $latestMessage['sender'];
+                        // Extract phone from whatsapp:+558596345077 format
+                        if (preg_match('/whatsapp:\+(\d+)/', $sender, $matches)) {
+                            $phone = $matches[1];
+                        }
+                    }
+                    
+                    // If still empty, try to get from conversation participants
+                    if (empty($phone)) {
+                        try {
+                            $participants = $this->client->conversations->v1->conversations($conversation->sid)
+                                ->participants->read();
+                            
+                            foreach ($participants as $participant) {
+                                if (isset($participant->messagingBinding) && 
+                                    isset($participant->messagingBinding['address'])) {
+                                    $address = $participant->messagingBinding['address'];
+                                    if (preg_match('/whatsapp:\+(\d+)/', $address, $matches)) {
+                                        $phone = $matches[1];
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (Exception $e) {
+                            Log::warning('Failed to get participants for phone extraction', [
+                                'conversation_sid' => $conversation->sid,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                    
+                    if (!empty($phone)) {
+                        $formattedConversations[] = [
+                            'conversation_sid' => $conversation->sid,
+                            'phone' => $phone,
+                            'latest_message' => $latestMessage,
+                            'contact_info' => $this->identifySenderEntity($phone),
+                            'created_at' => $conversation->dateCreated->format('Y-m-d H:i:s'),
+                        ];
+                    }
                 }
             }
 
@@ -231,13 +320,33 @@ class WhatsAppService
     public function getConversationHistory(string $phone, int $limit = 50): array
     {
         try {
+            Log::info('Getting conversation history', [
+                'phone' => $phone,
+                'limit' => $limit,
+            ]);
+
             $conversation = $this->findConversationByPhone($phone);
             
             if (!$conversation) {
+                Log::warning('Conversation not found for phone', [
+                    'phone' => $phone,
+                ]);
                 return [];
             }
 
-            return $this->getTwilioConversationMessages($conversation->sid, $limit);
+            Log::info('Found conversation', [
+                'phone' => $phone,
+                'conversation_sid' => $conversation->sid,
+            ]);
+
+            $messages = $this->getTwilioConversationMessages($conversation->sid, $limit);
+            
+            Log::info('Retrieved messages', [
+                'phone' => $phone,
+                'message_count' => count($messages),
+            ]);
+
+            return $messages;
         } catch (Exception $e) {
             Log::error('Failed to get conversation history', [
                 'phone' => $phone,
