@@ -90,7 +90,7 @@ class WhatsAppService
         }
 
         $this->client = new Client($sid, $token);
-        $this->fromNumber = '+558540421311';
+        $this->fromNumber = $fromNumber;
         $this->messagingServiceSid = $messagingServiceSid;
         $this->templateBuilder = $templateBuilder ?? new WhatsAppTemplateBuilder();
     }
