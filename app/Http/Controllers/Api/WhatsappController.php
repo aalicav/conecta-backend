@@ -643,6 +643,13 @@ class WhatsappController extends Controller
                         if (preg_match('/^(confirm|reject)-\d+$/', $text)) {
                             // Process the response with enhanced notifications
                             $this->whatsappService->processAppointmentVerificationResponse($text, $from);
+                        } else {
+                            // Process as regular incoming message
+                            $this->whatsappService->processIncomingMessage($from, $text, [
+                                'message_id' => $message['id'] ?? null,
+                                'timestamp' => $message['timestamp'] ?? null,
+                                'type' => $message['type'] ?? 'text',
+                            ]);
                         }
                     }
                 }

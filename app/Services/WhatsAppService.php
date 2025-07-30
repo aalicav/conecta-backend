@@ -10,6 +10,8 @@ use App\Models\Professional;
 use App\Models\HealthPlan;
 use App\Models\Appointment;
 use App\Models\WhatsappMessage;
+use App\Models\Message;
+use App\Models\Clinic;
 use Carbon\Carbon;
 use App\Models\Negotiation;
 use App\Models\User;
@@ -21,21 +23,21 @@ class WhatsAppService
      *
      * @var \Twilio\Rest\Client
      */
-    protected $client;
+    public $client;
 
     /**
      * The WhatsApp number that messages will be sent from.
      *
      * @var string
      */
-    protected $fromNumber;
+    public $fromNumber;
 
     /**
      * The messaging service SID for Twilio.
      *
      * @var string|null
      */
-    protected $messagingServiceSid;
+    public $messagingServiceSid;
 
     /**
      * Template SIDs
@@ -68,7 +70,7 @@ class WhatsAppService
      *
      * @var \App\Services\WhatsAppTemplateBuilder
      */
-    protected $templateBuilder;
+    public $templateBuilder;
 
     /**
      * Create a new WhatsApp service instance.
@@ -91,6 +93,433 @@ class WhatsAppService
         $this->fromNumber = $fromNumber;
         $this->messagingServiceSid = $messagingServiceSid;
         $this->templateBuilder = $templateBuilder ?? new WhatsAppTemplateBuilder();
+    }
+
+    /**
+     * Create or get a conversation for a phone number
+     *
+     * @param string $phone Phone number
+     * @return string Conversation SID
+     */
+    public function getOrCreateConversation(string $phone): string
+    {
+        $normalizedPhone = $this->normalizePhoneNumber($phone);
+        
+        // Check if conversation already exists for this phone
+        $existingConversation = $this->findConversationByPhone($normalizedPhone);
+        
+        if ($existingConversation) {
+            return $existingConversation->sid;
+        }
+
+        // Create new conversation
+        $conversation = $this->client->conversations->v1->conversations->create([
+            'friendlyName' => "Conversa com {$normalizedPhone}",
+            'uniqueName' => "whatsapp_{$normalizedPhone}",
+        ]);
+
+        // Add WhatsApp participant
+        $this->addWhatsAppParticipant($conversation->sid, $normalizedPhone);
+
+        Log::info('Created new Twilio conversation', [
+            'conversation_sid' => $conversation->sid,
+            'phone' => $normalizedPhone,
+        ]);
+
+        return $conversation->sid;
+    }
+
+    /**
+     * Add WhatsApp participant to conversation
+     *
+     * @param string $conversationSid
+     * @param string $phone
+     * @return void
+     */
+    public function addWhatsAppParticipant(string $conversationSid, string $phone): void
+    {
+        try {
+            $formattedPhone = $this->formatNumber($phone);
+            
+            $participant = $this->client->conversations->v1->conversations($conversationSid)
+                ->participants->create([
+                    'messagingBinding.address' => $formattedPhone,
+                    'messagingBinding.proxyAddress' => $this->formatNumber($this->fromNumber),
+                ]);
+
+            Log::info('Added WhatsApp participant to conversation', [
+                'conversation_sid' => $conversationSid,
+                'participant_sid' => $participant->sid,
+                'phone' => $phone,
+            ]);
+        } catch (Exception $e) {
+            Log::error('Failed to add WhatsApp participant', [
+                'conversation_sid' => $conversationSid,
+                'phone' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Find conversation by phone number
+     *
+     * @param string $phone
+     * @return object|null
+     */
+    public function findConversationByPhone(string $phone): ?object
+    {
+        try {
+            $conversations = $this->client->conversations->v1->conversations->read([
+                'uniqueName' => "whatsapp_{$phone}",
+            ]);
+
+            return !empty($conversations) ? $conversations[0] : null;
+        } catch (Exception $e) {
+            Log::warning('Failed to find conversation by phone', [
+                'phone' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Send message through Twilio Conversations
+     *
+     * @param string $conversationSid
+     * @param string $content
+     * @param string $author
+     * @return object
+     */
+    public function sendConversationMessage(string $conversationSid, string $content, string $author = 'system'): object
+    {
+        try {
+            $message = $this->client->conversations->v1->conversations($conversationSid)
+                ->messages->create([
+                    'author' => $author,
+                    'body' => $content,
+                ]);
+
+            Log::info('Sent conversation message', [
+                'conversation_sid' => $conversationSid,
+                'message_sid' => $message->sid,
+                'author' => $author,
+            ]);
+
+            return $message;
+        } catch (Exception $e) {
+            Log::error('Failed to send conversation message', [
+                'conversation_sid' => $conversationSid,
+                'content' => $content,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Process incoming WhatsApp message from webhook using Conversations
+     *
+     * @param string $from Phone number of sender
+     * @param string $content Message content
+     * @param array $metadata Additional metadata
+     * @return Message
+     */
+    public function processIncomingMessage(string $from, string $content, array $metadata = [])
+    {
+        // Normalize phone number
+        $normalizedFrom = $this->normalizePhoneNumber($from);
+        
+        // Get or create conversation
+        $conversationSid = $this->getOrCreateConversation($normalizedFrom);
+        
+        // Create message record
+        $message = Message::create([
+            'sender_phone' => $normalizedFrom,
+            'recipient_phone' => $this->fromNumber,
+            'content' => $content,
+            'direction' => Message::DIRECTION_INBOUND,
+            'status' => Message::STATUS_DELIVERED, // Incoming messages are considered delivered
+            'message_type' => Message::TYPE_TEXT,
+            'metadata' => array_merge($metadata, [
+                'conversation_sid' => $conversationSid,
+                'twilio_conversations' => true,
+            ]),
+            'delivered_at' => now(),
+        ]);
+
+        Log::info('Incoming WhatsApp message processed via Conversations', [
+            'message_id' => $message->id,
+            'from' => $normalizedFrom,
+            'content' => $content,
+            'conversation_sid' => $conversationSid,
+        ]);
+
+        // Try to identify the sender entity
+        $senderEntity = $this->identifySenderEntity($normalizedFrom);
+        if ($senderEntity) {
+            $message->update([
+                'related_model_type' => get_class($senderEntity),
+                'related_model_id' => $senderEntity->id,
+            ]);
+        }
+
+        return $message;
+    }
+
+    /**
+     * Send manual message using Twilio Conversations
+     *
+     * @param string $to Recipient phone number
+     * @param string $content Message content
+     * @param string|null $relatedModelType Related model type
+     * @param int|null $relatedModelId Related model ID
+     * @return Message
+     */
+    public function sendManualMessage(
+        string $to, 
+        string $content, 
+        ?string $relatedModelType = null, 
+        ?int $relatedModelId = null
+    ) {
+        // Normalize phone number
+        $normalizedTo = $this->normalizePhoneNumber($to);
+        
+        // Get or create conversation
+        $conversationSid = $this->getOrCreateConversation($normalizedTo);
+        
+        // Create message record
+        $message = Message::create([
+            'sender_phone' => $this->fromNumber,
+            'recipient_phone' => $normalizedTo,
+            'content' => $content,
+            'direction' => Message::DIRECTION_OUTBOUND,
+            'status' => Message::STATUS_PENDING,
+            'message_type' => Message::TYPE_TEXT,
+            'related_model_type' => $relatedModelType,
+            'related_model_id' => $relatedModelId,
+            'metadata' => [
+                'conversation_sid' => $conversationSid,
+                'twilio_conversations' => true,
+            ],
+        ]);
+
+        try {
+            // Send message through Conversations
+            $twilioMessage = $this->sendConversationMessage($conversationSid, $content, 'system');
+            
+            // Update the message status
+            $message->update([
+                'status' => Message::STATUS_SENT,
+                'external_id' => $twilioMessage->sid,
+                'sent_at' => now(),
+            ]);
+            
+            Log::info('Manual WhatsApp message sent via Conversations', [
+                'message_id' => $message->id,
+                'to' => $normalizedTo,
+                'conversation_sid' => $conversationSid,
+                'twilio_message_sid' => $twilioMessage->sid,
+            ]);
+        } catch (Exception $e) {
+            // Update the message with error information
+            $message->update([
+                'status' => Message::STATUS_FAILED,
+                'error_message' => $e->getMessage(),
+            ]);
+
+            Log::error('Failed to send manual WhatsApp message via Conversations', [
+                'message_id' => $message->id,
+                'to' => $normalizedTo,
+                'conversation_sid' => $conversationSid,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $message;
+    }
+
+    /**
+     * Get conversation history for a phone number
+     *
+     * @param string $phone Phone number
+     * @param int $limit Number of messages to return
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function getConversationHistory(string $phone, int $limit = 50)
+    {
+        $normalizedPhone = $this->normalizePhoneNumber($phone);
+        
+        return Message::where(function ($query) use ($normalizedPhone) {
+            $query->where('sender_phone', $normalizedPhone)
+                  ->orWhere('recipient_phone', $normalizedPhone);
+        })
+        ->orderBy('created_at', 'asc')
+        ->limit($limit)
+        ->get();
+    }
+
+    /**
+     * Get all conversations (grouped by phone number)
+     *
+     * @param int $limit Number of conversations to return
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function getConversations(int $limit = 20)
+    {
+        // Get the latest message from each conversation
+        $conversations = Message::select('*')
+            ->whereIn('id', function ($query) {
+                $query->selectRaw('MAX(id)')
+                      ->from('messages')
+                      ->groupBy('conversation_partner');
+            })
+            ->orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
+
+        return $conversations;
+    }
+
+    /**
+     * Get Twilio conversation messages
+     *
+     * @param string $conversationSid
+     * @param int $limit
+     * @return array
+     */
+    public function getTwilioConversationMessages(string $conversationSid, int $limit = 50): array
+    {
+        try {
+            $messages = $this->client->conversations->v1->conversations($conversationSid)
+                ->messages->read([], $limit);
+
+            return array_map(function ($message) {
+                return [
+                    'sid' => $message->sid,
+                    'author' => $message->author,
+                    'body' => $message->body,
+                    'dateCreated' => $message->dateCreated,
+                    'dateUpdated' => $message->dateUpdated,
+                ];
+            }, $messages);
+        } catch (Exception $e) {
+            Log::error('Failed to get Twilio conversation messages', [
+                'conversation_sid' => $conversationSid,
+                'error' => $e->getMessage(),
+            ]);
+            return [];
+        }
+    }
+
+    /**
+     * Set up webhook for conversation
+     *
+     * @param string $conversationSid
+     * @param string $webhookUrl
+     * @return object
+     */
+    public function setupConversationWebhook(string $conversationSid, string $webhookUrl): object
+    {
+        try {
+            $webhook = $this->client->conversations->v1->conversations($conversationSid)
+                ->webhooks->create([
+                    'target' => 'webhook',
+                    'configuration.url' => $webhookUrl,
+                    'configuration.method' => 'POST',
+                    'configuration.filters' => [
+                        'onMessageAdded',
+                        'onConversationUpdated',
+                    ],
+                ]);
+
+            Log::info('Setup conversation webhook', [
+                'conversation_sid' => $conversationSid,
+                'webhook_sid' => $webhook->sid,
+                'url' => $webhookUrl,
+            ]);
+
+            return $webhook;
+        } catch (Exception $e) {
+            Log::error('Failed to setup conversation webhook', [
+                'conversation_sid' => $conversationSid,
+                'webhook_url' => $webhookUrl,
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Identify the entity that sent a message based on phone number
+     *
+     * @param string $phone Phone number
+     * @return Patient|Professional|Clinic|null
+     */
+    public function identifySenderEntity(string $phone)
+    {
+        // Check if it's a patient
+        $patient = Patient::where('phone', $phone)->first();
+        if ($patient) {
+            return $patient;
+        }
+
+        // Check if it's a professional
+        $professional = Professional::where('phone', $phone)->first();
+        if ($professional) {
+            return $professional;
+        }
+
+        // Check if it's a clinic
+        $clinic = Clinic::where('phone', $phone)->first();
+        if ($clinic) {
+            return $clinic;
+        }
+
+        return null;
+    }
+
+    /**
+     * Update message status from webhook for bidirectional messages
+     *
+     * @param string $externalId External message ID
+     * @param string $status New status
+     * @param array $metadata Additional metadata
+     * @return Message|null
+     */
+    public function updateBidirectionalMessageStatus(string $externalId, string $status, array $metadata = [])
+    {
+        $message = Message::where('external_id', $externalId)->first();
+        
+        if (!$message) {
+            Log::warning('Message not found for external ID', ['external_id' => $externalId]);
+            return null;
+        }
+
+        $updateData = ['status' => $status];
+
+        // Update timestamps based on status
+        if ($status === Message::STATUS_SENT && !$message->sent_at) {
+            $updateData['sent_at'] = now();
+        } else if ($status === Message::STATUS_DELIVERED && !$message->delivered_at) {
+            $updateData['delivered_at'] = now();
+        } else if ($status === Message::STATUS_READ && !$message->read_at) {
+            $updateData['read_at'] = now();
+        } else if ($status === Message::STATUS_FAILED) {
+            $updateData['error_message'] = $metadata['error_message'] ?? 'Message delivery failed';
+        }
+
+        $message->update($updateData);
+        
+        Log::info('Updated bidirectional message status', [
+            'message_id' => $message->id,
+            'status' => $status,
+            'external_id' => $externalId,
+        ]);
+
+        return $message;
     }
 
     /**
@@ -291,7 +720,7 @@ class WhatsAppService
                         foreach ($entry['changes'] as $change) {
                             if (isset($change['value']['statuses'])) {
                                 foreach ($change['value']['statuses'] as $status) {
-                                    $this->updateMessageStatus($status);
+                                    $this->updateBidirectionalMessageStatus($status);
                                 }
                             }
                         }
@@ -316,7 +745,7 @@ class WhatsAppService
      * @param  array  $statusData
      * @return void
      */
-    protected function updateMessageStatus(array $statusData)
+    public function updateMessageStatus(array $statusData)
     {
         if (!isset($statusData['id'])) {
             Log::warning('Missing message ID in webhook data', ['data' => $statusData]);
@@ -373,7 +802,7 @@ class WhatsAppService
      * @param  array  $webhookData
      * @return void
      */
-    protected function updateTwilioMessageStatus(array $webhookData)
+    public function updateTwilioMessageStatus(array $webhookData)
     {
         $messageSid = $webhookData['MessageSid'] ?? null;
         $messageStatus = $webhookData['MessageStatus'] ?? null;
@@ -950,7 +1379,7 @@ class WhatsAppService
      * @param string $url
      * @return string
      */
-    protected function detectMediaType(string $url)
+    public function detectMediaType(string $url)
     {
         $extension = pathinfo($url, PATHINFO_EXTENSION);
         
@@ -979,7 +1408,7 @@ class WhatsAppService
      * @param  string  $number
      * @return string
      */
-    protected function formatNumber(string $number)
+    public function formatNumber(string $number)
     {
         // Remove any non-numeric characters
         $number = preg_replace('/[^0-9]/', '', $number);
@@ -2096,12 +2525,12 @@ class WhatsAppService
     }
     
     /**
-     * Normalize phone number to compare different formats
+     * Normalize phone number to standard format
      *
      * @param string $phoneNumber
      * @return string
      */
-    protected function normalizePhoneNumber(string $phoneNumber): string
+    public function normalizePhoneNumber(string $phoneNumber): string
     {
         // Remove all non-numeric characters
         $normalized = preg_replace('/[^0-9]/', '', $phoneNumber);
@@ -2131,7 +2560,7 @@ class WhatsAppService
      * @param string $phone2
      * @return bool
      */
-    protected function phoneNumbersMatch(string $phone1, string $phone2): bool
+    public function phoneNumbersMatch(string $phone1, string $phone2): bool
     {
         $normalized1 = $this->normalizePhoneNumber($phone1);
         $normalized2 = $this->normalizePhoneNumber($phone2);
@@ -2210,7 +2639,7 @@ class WhatsAppService
      * @param string $number
      * @return string
      */
-    protected function cleanMobileNumber(string $number): string
+    public function cleanMobileNumber(string $number): string
     {
         // For numbers with 11 digits starting with area code + 9
         // Remove the 9 to get the base number
@@ -2228,7 +2657,7 @@ class WhatsAppService
      * @param Patient $patient
      * @return void
      */
-    protected function handleAppointmentConfirmation(Appointment $appointment, Patient $patient): void
+    public function handleAppointmentConfirmation(Appointment $appointment, Patient $patient): void
     {
         try {
             // Update appointment status
@@ -2267,7 +2696,7 @@ class WhatsAppService
      * @param Patient $patient
      * @return void
      */
-    protected function handleAppointmentRejection(Appointment $appointment, Patient $patient): void
+    public function handleAppointmentRejection(Appointment $appointment, Patient $patient): void
     {
         try {
             // Update appointment status
@@ -2307,7 +2736,7 @@ class WhatsAppService
      * @param Appointment $appointment
      * @return void
      */
-    protected function sendAppointmentConfirmationResponse(Patient $patient, bool $confirmed, Appointment $appointment = null): void
+    public function sendAppointmentConfirmationResponse(Patient $patient, bool $confirmed, Appointment $appointment = null): void
     {
         try {
             // Send the template-based feedback message
@@ -2382,7 +2811,7 @@ class WhatsAppService
      * @param Appointment $appointment
      * @return void
      */
-    protected function notifyHealthPlanAboutConfirmation(Appointment $appointment): void
+    public function notifyHealthPlanAboutConfirmation(Appointment $appointment): void
     {
         try {
             $solicitation = $appointment->solicitation;
@@ -2499,7 +2928,7 @@ class WhatsAppService
      * @param Appointment $appointment
      * @return void
      */
-    protected function notifyHealthPlanAboutRejection(Appointment $appointment): void
+    public function notifyHealthPlanAboutRejection(Appointment $appointment): void
     {
         try {
             $solicitation = $appointment->solicitation;
@@ -2626,7 +3055,7 @@ class WhatsAppService
      * @param bool $confirmed
      * @return void
      */
-    protected function sendHealthPlanConfirmationNotification(User $admin, Appointment $appointment, bool $confirmed): void
+    public function sendHealthPlanConfirmationNotification(User $admin, Appointment $appointment, bool $confirmed): void
     {
         try {
             $patient = $appointment->solicitation->patient;
@@ -2659,7 +3088,7 @@ class WhatsAppService
      * @param Appointment $appointment
      * @return void
      */
-    protected function notifySolicitationCreatorAboutConfirmation(Appointment $appointment): void
+    public function notifySolicitationCreatorAboutConfirmation(Appointment $appointment): void
     {
         try {
             $solicitation = $appointment->solicitation;
@@ -2788,7 +3217,7 @@ class WhatsAppService
      * @param Appointment $appointment
      * @return void
      */
-    protected function notifySolicitationCreatorAboutRejection(Appointment $appointment): void
+    public function notifySolicitationCreatorAboutRejection(Appointment $appointment): void
     {
         try {
             $solicitation = $appointment->solicitation;
@@ -2922,7 +3351,7 @@ class WhatsAppService
      * @param Appointment $appointment
      * @return void
      */
-    protected function notifyAdministratorsAboutConfirmation(Appointment $appointment): void
+    public function notifyAdministratorsAboutConfirmation(Appointment $appointment): void
     {
         try {
             $admins = User::role(['network_manager', 'super_admin', 'director'])
@@ -2963,7 +3392,7 @@ class WhatsAppService
      * @param Appointment $appointment
      * @return void
      */
-    protected function notifyAdministratorsAboutRejection(Appointment $appointment): void
+    public function notifyAdministratorsAboutRejection(Appointment $appointment): void
     {
         try {
             $admins = User::role(['network_manager', 'super_admin', 'director'])
@@ -3004,7 +3433,7 @@ class WhatsAppService
      * @param Appointment $appointment
      * @return string
      */
-    protected function getClinicAddress(Appointment $appointment): string
+    public function getClinicAddress(Appointment $appointment): string
     {
         try {
             if ($appointment->address) {
@@ -3090,5 +3519,23 @@ class WhatsAppService
             
             return null;
         }
+    }
+
+    /**
+     * Send bidirectional message (alias for sendManualMessage)
+     *
+     * @param string $to Recipient phone number
+     * @param string $content Message content
+     * @param string|null $relatedModelType Related model type
+     * @param int|null $relatedModelId Related model ID
+     * @return Message
+     */
+    public function sendBidirectionalMessage(
+        string $to, 
+        string $content, 
+        ?string $relatedModelType = null, 
+        ?int $relatedModelId = null
+    ) {
+        return $this->sendManualMessage($to, $content, $relatedModelType, $relatedModelId);
     }
 }

@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\SolicitationInviteController;
 use App\Http\Controllers\Billing\NFeController;
 use App\Http\Controllers\Api\ExtemporaneousNegotiationController;
 use App\Http\Controllers\Api\ValueVerificationController;
+use App\Http\Controllers\Api\BidirectionalMessageController;
 
 /*
 |--------------------------------------------------------------------------
@@ -478,6 +479,20 @@ Route::middleware(['auth:sanctum'])->prefix('whatsapp')->group(function () {
     Route::post('resend/{id}', [WhatsappController::class, 'resend']);
     Route::get('statistics', [WhatsappController::class, 'statistics']);
     Route::match(['get', 'post'], 'webhook', [WhatsappController::class, 'webhook'])->withoutMiddleware('auth:sanctum');
+});
+
+// Bidirectional WhatsApp routes
+Route::middleware(['auth:sanctum'])->prefix('messages')->group(function () {
+    Route::get('conversations', [BidirectionalMessageController::class, 'getConversations']);
+    Route::get('conversations/{phone}/history', [BidirectionalMessageController::class, 'getConversationHistory']);
+    Route::post('send', [BidirectionalMessageController::class, 'sendMessage']);
+    Route::get('entity/{type}/{id}', [BidirectionalMessageController::class, 'getMessagesByEntity']);
+    Route::get('statistics', [BidirectionalMessageController::class, 'getStatistics']);
+    Route::get('/', [BidirectionalMessageController::class, 'getMessages']);
+    
+    // Twilio Conversations specific routes
+    Route::get('twilio/{phone}/messages', [BidirectionalMessageController::class, 'getTwilioMessages']);
+    Route::post('twilio/{phone}/webhook', [BidirectionalMessageController::class, 'setupWebhook']);
 });
 
 // Additional webhook route for external services that expect api/webhook
