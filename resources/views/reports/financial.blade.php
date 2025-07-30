@@ -26,6 +26,19 @@
             margin-bottom: 15px;
             filter: brightness(0) invert(1);
         }
+        .logo-placeholder {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .logo-placeholder h3 {
+            margin: 0;
+            color: white;
+            font-size: 18px;
+            font-weight: 600;
+        }
         .header h2 {
             margin: 10px 0 5px 0;
             font-size: 24px;
@@ -206,7 +219,13 @@
 </head>
 <body>
     <div class="header">
-        <img src="{{ public_path('logo.png') }}" class="logo" alt="Logo">
+        @if(file_exists(public_path('logo.png')))
+            <img src="{{ public_path('logo.png') }}" class="logo" alt="Logo">
+        @else
+            <div class="logo-placeholder">
+                <h3>{{ config('app.name', 'Sistema Médico') }}</h3>
+            </div>
+        @endif
         <h2>Relatório Financeiro</h2>
         <p>Gerado em: {{ now()->format('d/m/Y H:i:s') }}</p>
         <p>Período: {{ isset($filters['start_date']) ? \Carbon\Carbon::parse($filters['start_date'])->format('d/m/Y') : 'Início' }} a {{ isset($filters['end_date']) ? \Carbon\Carbon::parse($filters['end_date'])->format('d/m/Y') : 'Fim' }}</p>
