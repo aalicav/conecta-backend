@@ -92,8 +92,8 @@ class BidirectionalMessageController extends Controller
                 'success' => true,
                 'message' => 'Mensagem enviada com sucesso via Twilio Conversations',
                 'data' => [
-                    'message_sid' => $message->sid,
-                    'conversation_sid' => $message->conversationSid,
+                    'message_sid' => $message->sid ?? null,
+                    'conversation_sid' => $message->conversationSid ?? null,
                     'content' => $request->content,
                     'timestamp' => now()->toISOString(),
                 ]
