@@ -493,7 +493,7 @@ class NegotiationController extends Controller
             DB::beginTransaction();
 
             // Update negotiation status
-            $negotiation->status = 'pending_approval';
+            $negotiation->status = self::STATUS_PENDING_APPROVAL;
             $negotiation->approval_level = 'pending_approval';
             $negotiation->submitted_at = now();
             $negotiation->submitted_by = Auth::id();
