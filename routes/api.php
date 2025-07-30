@@ -405,6 +405,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
             ->middleware('permission:edit negotiations');
         Route::post('/{negotiation}/submit', [NegotiationController::class, 'submitForApproval'])
             ->middleware('permission:submit negotiations');
+        Route::post('/{negotiation}/process-approval', [NegotiationController::class, 'processApproval'])
+            ->middleware('permission:approve negotiations');
         
         // Extemporaneous negotiations
         Route::post('/extemporaneous', [NegotiationController::class, 'storeExtemporaneous'])
