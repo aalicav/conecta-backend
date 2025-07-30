@@ -365,19 +365,24 @@ class WhatsAppService
     }
 
     /**
-     * Get all conversations (grouped by phone number)
+     * Get conversations (grouped by conversation partner)
      *
-     * @param int $limit Number of conversations to return
+     * @param int $limit
      * @return \Illuminate\Database\Eloquent\Collection
      */
     public function getConversations(int $limit = 20)
     {
-        // Get the latest message from each conversation by grouping by sender/recipient phone
+        // Get the latest message from each conversation by grouping by conversation partner
         $conversations = Message::select('*')
             ->whereIn('id', function ($query) {
                 $query->selectRaw('MAX(id)')
                       ->from('messages')
-                      ->groupBy('sender_phone', 'recipient_phone');
+                      ->groupBy(
+                          \DB::raw('CASE 
+                              WHEN direction = "inbound" THEN sender_phone 
+                              ELSE recipient_phone 
+                          END')
+                      );
             })
             ->orderBy('created_at', 'desc')
             ->limit($limit)
