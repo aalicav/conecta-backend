@@ -283,8 +283,8 @@ class WhatsAppService
             $formattedConversations = [];
             foreach ($conversations as $conversation) {
                 // Get the latest message for this conversation
-                $messages = $this->getTwilioConversationMessages($conversation->sid, 1);
-                $latestMessage = $messages[0] ?? null;
+                $result = $this->getTwilioConversationMessages($conversation->sid, 1);
+                $latestMessage = $result['messages'][0] ?? null;
                 
                 if ($latestMessage) {
                     // Try to extract phone from conversation unique name first
