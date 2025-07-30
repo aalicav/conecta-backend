@@ -483,17 +483,20 @@ class NegotiationController extends Controller
                 ], 403);
             }
 
-            // Validate current status
-            if ($negotiation->status !== self::STATUS_APPROVED) {
+            // Validate current status - only draft negotiations can be submitted
+            if ($negotiation->status !== 'draft') {
                 return response()->json([
-                    'message' => 'Negotiation must be in proper status for approval.'
+                    'message' => 'Only draft negotiations can be submitted for approval.'
                 ], 422);
             }
 
             DB::beginTransaction();
 
             // Update negotiation status
+            $negotiation->status = 'pending_approval';
             $negotiation->approval_level = 'pending_approval';
+            $negotiation->submitted_at = now();
+            $negotiation->submitted_by = Auth::id();
             $negotiation->save();
 
             // Send notification to users with approval permission

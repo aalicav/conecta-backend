@@ -403,6 +403,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
             ->middleware('permission:edit negotiations');
         Route::patch('/{negotiation}', [NegotiationController::class, 'update'])
             ->middleware('permission:edit negotiations');
+        Route::post('/{negotiation}/submit', [NegotiationController::class, 'submitForApproval'])
+            ->middleware('permission:submit negotiations');
         
         // Extemporaneous negotiations
         Route::post('/extemporaneous', [NegotiationController::class, 'storeExtemporaneous'])
