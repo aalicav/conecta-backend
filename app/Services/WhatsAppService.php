@@ -278,17 +278,48 @@ class WhatsAppService
     public function getConversations(int $limit = 20): array
     {
         try {
+            Log::info('Getting conversations', ['limit' => $limit]);
+            
             $conversations = $this->client->conversations->v1->conversations->read([], $limit);
+            Log::info('Found conversations from Twilio', [
+                'count' => count($conversations),
+                'conversations' => array_map(function($conv) {
+                    return [
+                        'sid' => $conv->sid,
+                        'unique_name' => $conv->uniqueName ?? 'null',
+                        'friendly_name' => $conv->friendlyName ?? 'null',
+                        'state' => $conv->state ?? 'null',
+                    ];
+                }, $conversations)
+            ]);
             
             $formattedConversations = [];
             foreach ($conversations as $conversation) {
+                Log::info('Processing conversation', [
+                    'sid' => $conversation->sid,
+                    'unique_name' => $conversation->uniqueName ?? 'null',
+                    'friendly_name' => $conversation->friendlyName ?? 'null',
+                ]);
+                
                 // Get the latest message for this conversation
                 $result = $this->getTwilioConversationMessages($conversation->sid, 1);
                 $latestMessage = $result['messages'][0] ?? null;
                 
+                Log::info('Latest message result', [
+                    'conversation_sid' => $conversation->sid,
+                    'has_latest_message' => !is_null($latestMessage),
+                    'message_count' => count($result['messages']),
+                    'latest_message' => $latestMessage,
+                ]);
+                
                 if ($latestMessage) {
                     // Try to extract phone from conversation unique name first
                     $phone = str_replace('whatsapp_', '', $conversation->uniqueName);
+                    Log::info('Phone from unique name', [
+                        'conversation_sid' => $conversation->sid,
+                        'unique_name' => $conversation->uniqueName,
+                        'extracted_phone' => $phone,
+                    ]);
                     
                     // If phone is empty, try to extract from the latest message sender
                     if (empty($phone) && isset($latestMessage['sender'])) {
@@ -296,6 +327,11 @@ class WhatsAppService
                         // Extract phone from whatsapp:+558596345077 format
                         if (preg_match('/whatsapp:\+(\d+)/', $sender, $matches)) {
                             $phone = $matches[1];
+                            Log::info('Phone extracted from sender', [
+                                'conversation_sid' => $conversation->sid,
+                                'sender' => $sender,
+                                'extracted_phone' => $phone,
+                            ]);
                         }
                     }
                     
@@ -305,12 +341,28 @@ class WhatsAppService
                             $participants = $this->client->conversations->v1->conversations($conversation->sid)
                                 ->participants->read();
                             
+                            Log::info('Participants found', [
+                                'conversation_sid' => $conversation->sid,
+                                'participant_count' => count($participants),
+                            ]);
+                            
                             foreach ($participants as $participant) {
+                                Log::info('Participant details', [
+                                    'conversation_sid' => $conversation->sid,
+                                    'participant_sid' => $participant->sid,
+                                    'messaging_binding' => $participant->messagingBinding ?? 'null',
+                                ]);
+                                
                                 if (isset($participant->messagingBinding) && 
                                     isset($participant->messagingBinding['address'])) {
                                     $address = $participant->messagingBinding['address'];
                                     if (preg_match('/whatsapp:\+(\d+)/', $address, $matches)) {
                                         $phone = $matches[1];
+                                        Log::info('Phone extracted from participant', [
+                                            'conversation_sid' => $conversation->sid,
+                                            'address' => $address,
+                                            'extracted_phone' => $phone,
+                                        ]);
                                         break;
                                     }
                                 }
@@ -322,6 +374,12 @@ class WhatsAppService
                             ]);
                         }
                     }
+                    
+                    Log::info('Final phone extraction', [
+                        'conversation_sid' => $conversation->sid,
+                        'phone' => $phone,
+                        'will_add_to_list' => !empty($phone),
+                    ]);
                     
                     if (!empty($phone)) {
                         $formattedConversations[] = [
@@ -335,6 +393,11 @@ class WhatsAppService
                 }
             }
 
+            Log::info('Formatted conversations', [
+                'count' => count($formattedConversations),
+                'conversations' => $formattedConversations,
+            ]);
+
             // Sort by latest message timestamp
             usort($formattedConversations, function($a, $b) {
                 return strtotime($b['latest_message']['timestamp']) - strtotime($a['latest_message']['timestamp']);
@@ -344,6 +407,7 @@ class WhatsAppService
         } catch (Exception $e) {
             Log::error('Failed to get conversations', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             return [];
         }
