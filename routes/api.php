@@ -679,7 +679,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/{id}', [MedicalSpecialtyController::class, 'show']);
         
         // Rotas que requerem permissões específicas
-        Route::middleware('permission:manage medical specialties')->group(function () {
+        Route::middleware('role:super_admin, network_manager')->group(function () {
             Route::post('/', [MedicalSpecialtyController::class, 'store']);
             Route::put('/{id}', [MedicalSpecialtyController::class, 'update']);
             Route::delete('/{id}', [MedicalSpecialtyController::class, 'destroy']);
