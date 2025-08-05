@@ -25,6 +25,7 @@ class HealthPlanProcedure extends Model
         'start_date',
         'end_date',
         'created_by',
+        'medical_specialty_id',
     ];
 
     /**
@@ -53,6 +54,14 @@ class HealthPlanProcedure extends Model
     public function procedure(): BelongsTo
     {
         return $this->belongsTo(TussProcedure::class, 'tuss_procedure_id');
+    }
+
+    /**
+     * Get the medical specialty associated with this item.
+     */
+    public function medicalSpecialty(): BelongsTo
+    {
+        return $this->belongsTo(MedicalSpecialty::class);
     }
 
     /**

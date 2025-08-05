@@ -1015,6 +1015,7 @@ class HealthPlanController extends Controller
                 'procedures.*.value' => 'required|numeric|min:0',
                 'procedures.*.notes' => 'nullable|string',
                 'procedures.*.start_date' => 'nullable|date',
+                'procedures.*.medical_specialty_id' => 'nullable|exists:medical_specialties,id',
                 'skip_contract_update' => 'sometimes|boolean',
                 'delete_missing' => 'sometimes|boolean',
             ]);
@@ -1053,6 +1054,7 @@ class HealthPlanController extends Controller
                     $healthPlanProcedure->update([
                         'price' => $procedureData['value'],
                         'notes' => $procedureData['notes'] ?? null,
+                        'medical_specialty_id' => $procedureData['medical_specialty_id'] ?? null,
                     ]);
                 } else {
                     // Create new procedure
@@ -1063,6 +1065,7 @@ class HealthPlanController extends Controller
                         'is_active' => true,
                         'start_date' => $procedureData['start_date'] ?? now(),
                         'created_by' => Auth::id(),
+                        'medical_specialty_id' => $procedureData['medical_specialty_id'] ?? null,
                     ]);
                 }
 
@@ -1121,7 +1124,7 @@ class HealthPlanController extends Controller
         try {
             // Carregar os procedimentos com os relacionamentos
             $procedures = $health_plan->procedures()
-                ->with('procedure')
+                ->with(['procedure', 'medicalSpecialty'])
                 ->where('is_active', true)
                 ->get();
 
@@ -1137,6 +1140,7 @@ class HealthPlanController extends Controller
                     'end_date' => $healthPlanProcedure->end_date,
                     'created_at' => $healthPlanProcedure->created_at,
                     'updated_at' => $healthPlanProcedure->updated_at,
+                    'medical_specialty_id' => $healthPlanProcedure->medical_specialty_id,
                     'procedure' => [
                         'id' => $healthPlanProcedure->procedure->id,
                         'code' => $healthPlanProcedure->procedure->code,
@@ -1144,7 +1148,13 @@ class HealthPlanController extends Controller
                         'description' => $healthPlanProcedure->procedure->description,
                         'category' => $healthPlanProcedure->procedure->category,
                         'is_active' => $healthPlanProcedure->procedure->is_active,
-                    ]
+                    ],
+                    'medical_specialty' => $healthPlanProcedure->medicalSpecialty ? [
+                        'id' => $healthPlanProcedure->medicalSpecialty->id,
+                        'name' => $healthPlanProcedure->medicalSpecialty->name,
+                        'tuss_code' => $healthPlanProcedure->medicalSpecialty->tuss_code,
+                        'tuss_description' => $healthPlanProcedure->medicalSpecialty->tuss_description,
+                    ] : null,
                 ];
             });
 
@@ -1860,6 +1870,7 @@ class HealthPlanController extends Controller
                 'notes' => 'nullable|string|max:500',
                 'start_date' => 'nullable|date',
                 'end_date' => 'nullable|date|after:start_date',
+                'medical_specialty_id' => 'nullable|exists:medical_specialties,id',
             ]);
 
             if ($validator->fails()) {
@@ -1891,6 +1902,7 @@ class HealthPlanController extends Controller
                 'end_date' => $request->end_date,
                 'is_active' => true,
                 'created_by' => Auth::id(),
+                'medical_specialty_id' => $request->medical_specialty_id,
             ]);
 
             $procedure->load('procedure');
