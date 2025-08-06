@@ -16,15 +16,13 @@ class MedicalSpecialty extends Model
         'tuss_description',
         'negotiable',
         'active',
-        'default_price',
         'city',
         'state'
     ];
 
     protected $casts = [
         'negotiable' => 'boolean',
-        'active' => 'boolean',
-        'default_price' => 'decimal:2'
+        'active' => 'boolean'
     ];
 
     /**

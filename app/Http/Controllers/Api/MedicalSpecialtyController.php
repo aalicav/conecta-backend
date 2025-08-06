@@ -94,7 +94,6 @@ class MedicalSpecialtyController extends Controller
                 'tuss_description' => 'required|string|max:500',
                 'negotiable' => 'boolean',
                 'active' => 'boolean',
-                'default_price' => 'nullable|numeric|min:0|max:999999.99',
                 'city' => 'nullable|string|max:100',
                 'state' => 'nullable|string|max:2'
             ]);
@@ -174,7 +173,6 @@ class MedicalSpecialtyController extends Controller
                 'tuss_description' => 'required|string|max:500',
                 'negotiable' => 'boolean',
                 'active' => 'boolean',
-                'default_price' => 'nullable|numeric|min:0|max:999999.99',
                 'city' => 'nullable|string|max:100',
                 'state' => 'nullable|string|max:2'
             ]);
