@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('medical_specialties', function (Blueprint $table) {
-            $table->dropColumn('default_price');
+            $table->dropUnique(['tuss_code']);
         });
     }
 
@@ -22,7 +22,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('medical_specialties', function (Blueprint $table) {
-            $table->decimal('default_price', 10, 2)->nullable()->after('active');
+            $table->unique('tuss_code');
         });
     }
 }; 
