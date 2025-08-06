@@ -90,12 +90,7 @@ class MedicalSpecialtyController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'tuss_code' => 'required|string|max:20|unique:medical_specialties,tuss_code',
-                'tuss_description' => 'required|string|max:500',
-                'negotiable' => 'boolean',
-                'active' => 'boolean',
-                'city' => 'nullable|string|max:100',
-                'state' => 'nullable|string|max:2'
+                'active' => 'boolean'
             ]);
 
             if ($validator->fails()) {
@@ -106,7 +101,13 @@ class MedicalSpecialtyController extends Controller
                 ], 422);
             }
 
-            $specialty = MedicalSpecialty::create($request->all());
+            $specialty = MedicalSpecialty::create([
+                'name' => $request->name,
+                'active' => $request->boolean('active', true),
+                'tuss_code' => '10101012',
+                'tuss_description' => 'Consulta em Clínica Médica',
+                'negotiable' => true
+            ]);
 
             Log::info('Medical specialty created', [
                 'specialty_id' => $specialty->id,
@@ -169,12 +170,7 @@ class MedicalSpecialtyController extends Controller
 
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
-                'tuss_code' => 'required|string|max:20|unique:medical_specialties,tuss_code,' . $id,
-                'tuss_description' => 'required|string|max:500',
-                'negotiable' => 'boolean',
-                'active' => 'boolean',
-                'city' => 'nullable|string|max:100',
-                'state' => 'nullable|string|max:2'
+                'active' => 'boolean'
             ]);
 
             if ($validator->fails()) {
@@ -185,7 +181,10 @@ class MedicalSpecialtyController extends Controller
                 ], 422);
             }
 
-            $specialty->update($request->all());
+            $specialty->update([
+                'name' => $request->name,
+                'active' => $request->boolean('active', true)
+            ]);
 
             Log::info('Medical specialty updated', [
                 'specialty_id' => $specialty->id,

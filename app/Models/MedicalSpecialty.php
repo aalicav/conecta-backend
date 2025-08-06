@@ -20,6 +20,14 @@ class MedicalSpecialty extends Model
         'state'
     ];
 
+    protected $attributes = [
+        'tuss_code' => '10101012',
+        'tuss_description' => 'Consulta em Clínica Médica',
+        'negotiable' => true,
+        'city' => null,
+        'state' => null
+    ];
+
     protected $casts = [
         'negotiable' => 'boolean',
         'active' => 'boolean'
