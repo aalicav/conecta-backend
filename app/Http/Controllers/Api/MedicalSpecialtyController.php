@@ -24,7 +24,8 @@ class MedicalSpecialtyController extends Controller
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
                       ->orWhere('tuss_code', 'like', "%{$search}%")
-                      ->orWhere('tuss_description', 'like', "%{$search}%");
+                      ->orWhere('tuss_description', 'like', "%{$search}%")
+                      ->orWhere('city', 'like', "%{$search}%");
                 });
             }
 
@@ -36,6 +37,22 @@ class MedicalSpecialtyController extends Controller
             // Filter by negotiable
             if ($request->has('negotiable')) {
                 $query->where('negotiable', $request->boolean('negotiable'));
+            }
+
+            // Filter by city
+            if ($request->has('city') && !empty($request->city)) {
+                $query->where('city', 'like', "%{$request->city}%");
+            }
+
+            // Filter by multiple cities
+            if ($request->has('cities') && !empty($request->cities)) {
+                $cities = explode(',', $request->cities);
+                $query->whereIn('city', $cities);
+            }
+
+            // Filter by state
+            if ($request->has('state') && !empty($request->state)) {
+                $query->where('state', $request->state);
             }
 
             // Sort
@@ -77,7 +94,9 @@ class MedicalSpecialtyController extends Controller
                 'tuss_description' => 'required|string|max:500',
                 'negotiable' => 'boolean',
                 'active' => 'boolean',
-                'default_price' => 'nullable|numeric|min:0|max:999999.99'
+                'default_price' => 'nullable|numeric|min:0|max:999999.99',
+                'city' => 'nullable|string|max:100',
+                'state' => 'nullable|string|max:2'
             ]);
 
             if ($validator->fails()) {
@@ -155,7 +174,9 @@ class MedicalSpecialtyController extends Controller
                 'tuss_description' => 'required|string|max:500',
                 'negotiable' => 'boolean',
                 'active' => 'boolean',
-                'default_price' => 'nullable|numeric|min:0|max:999999.99'
+                'default_price' => 'nullable|numeric|min:0|max:999999.99',
+                'city' => 'nullable|string|max:100',
+                'state' => 'nullable|string|max:2'
             ]);
 
             if ($validator->fails()) {

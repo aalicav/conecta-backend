@@ -679,18 +679,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/{id}', [MedicalSpecialtyController::class, 'show']);
         
         // Rotas que requerem permissões específicas
-        Route::middleware('permission:manage negotiations')->group(function () {
             Route::post('/', [MedicalSpecialtyController::class, 'store']);
             Route::put('/{id}', [MedicalSpecialtyController::class, 'update']);
             Route::delete('/{id}', [MedicalSpecialtyController::class, 'destroy']);
             Route::patch('/{id}/toggle-active', [MedicalSpecialtyController::class, 'toggleActive']);
-        });
 
         // Rotas relacionadas a negociações
-        Route::middleware('permission:manage negotiations')->group(function () {
             Route::get('/{id}/negotiations', [MedicalSpecialtyController::class, 'getActiveNegotiations']);
             Route::post('/prices/{priceId}/approve', [MedicalSpecialtyController::class, 'approvePrice']);
-        });
     });
 });
 

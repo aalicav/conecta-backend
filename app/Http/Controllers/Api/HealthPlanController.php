@@ -1154,6 +1154,8 @@ class HealthPlanController extends Controller
                         'name' => $healthPlanProcedure->medicalSpecialty->name,
                         'tuss_code' => $healthPlanProcedure->medicalSpecialty->tuss_code,
                         'tuss_description' => $healthPlanProcedure->medicalSpecialty->tuss_description,
+                        'city' => $healthPlanProcedure->medicalSpecialty->city,
+                        'state' => $healthPlanProcedure->medicalSpecialty->state,
                     ] : null,
                 ];
             });

@@ -16,7 +16,9 @@ class MedicalSpecialty extends Model
         'tuss_description',
         'negotiable',
         'active',
-        'default_price'
+        'default_price',
+        'city',
+        'state'
     ];
 
     protected $casts = [
