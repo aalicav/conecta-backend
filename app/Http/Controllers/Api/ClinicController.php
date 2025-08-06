@@ -80,6 +80,17 @@ class ClinicController extends Controller
                 $query->where('name', 'like', "%{$request->name}%");
             }
             
+            // Filter by search term (for combobox)
+            if ($request->has('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('cnpj', 'like', "%{$search}%")
+                      ->orWhere('cnes', 'like', "%{$search}%")
+                      ->orWhere('city', 'like', "%{$search}%");
+                });
+            }
+            
             // Filter by CNPJ if provided
             if ($request->has('cnpj')) {
                 $query->where('cnpj', 'like', "%{$request->cnpj}%");
@@ -119,13 +130,19 @@ class ClinicController extends Controller
             }
             
             // Apply sorting
-            $sortField = $request->sort_by ?? 'created_at';
-            $sortDirection = $request->sort_direction ?? 'desc';
+            $sortField = $request->sort_by ?? 'name';
+            $sortDirection = $request->sort_direction ?? 'asc';
             $query->orderBy($sortField, $sortDirection);
             
             // Add counts if requested
             if ($request->has('with_counts') && $request->with_counts === 'true') {
                 $query->withCount(['professionals', 'appointments', 'branches']);
+            }
+            
+            // For search purposes, limit results and don't paginate
+            if ($request->has('search') && !empty($request->search)) {
+                $clinics = $query->limit(50)->get();
+                return ClinicResource::collection($clinics);
             }
             
             $clinics = $query->paginate($request->per_page ?? 15);

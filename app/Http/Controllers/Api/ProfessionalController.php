@@ -75,7 +75,8 @@ class ProfessionalController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('cpf', 'like', "%{$search}%")
-                  ->orWhere('council_number', 'like', "%{$search}%");
+                  ->orWhere('council_number', 'like', "%{$search}%")
+                  ->orWhere('specialty', 'like', "%{$search}%");
             });
         }
 
@@ -88,8 +89,8 @@ class ProfessionalController extends Controller
         }
 
         // Apply sorting
-        $sort = $request->sort ?? 'created_at';
-        $direction = $request->direction ?? 'desc';
+        $sort = $request->sort ?? 'name';
+        $direction = $request->direction ?? 'asc';
         $query->orderBy($sort, $direction);
 
         // Load relationships if requested
@@ -103,7 +104,13 @@ class ProfessionalController extends Controller
             }
         }
 
-        // Pagination
+        // For search purposes, limit results and don't paginate
+        if ($request->has('search') && !empty($request->search)) {
+            $professionals = $query->limit(50)->get();
+            return ProfessionalResource::collection($professionals);
+        }
+
+        // Pagination for regular listing
         $perPage = $request->per_page ?? 15;
         $professionals = $query->paginate($perPage);
 
