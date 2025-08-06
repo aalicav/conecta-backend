@@ -86,8 +86,7 @@ class ClinicController extends Controller
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
                       ->orWhere('cnpj', 'like', "%{$search}%")
-                      ->orWhere('cnes', 'like', "%{$search}%")
-                      ->orWhere('city', 'like', "%{$search}%");
+                      ->orWhere('cnes', 'like', "%{$search}%");
                 });
             }
             
