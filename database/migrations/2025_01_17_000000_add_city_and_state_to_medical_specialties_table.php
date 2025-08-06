@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('medical_specialties', function (Blueprint $table) {
-            $table->string('city')->nullable()->after('default_price');
+            $table->string('city')->nullable()->after('active');
             $table->string('state', 2)->nullable()->after('city');
             $table->index(['city', 'state']);
         });
