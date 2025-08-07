@@ -1016,6 +1016,8 @@ class HealthPlanController extends Controller
                 'procedures.*.notes' => 'nullable|string',
                 'procedures.*.start_date' => 'nullable|date',
                 'procedures.*.medical_specialty_id' => 'nullable|exists:medical_specialties,id',
+                'procedures.*.state' => 'nullable|string|size:2',
+                'procedures.*.city' => 'nullable|string|max:100',
                 'skip_contract_update' => 'sometimes|boolean',
                 'delete_missing' => 'sometimes|boolean',
             ]);
@@ -1023,7 +1025,7 @@ class HealthPlanController extends Controller
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Erro de validação',
+                    'message' => 'Validation error',
                     'errors' => $validator->errors()
                 ], 422);
             }
@@ -1044,11 +1046,15 @@ class HealthPlanController extends Controller
             foreach ($request->procedures as $procedureData) {
                 $tussId = $procedureData['tuss_id'];
                 $medicalSpecialtyId = $procedureData['medical_specialty_id'] ?? null;
+                $state = $procedureData['state'] ?? null;
+                $city = $procedureData['city'] ?? null;
                 $updatedProcedureIds[] = $tussId;
                 
                 $healthPlanProcedure = $health_plan->procedures()
                     ->where('tuss_procedure_id', $tussId)
                     ->where('medical_specialty_id', $medicalSpecialtyId)
+                    ->where('state', $state)
+                    ->where('city', $city)
                     ->first();
 
                 if ($healthPlanProcedure) {
@@ -1057,6 +1063,8 @@ class HealthPlanController extends Controller
                         'price' => $procedureData['value'],
                         'notes' => $procedureData['notes'] ?? null,
                         'medical_specialty_id' => $medicalSpecialtyId,
+                        'state' => $state,
+                        'city' => $city,
                     ]);
                 } else {
                     // Create new procedure
@@ -1068,6 +1076,8 @@ class HealthPlanController extends Controller
                         'start_date' => $procedureData['start_date'] ?? now(),
                         'created_by' => Auth::id(),
                         'medical_specialty_id' => $medicalSpecialtyId,
+                        'state' => $state,
+                        'city' => $city,
                     ]);
                 }
 
@@ -1096,7 +1106,7 @@ class HealthPlanController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Procedimentos atualizados com sucesso',
+                'message' => 'Procedures updated successfully',
                 'data' => [
                     'health_plan' => new HealthPlanResource($health_plan),
                     'updated_procedures_count' => count($updatedProcedures),
@@ -1109,7 +1119,7 @@ class HealthPlanController extends Controller
             Log::error('Error updating health plan procedures: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Falha ao atualizar procedimentos',
+                'message' => 'Failed to update procedures',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -1143,6 +1153,8 @@ class HealthPlanController extends Controller
                     'created_at' => $healthPlanProcedure->created_at,
                     'updated_at' => $healthPlanProcedure->updated_at,
                     'medical_specialty_id' => $healthPlanProcedure->medical_specialty_id,
+                    'state' => $healthPlanProcedure->state,
+                    'city' => $healthPlanProcedure->city,
                     'procedure' => [
                         'id' => $healthPlanProcedure->procedure->id,
                         'code' => $healthPlanProcedure->procedure->code,
@@ -1875,6 +1887,8 @@ class HealthPlanController extends Controller
                 'start_date' => 'nullable|date',
                 'end_date' => 'nullable|date|after:start_date',
                 'medical_specialty_id' => 'nullable|exists:medical_specialties,id',
+                'state' => 'nullable|string|size:2',
+                'city' => 'nullable|string|max:100',
             ]);
 
             if ($validator->fails()) {
@@ -1885,17 +1899,19 @@ class HealthPlanController extends Controller
                 ], 422);
             }
 
-            // Check if procedure already exists for this health plan with the same TUSS and specialty
+            // Check if procedure already exists for this health plan with the same TUSS, specialty, state and city
             $existingProcedure = $health_plan->procedures()
                 ->where('tuss_procedure_id', $request->tuss_procedure_id)
                 ->where('medical_specialty_id', $request->medical_specialty_id)
+                ->where('state', $request->state)
+                ->where('city', $request->city)
                 ->where('is_active', true)
                 ->first();
 
             if ($existingProcedure) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Já existe um valor cadastrado para esta especialidade médica neste plano de saúde'
+                    'message' => 'Já existe um valor cadastrado para esta especialidade médica, estado e cidade neste plano de saúde'
                 ], 422);
             }
 
@@ -1908,6 +1924,8 @@ class HealthPlanController extends Controller
                 'is_active' => true,
                 'created_by' => Auth::id(),
                 'medical_specialty_id' => $request->medical_specialty_id,
+                'state' => $request->state,
+                'city' => $request->city,
             ]);
 
             $procedure->load('procedure');
@@ -2074,7 +2092,7 @@ class HealthPlanController extends Controller
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Erro de validação',
+                    'message' => 'Validation error',
                     'errors' => $validator->errors()
                 ], 422);
             }
@@ -2086,11 +2104,11 @@ class HealthPlanController extends Controller
             $headers = array_shift($csvData);
             
             // Validate headers
-            $expectedHeaders = ['codigo_tuss', 'descricao_procedimento', 'valor', 'observacoes'];
+            $expectedHeaders = ['codigo_tuss', 'descricao_procedimento', 'valor', 'observacoes', 'estado', 'cidade'];
             if (count(array_intersect($headers, $expectedHeaders)) < 3) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Formato CSV inválido. Colunas esperadas: codigo_tuss, descricao_procedimento, valor, observacoes'
+                    'message' => 'Invalid CSV format. Expected columns: codigo_tuss, descricao_procedimento, valor, observacoes, estado, cidade'
                 ], 422);
             }
 
@@ -2106,6 +2124,8 @@ class HealthPlanController extends Controller
                 $code = trim($row[0]);
                 $price = trim($row[2]);
                 $notes = isset($row[3]) ? trim($row[3]) : '';
+                $state = isset($row[4]) ? trim($row[4]) : null;
+                $city = isset($row[5]) ? trim($row[5]) : null;
 
                 if (empty($code) || empty($price)) continue;
 
@@ -2125,25 +2145,28 @@ class HealthPlanController extends Controller
                 $code = trim($row[0]);
                 $price = trim($row[2]);
                 $notes = isset($row[3]) ? trim($row[3]) : '';
+                $state = isset($row[4]) ? trim($row[4]) : null;
+                $city = isset($row[5]) ? trim($row[5]) : null;
 
                 if (empty($code) || empty($price)) continue;
 
                 $tussProcedure = $tussMap->get($code);
                 if (!$tussProcedure) {
-                    $errors[] = "Linha " . ($index + 2) . ": Código TUSS '$code' não encontrado";
+                    $errors[] = "Row " . ($index + 2) . ": TUSS code '$code' not found";
                     continue;
                 }
 
                 $priceValue = (float) str_replace(['R$', ' ', ','], ['', '', '.'], $price);
                 if ($priceValue <= 0) {
-                    $errors[] = "Linha " . ($index + 2) . ": Preço inválido '$price'";
+                    $errors[] = "Row " . ($index + 2) . ": Invalid price '$price'";
                     continue;
                 }
 
-                // Check if procedure already exists with the same TUSS and specialty (null for CSV imports)
+                // Check if procedure already exists
                 $existingProcedure = $health_plan->procedures()
                     ->where('tuss_procedure_id', $tussProcedure->id)
-                    ->where('medical_specialty_id', null) // CSV imports don't specify specialty
+                    ->where('state', $state)
+                    ->where('city', $city)
                     ->where('is_active', true)
                     ->first();
 
@@ -2152,6 +2175,8 @@ class HealthPlanController extends Controller
                     $existingProcedure->update([
                         'price' => $priceValue,
                         'notes' => $notes,
+                        'state' => $state,
+                        'city' => $city,
                     ]);
                 } else {
                     // Create new procedure
@@ -2162,7 +2187,8 @@ class HealthPlanController extends Controller
                         'start_date' => now(),
                         'is_active' => true,
                         'created_by' => Auth::id(),
-                        'medical_specialty_id' => null, // CSV imports don't specify specialty
+                        'state' => $state,
+                        'city' => $city,
                     ]);
                 }
 
@@ -2173,7 +2199,7 @@ class HealthPlanController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => "Importação CSV concluída. $imported procedimentos processados.",
+                'message' => "CSV import completed. $imported procedures processed.",
                 'data' => [
                     'imported' => $imported,
                     'errors' => $errors,
@@ -2186,7 +2212,7 @@ class HealthPlanController extends Controller
             Log::error('Error importing CSV procedures: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Falha ao importar CSV',
+                'message' => 'Failed to import CSV',
                 'error' => $e->getMessage()
             ], 500);
         }

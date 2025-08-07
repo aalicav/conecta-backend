@@ -26,6 +26,8 @@ class HealthPlanProcedure extends Model
         'end_date',
         'created_by',
         'medical_specialty_id',
+        'state',
+        'city',
     ];
 
     /**
