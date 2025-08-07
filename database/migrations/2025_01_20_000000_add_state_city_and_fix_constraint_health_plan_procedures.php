@@ -12,12 +12,6 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('health_plan_procedures', function (Blueprint $table) {
-            // Add state and city columns
-            $table->string('state', 2)->nullable()->after('medical_specialty_id');
-            $table->string('city', 100)->nullable()->after('state');
-            
-            // Add index for state and city
-            $table->index(['state', 'city']);
             
             // Drop the old unique constraint if it exists
             if (Schema::hasIndex('health_plan_procedures', 'unique_health_plan_procedure_specialty')) {
