@@ -1023,7 +1023,7 @@ class HealthPlanController extends Controller
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Validation error',
+                    'message' => 'Erro de validação',
                     'errors' => $validator->errors()
                 ], 422);
             }
@@ -1043,10 +1043,12 @@ class HealthPlanController extends Controller
             // Update or create procedures for each procedure
             foreach ($request->procedures as $procedureData) {
                 $tussId = $procedureData['tuss_id'];
+                $medicalSpecialtyId = $procedureData['medical_specialty_id'] ?? null;
                 $updatedProcedureIds[] = $tussId;
                 
                 $healthPlanProcedure = $health_plan->procedures()
                     ->where('tuss_procedure_id', $tussId)
+                    ->where('medical_specialty_id', $medicalSpecialtyId)
                     ->first();
 
                 if ($healthPlanProcedure) {
@@ -1054,7 +1056,7 @@ class HealthPlanController extends Controller
                     $healthPlanProcedure->update([
                         'price' => $procedureData['value'],
                         'notes' => $procedureData['notes'] ?? null,
-                        'medical_specialty_id' => $procedureData['medical_specialty_id'] ?? null,
+                        'medical_specialty_id' => $medicalSpecialtyId,
                     ]);
                 } else {
                     // Create new procedure
@@ -1065,7 +1067,7 @@ class HealthPlanController extends Controller
                         'is_active' => true,
                         'start_date' => $procedureData['start_date'] ?? now(),
                         'created_by' => Auth::id(),
-                        'medical_specialty_id' => $procedureData['medical_specialty_id'] ?? null,
+                        'medical_specialty_id' => $medicalSpecialtyId,
                     ]);
                 }
 
@@ -1094,7 +1096,7 @@ class HealthPlanController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Procedures updated successfully',
+                'message' => 'Procedimentos atualizados com sucesso',
                 'data' => [
                     'health_plan' => new HealthPlanResource($health_plan),
                     'updated_procedures_count' => count($updatedProcedures),
@@ -1107,7 +1109,7 @@ class HealthPlanController extends Controller
             Log::error('Error updating health plan procedures: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update procedures',
+                'message' => 'Falha ao atualizar procedimentos',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -1878,21 +1880,22 @@ class HealthPlanController extends Controller
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Validation error',
+                    'message' => 'Erro de validação',
                     'errors' => $validator->errors()
                 ], 422);
             }
 
-            // Check if procedure already exists for this health plan
+            // Check if procedure already exists for this health plan with the same TUSS and specialty
             $existingProcedure = $health_plan->procedures()
                 ->where('tuss_procedure_id', $request->tuss_procedure_id)
+                ->where('medical_specialty_id', $request->medical_specialty_id)
                 ->where('is_active', true)
                 ->first();
 
             if ($existingProcedure) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Procedure already exists for this health plan'
+                    'message' => 'Já existe um valor cadastrado para esta especialidade médica neste plano de saúde'
                 ], 422);
             }
 
@@ -1911,7 +1914,7 @@ class HealthPlanController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Procedure added successfully',
+                'message' => 'Procedimento adicionado com sucesso',
                 'data' => $procedure
             ], 201);
 
@@ -1919,7 +1922,7 @@ class HealthPlanController extends Controller
             Log::error('Error storing health plan procedure: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to store procedure',
+                'message' => 'Falha ao adicionar procedimento',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -2071,7 +2074,7 @@ class HealthPlanController extends Controller
             if ($validator->fails()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Validation error',
+                    'message' => 'Erro de validação',
                     'errors' => $validator->errors()
                 ], 422);
             }
@@ -2087,7 +2090,7 @@ class HealthPlanController extends Controller
             if (count(array_intersect($headers, $expectedHeaders)) < 3) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Invalid CSV format. Expected columns: codigo_tuss, descricao_procedimento, valor, observacoes'
+                    'message' => 'Formato CSV inválido. Colunas esperadas: codigo_tuss, descricao_procedimento, valor, observacoes'
                 ], 422);
             }
 
@@ -2127,19 +2130,20 @@ class HealthPlanController extends Controller
 
                 $tussProcedure = $tussMap->get($code);
                 if (!$tussProcedure) {
-                    $errors[] = "Row " . ($index + 2) . ": TUSS code '$code' not found";
+                    $errors[] = "Linha " . ($index + 2) . ": Código TUSS '$code' não encontrado";
                     continue;
                 }
 
                 $priceValue = (float) str_replace(['R$', ' ', ','], ['', '', '.'], $price);
                 if ($priceValue <= 0) {
-                    $errors[] = "Row " . ($index + 2) . ": Invalid price '$price'";
+                    $errors[] = "Linha " . ($index + 2) . ": Preço inválido '$price'";
                     continue;
                 }
 
-                // Check if procedure already exists
+                // Check if procedure already exists with the same TUSS and specialty (null for CSV imports)
                 $existingProcedure = $health_plan->procedures()
                     ->where('tuss_procedure_id', $tussProcedure->id)
+                    ->where('medical_specialty_id', null) // CSV imports don't specify specialty
                     ->where('is_active', true)
                     ->first();
 
@@ -2158,6 +2162,7 @@ class HealthPlanController extends Controller
                         'start_date' => now(),
                         'is_active' => true,
                         'created_by' => Auth::id(),
+                        'medical_specialty_id' => null, // CSV imports don't specify specialty
                     ]);
                 }
 
@@ -2168,7 +2173,7 @@ class HealthPlanController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => "CSV import completed. $imported procedures processed.",
+                'message' => "Importação CSV concluída. $imported procedimentos processados.",
                 'data' => [
                     'imported' => $imported,
                     'errors' => $errors,
@@ -2181,7 +2186,7 @@ class HealthPlanController extends Controller
             Log::error('Error importing CSV procedures: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to import CSV',
+                'message' => 'Falha ao importar CSV',
                 'error' => $e->getMessage()
             ], 500);
         }
