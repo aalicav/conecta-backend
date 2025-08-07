@@ -668,6 +668,24 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 /*
 |--------------------------------------------------------------------------
+| Rotas de Roles (Super Admin Only)
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth:sanctum', 'role:super_admin'])->group(function () {
+    Route::prefix('roles')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\RoleController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\RoleController::class, 'store']);
+        Route::get('/{role}', [App\Http\Controllers\Api\RoleController::class, 'show']);
+        Route::put('/{role}', [App\Http\Controllers\Api\RoleController::class, 'update']);
+        Route::delete('/{role}', [App\Http\Controllers\Api\RoleController::class, 'destroy']);
+        Route::get('/{role}/permissions', [App\Http\Controllers\Api\RoleController::class, 'getPermissions']);
+        Route::post('/{role}/permissions', [App\Http\Controllers\Api\RoleController::class, 'syncPermissions']);
+        Route::get('/permissions/all', [App\Http\Controllers\Api\RoleController::class, 'getAllPermissions']);
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
 | Rotas de Especialidades Médicas
 |--------------------------------------------------------------------------
 */
