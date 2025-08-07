@@ -49,7 +49,7 @@ class SolicitationController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = Solicitation::with(['healthPlan', 'patient', 'tuss', 'requestedBy', 'appointments']);
+        $query = Solicitation::with(['healthPlan', 'patient', 'tuss', 'medicalSpecialty', 'requestedBy', 'appointments']);
         
         // Search functionality
         if ($request->has('search')) {
@@ -270,6 +270,7 @@ class SolicitationController extends Controller
                 'healthPlan',
                 'patient',
                 'tuss',
+                'medicalSpecialty',
                 'requestedBy',
                 'appointments' => function ($query) {
                     $query->with(['provider', 'address']);

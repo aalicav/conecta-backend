@@ -24,6 +24,7 @@ class Solicitation extends Model
         'health_plan_id',
         'patient_id',
         'tuss_id',
+        'medical_specialty_id',
         'status',
         'priority',
         'description',
@@ -89,6 +90,14 @@ class Solicitation extends Model
     public function tuss(): BelongsTo
     {
         return $this->belongsTo(Tuss::class);
+    }
+
+    /**
+     * Get the medical specialty for this solicitation.
+     */
+    public function medicalSpecialty(): BelongsTo
+    {
+        return $this->belongsTo(MedicalSpecialty::class, 'medical_specialty_id');
     }
 
     /**

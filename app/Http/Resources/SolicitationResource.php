@@ -20,6 +20,7 @@ class SolicitationResource extends JsonResource
             'health_plan_id' => $this->health_plan_id,
             'patient_id' => $this->patient_id,
             'tuss_id' => $this->tuss_id,
+            'medical_specialty_id' => $this->medical_specialty_id,
             'status' => $this->status,
             'priority' => $this->priority,
             'description' => $this->description,
@@ -37,6 +38,7 @@ class SolicitationResource extends JsonResource
             'health_plan' => new HealthPlanResource($this->whenLoaded('healthPlan')),
             'patient' => new PatientResource($this->whenLoaded('patient')),
             'tuss' => new TussResource($this->whenLoaded('tuss')),
+            'medical_specialty' => new MedicalSpecialtyResource($this->whenLoaded('medicalSpecialty')),
             'requested_by_user' => new UserResource($this->whenLoaded('requestedBy')),
             'appointments' => AppointmentResource::collection($this->whenLoaded('appointments')),
             
