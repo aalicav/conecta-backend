@@ -25,6 +25,7 @@ use Carbon\Carbon;
 use App\Models\Appointment;
 use App\Jobs\ProcessAutomaticScheduling;
 use App\Models\Professional;
+use App\Models\Clinic;
 
 class SolicitationController extends Controller
 {
@@ -956,6 +957,86 @@ class SolicitationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erro ao buscar profissionais disponíveis',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getAvailableProviders($id): JsonResponse
+    {
+        try {
+            $solicitation = Solicitation::findOrFail($id);
+            $providerType = request()->get('provider_type');
+
+            if ($providerType === 'App\\Models\\Clinic') {
+                // Buscar clínicas que oferecem o procedimento
+                $providers = Clinic::whereHas('pricingContracts', function ($query) use ($solicitation) {
+                    $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                        ->where('is_active', true)
+                        ->where(function ($q) {
+                            $q->whereNull('end_date')
+                              ->orWhere('end_date', '>=', now());
+                        });
+                })
+                ->where('status', 'approved')
+                ->where('is_active', true)
+                ->with([
+                    'addresses',
+                    'pricingContracts' => function ($query) use ($solicitation) {
+                        $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                            ->where('is_active', true)
+                            ->where(function ($q) {
+                                $q->whereNull('end_date')
+                                  ->orWhere('end_date', '>=', now());
+                            });
+                    }
+                ])
+                ->get()
+                ->map(function ($clinic) {
+                    // Adicionar o preço do procedimento aos dados da clínica
+                    $clinic->price = $clinic->pricingContracts->first()?->price;
+                    return $clinic;
+                });
+            } else {
+                // Buscar profissionais que oferecem o procedimento
+                $providers = Professional::whereHas('pricingContracts', function ($query) use ($solicitation) {
+                    $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                        ->where('is_active', true)
+                        ->where(function ($q) {
+                            $q->whereNull('end_date')
+                              ->orWhere('end_date', '>=', now());
+                        });
+                })
+                ->where('status', 'approved')
+                ->where('is_active', true)
+                ->with([
+                    'addresses',
+                    'pricingContracts' => function ($query) use ($solicitation) {
+                        $query->where('tuss_procedure_id', $solicitation->tuss_id)
+                            ->where('is_active', true)
+                            ->where(function ($q) {
+                                $q->whereNull('end_date')
+                                  ->orWhere('end_date', '>=', now());
+                            });
+                    }
+                ])
+                ->get()
+                ->map(function ($professional) {
+                    // Adicionar o preço do procedimento aos dados do profissional
+                    $professional->price = $professional->pricingContracts->first()?->price;
+                    return $professional;
+                });
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $providers
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting available providers: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao buscar provedores disponíveis',
                 'error' => $e->getMessage()
             ], 500);
         }
