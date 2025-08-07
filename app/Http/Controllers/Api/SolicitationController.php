@@ -226,7 +226,7 @@ class SolicitationController extends Controller
             $solicitation = Solicitation::create($validated);
 
             // Load relationships for the resource
-            $solicitation->load(['healthPlan', 'patient', 'tuss', 'requestedBy']);
+            $solicitation->load(['healthPlan', 'patient', 'tuss', 'medicalSpecialty', 'requestedBy']);
 
             // Set as processing immediately before scheduling attempt
             $solicitation->markAsProcessing();
