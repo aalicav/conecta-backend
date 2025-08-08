@@ -60,6 +60,7 @@ class Solicitation extends Model
     const STATUS_SCHEDULED = 'scheduled';
     const STATUS_COMPLETED = 'completed';
     const STATUS_CANCELLED = 'cancelled';
+    const STATUS_FAILED = 'failed';
 
     /**
      * Priority constants
@@ -173,11 +174,19 @@ class Solicitation extends Model
     }
 
     /**
-     * Scope a query to only include active solicitations (not completed or cancelled).
+     * Scope a query to only include failed solicitations.
+     */
+    public function scopeFailed($query)
+    {
+        return $query->where('status', self::STATUS_FAILED);
+    }
+
+    /**
+     * Scope a query to only include active solicitations (not completed, cancelled or failed).
      */
     public function scopeActive($query)
     {
-        return $query->whereNotIn('status', [self::STATUS_COMPLETED, self::STATUS_CANCELLED]);
+        return $query->whereNotIn('status', [self::STATUS_COMPLETED, self::STATUS_CANCELLED, self::STATUS_FAILED]);
     }
 
     /**
@@ -229,11 +238,19 @@ class Solicitation extends Model
     }
 
     /**
+     * Check if the solicitation is failed.
+     */
+    public function isFailed(): bool
+    {
+        return $this->status === self::STATUS_FAILED;
+    }
+
+    /**
      * Check if the solicitation is active.
      */
     public function isActive(): bool
     {
-        return !$this->isCompleted() && !$this->isCancelled();
+        return !$this->isCompleted() && !$this->isCancelled() && !$this->isFailed();
     }
 
     /**
@@ -287,6 +304,19 @@ class Solicitation extends Model
         }
 
         $this->status = self::STATUS_PENDING;
+        return $this->save();
+    }
+
+    /**
+     * Mark the solicitation as failed.
+     */
+    public function markAsFailed(): bool
+    {
+        if ($this->isCompleted() || $this->isCancelled()) {
+            return false;
+        }
+
+        $this->status = self::STATUS_FAILED;
         return $this->save();
     }
 
