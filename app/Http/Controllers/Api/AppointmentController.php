@@ -1035,7 +1035,7 @@ class AppointmentController extends Controller
             }
             
             // Check if solicitation is in a valid state for scheduling
-            if (!$solicitation->isPending() && !$solicitation->isFailed()) {
+            if ((!$solicitation->isPending() || !$solicitation->isProcessing()) && !$solicitation->isFailed()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Solicitation is not in a valid state for scheduling'
