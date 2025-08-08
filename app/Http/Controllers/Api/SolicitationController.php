@@ -979,8 +979,6 @@ class SolicitationController extends Controller
                               ->orWhere('end_date', '>=', now());
                         });
                 })
-                ->where('status', 'approved')
-                ->where('is_active', true)
                 ->with([
                     'addresses',
                     'pricingContracts' => function ($query) use ($solicitation) {
