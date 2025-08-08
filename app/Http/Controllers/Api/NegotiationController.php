@@ -1244,12 +1244,6 @@ class NegotiationController extends Controller
      */
     public function markAsComplete(Request $request, Negotiation $negotiation)
     {
-        // Verify that the negotiation is in approved status
-        if ($negotiation->status !== self::STATUS_APPROVED) {
-            return response()->json([
-                'message' => 'Only approved negotiations can be marked as complete',
-            ], 403);
-        }
         
         // Validate if user belongs to the target entity and has proper role
         if (!$this->canApproveExternally($negotiation)) {
