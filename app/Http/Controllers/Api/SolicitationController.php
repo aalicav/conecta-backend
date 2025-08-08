@@ -967,19 +967,30 @@ class SolicitationController extends Controller
         try {
             $solicitation = Solicitation::findOrFail($id);
             $providerType = request()->get('provider_type');
-
+            $searchTerm = request()->get('search');
 
             if (str_contains($providerType, 'Clinic')) {
                 // Buscar clínicas que oferecem o procedimento
-                $providers = Clinic::whereHas('pricingContracts', function ($query) use ($solicitation) {
+                $query = Clinic::whereHas('pricingContracts', function ($query) use ($solicitation) {
                     $query->where('tuss_procedure_id', $solicitation->tuss_id)
                         ->where('is_active', true)
                         ->where(function ($q) {
                             $q->whereNull('end_date')
                               ->orWhere('end_date', '>=', now());
                         });
-                })
-                ->with([
+                });
+
+                // Aplicar busca por nome se fornecido
+                if ($searchTerm && strlen($searchTerm) >= 2) {
+                    $query->where(function($q) use ($searchTerm) {
+                        $q->where('name', 'like', "%{$searchTerm}%")
+                          ->orWhere('corporate_name', 'like', "%{$searchTerm}%")
+                          ->orWhere('trade_name', 'like', "%{$searchTerm}%")
+                          ->orWhere('cnpj', 'like', "%{$searchTerm}%");
+                    });
+                }
+
+                $providers = $query->with([
                     'addresses',
                     'pricingContracts' => function ($query) use ($solicitation) {
                         $query->where('tuss_procedure_id', $solicitation->tuss_id)
@@ -990,6 +1001,7 @@ class SolicitationController extends Controller
                             });
                     }
                 ])
+                ->orderBy('name', 'asc')
                 ->get()
                 ->map(function ($clinic) {
                     // Adicionar o preço do procedimento aos dados da clínica
@@ -998,7 +1010,7 @@ class SolicitationController extends Controller
                 });
             } else {
                 // Buscar profissionais que oferecem o procedimento
-                $providers = Professional::whereHas('pricingContracts', function ($query) use ($solicitation) {
+                $query = Professional::whereHas('pricingContracts', function ($query) use ($solicitation) {
                     $query->where('tuss_procedure_id', $solicitation->tuss_id)
                         ->where('is_active', true)
                         ->where(function ($q) {
@@ -1007,8 +1019,18 @@ class SolicitationController extends Controller
                         });
                 })
                 ->where('status', 'approved')
-                ->where('is_active', true)
-                ->with([
+                ->where('is_active', true);
+
+                // Aplicar busca por nome se fornecido
+                if ($searchTerm && strlen($searchTerm) >= 2) {
+                    $query->where(function($q) use ($searchTerm) {
+                        $q->where('name', 'like', "%{$searchTerm}%")
+                          ->orWhere('specialty', 'like', "%{$searchTerm}%")
+                          ->orWhere('registration_number', 'like', "%{$searchTerm}%");
+                    });
+                }
+
+                $providers = $query->with([
                     'addresses',
                     'pricingContracts' => function ($query) use ($solicitation) {
                         $query->where('tuss_procedure_id', $solicitation->tuss_id)
@@ -1019,6 +1041,7 @@ class SolicitationController extends Controller
                             });
                     }
                 ])
+                ->orderBy('name', 'asc')
                 ->get()
                 ->map(function ($professional) {
                     // Adicionar o preço do procedimento aos dados do profissional
