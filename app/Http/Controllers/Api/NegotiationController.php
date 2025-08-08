@@ -1251,6 +1251,13 @@ class NegotiationController extends Controller
             ], 403);
         }
         
+        // Validate if user belongs to the target entity and has proper role
+        if (!$this->canApproveExternally($negotiation)) {
+            return response()->json([
+                'message' => 'Unauthorized. Only the target entity can mark this negotiation as complete.'
+            ], 403);
+        }
+        
         try {
             DB::beginTransaction();
             
@@ -1285,6 +1292,9 @@ class NegotiationController extends Controller
                     'end_date' => now(),
                     'notes' => 'Deactivated by negotiation #' . $negotiation->id
                 ]);
+
+            // Reload items to get the updated approved_value
+            $negotiation->load('items');
 
             // Create pricing contracts for all completed items
             foreach ($negotiation->items as $item) {
@@ -1339,6 +1349,13 @@ class NegotiationController extends Controller
         if ($negotiation->status !== self::STATUS_APPROVED) {
             return response()->json([
                 'message' => 'Only approved negotiations can be marked as partially complete',
+            ], 403);
+        }
+        
+        // Validate if user belongs to the target entity and has proper role
+        if (!$this->canApproveExternally($negotiation)) {
+            return response()->json([
+                'message' => 'Unauthorized. Only the target entity can mark this negotiation as partially complete.'
             ], 403);
         }
         
