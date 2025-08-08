@@ -609,10 +609,19 @@ class NotificationService
             }
             
             // Use the same template as verification message to ensure consistency
-            $result = $this->whatsAppService->sendAppointmentNotificationToPatient(
-                $patient,
-                $appointment
-            );
+            $patientPhone = $patient->phone ?? $patient->mobile;
+            if ($patientPhone) {
+                $message = "Olá {$patient->name}! Seu agendamento foi confirmado para " . 
+                          $appointment->scheduled_date->format('d/m/Y H:i') . 
+                          " com {$appointment->provider->name}.";
+                
+                $result = $this->whatsAppService->sendMessageViaConversations(
+                    $patientPhone,
+                    $message
+                );
+            } else {
+                $result = false;
+            }
             
             if ($result) {
                 Log::info("Sent WhatsApp appointment notification to patient #{$patient->id} for appointment #{$appointment->id}");
