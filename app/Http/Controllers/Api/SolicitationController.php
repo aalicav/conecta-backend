@@ -968,6 +968,8 @@ class SolicitationController extends Controller
             $solicitation = Solicitation::findOrFail($id);
             $providerType = request()->get('provider_type');
 
+            Log::info('providerType: ' . $providerType);
+
             if ($providerType === 'App\\Models\\Clinic') {
                 // Buscar clínicas que oferecem o procedimento
                 $providers = Clinic::whereHas('pricingContracts', function ($query) use ($solicitation) {
