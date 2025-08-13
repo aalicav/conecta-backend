@@ -653,9 +653,9 @@ class NegotiationController extends Controller
             }
 
             // Validate current status
-            if ($negotiation->status !== self::STATUS_APPROVED) {
+            if (!in_array($negotiation->status, [self::STATUS_APPROVED, self::STATUS_PARTIALLY_COMPLETE])) {
                 return response()->json([
-                    'message' => 'Negotiation must be approved by commercial team first.'
+                    'message' => 'Negotiation must be approved or partially completed by commercial team first.'
                 ], 422);
             }
 
@@ -1685,9 +1685,9 @@ class NegotiationController extends Controller
             }
 
             // Validate current status
-            if ($negotiation->status !== self::STATUS_APPROVED) {
+            if (!in_array($negotiation->status, [self::STATUS_APPROVED, self::STATUS_PARTIALLY_COMPLETE])) {
                 return response()->json([
-                    'message' => 'Negotiation must be approved by commercial team first.'
+                    'message' => 'Negotiation must be approved or partially completed by commercial team first.'
                 ], 422);
             }
 
