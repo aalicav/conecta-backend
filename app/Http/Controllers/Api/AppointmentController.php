@@ -832,7 +832,7 @@ class AppointmentController extends Controller
         $user = Auth::user();
 
         // Super admins can access any solicitation
-        if ($user->hasRole('super_admin')) {
+        if ($user->hasRole('super_admin') || $user->hasRole('network_manager')) {
             return true;
         }
 
