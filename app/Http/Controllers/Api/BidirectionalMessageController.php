@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\WhatsAppService;
+use App\Services\WhapiWhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -12,7 +12,7 @@ class BidirectionalMessageController extends Controller
 {
     protected $whatsappService;
 
-    public function __construct(WhatsAppService $whatsappService)
+    public function __construct(WhapiWhatsAppService $whatsappService)
     {
         $this->whatsappService = $whatsappService;
     }
@@ -49,16 +49,16 @@ class BidirectionalMessageController extends Controller
     {
         try {
             $limit = $request->get('limit', 50);
-            $pageToken = $request->get('page_token');
+            $offset = $request->get('offset', 0);
             
-            $result = $this->whatsappService->getConversationHistory($phone, $limit, $pageToken);
+            $result = $this->whatsappService->getConversationHistory($phone, $limit, $offset);
 
             return response()->json([
                 'success' => true,
                 'data' => $result['messages'],
                 'pagination' => $result['pagination'],
                 'phone' => $phone,
-                'total' => $result['pagination']['total_count'],
+                'total' => $result['pagination']['total'],
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to get conversation history: ' . $e->getMessage());
@@ -86,27 +86,26 @@ class BidirectionalMessageController extends Controller
         }
 
         try {
-            $message = $this->whatsappService->sendMessageViaConversations(
+            $message = $this->whatsappService->sendTextMessage(
                 $request->recipient_phone,
                 $request->content
             );
 
             return response()->json([
                 'success' => true,
-                'message' => 'Mensagem enviada com sucesso via Twilio Conversations',
+                'message' => 'Mensagem enviada com sucesso via Whapi',
                 'data' => [
-                    'message_sid' => $message->sid ?? null,
-                    'conversation_sid' => $message->conversationSid ?? null,
+                    'message_id' => $message['message_id'] ?? null,
                     'content' => $request->content,
                     'timestamp' => now()->toISOString(),
                 ]
             ], 201);
         } catch (\Exception $e) {
-            Log::error('Failed to send message via Conversations: ' . $e->getMessage());
+            Log::error('Failed to send message via Whapi: ' . $e->getMessage());
 
             return response()->json([
                 'success' => false,
-                'message' => 'Falha ao enviar mensagem via Twilio Conversations',
+                'message' => 'Falha ao enviar mensagem via Whapi',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -119,11 +118,11 @@ class BidirectionalMessageController extends Controller
     {
         try {
             // This method would need to be implemented based on your entity structure
-            // For now, we'll return an empty array since we're using Twilio Conversations
+            // For now, we'll return an empty array since we're using Whapi
             return response()->json([
                 'success' => true,
                 'data' => [],
-                'message' => 'Método não implementado para Twilio Conversations',
+                'message' => 'Método não implementado para Whapi',
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to get messages by entity: ' . $e->getMessage());

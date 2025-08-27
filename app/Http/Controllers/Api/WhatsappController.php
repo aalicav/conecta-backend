@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\WhatsappMessage;
-use App\Services\WhatsAppService;
+use App\Services\WhapiWhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -13,7 +13,7 @@ class WhatsappController extends Controller
 {
     protected $whatsappService;
 
-    public function __construct(WhatsAppService $whatsappService)
+    public function __construct(WhapiWhatsAppService $whatsappService)
     {
         $this->whatsappService = $whatsappService;
     }

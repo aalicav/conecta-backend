@@ -35,12 +35,7 @@ return [
         ],
     ],
 
-    'twilio' => [
-        'account_sid' => env('TWILIO_ACCOUNT_SID'),
-        'auth_token' => env('TWILIO_AUTH_TOKEN'),
-        'whatsapp_from' => env('TWILIO_WHATSAPP_FROM'),
-        'messaging_service_sid' => env('TWILIO_MESSAGING_SERVICE_SID'),
-    ],
+
 
     'autentique' => [
         'url' => env('AUTENTIQUE_API_URL', 'https://api.autentique.com.br/v2/graphql'),

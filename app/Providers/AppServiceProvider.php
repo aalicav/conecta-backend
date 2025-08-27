@@ -5,7 +5,7 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use App\Notifications\Channels\WhatsAppChannel;
 use Illuminate\Support\Facades\Notification;
-use Twilio\Rest\Client;
+
 use App\Providers\WhatsAppServiceProvider;
 use App\Models\Negotiation;
 use App\Observers\NegotiationObserver;

@@ -2,16 +2,16 @@
 
 namespace App\Notifications\Channels;
 
-use App\Services\WhatsAppService;
+use App\Services\WhapiWhatsAppService;
 use App\Notifications\Messages\WhatsAppMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Log;
 
 class WhatsAppChannel
 {
-    protected WhatsAppService $whatsAppService;
+    protected WhapiWhatsAppService $whatsAppService;
 
-    public function __construct(WhatsAppService $whatsAppService)
+    public function __construct(WhapiWhatsAppService $whatsAppService)
     {
         $this->whatsAppService = $whatsAppService;
     }
