@@ -235,8 +235,8 @@ class SolicitationController extends Controller
             // This will notify health plan admins and super admins
             $this->notificationService->notifySolicitationCreated($solicitation);
 
-            // Dispatch the automatic scheduling job
-            ProcessAutomaticScheduling::dispatch($solicitation);
+            // Dispatch the automatic scheduling job with only the ID to avoid serialization issues
+            ProcessAutomaticScheduling::dispatch($solicitation->id);
             
             DB::commit();
             
