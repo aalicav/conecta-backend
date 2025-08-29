@@ -8,7 +8,8 @@ use App\Models\Patient;
 use App\Models\Professional;
 use App\Models\Clinic;
 use App\Models\Phone;
-use App\Models\Message;
+
+use App\Models\WhatsappMessage;
 use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -40,7 +41,7 @@ class WhapiWhatsAppService
     /**
      * Send text message via Whapi
      */
-    public function sendTextMessage(string $phone, string $message, array $options = []): array
+    public function sendTextMessage(string $phone, string $message, ?string $relatedModelType = null, ?int $relatedModelId = null): array
     {
         try {
             $formattedPhone = $this->formatNumber($phone);
@@ -51,15 +52,16 @@ class WhapiWhatsAppService
             ];
 
             // Add optional parameters
-            if (isset($options['preview_url'])) {
-                $payload['preview_url'] = $options['preview_url'];
+            if (config('whapi.default_preview_url', true)) {
+                $payload['preview_url'] = true;
             }
 
             Log::info('Sending WhatsApp message via Whapi', [
                 'phone' => $phone,
                 'formatted_phone' => $formattedPhone,
                 'message' => $message,
-                'options' => $options,
+                'related_model_type' => $relatedModelType,
+                'related_model_id' => $relatedModelId,
             ]);
 
             $response = $this->httpClient->post('/messages/text', [
@@ -75,7 +77,7 @@ class WhapiWhatsAppService
             ]);
 
             // Save message to database
-            $this->saveMessage($phone, $message, 'outbound', 'sent', $responseData['id'] ?? null);
+            $this->saveWhatsappMessage($phone, $message, 'outbound', 'sent', $responseData['id'] ?? null, $relatedModelType, $relatedModelId);
 
             return [
                 'success' => true,
@@ -92,7 +94,7 @@ class WhapiWhatsAppService
             ]);
 
             // Save failed message to database
-            $this->saveMessage($phone, $message, 'outbound', 'failed');
+            $this->saveWhatsappMessage($phone, $message, 'outbound', 'failed', null, $relatedModelType, $relatedModelId);
 
             throw new Exception('Failed to send WhatsApp message: ' . $e->getMessage());
         } catch (Exception $e) {
@@ -103,7 +105,7 @@ class WhapiWhatsAppService
             ]);
 
             // Save failed message to database
-            $this->saveMessage($phone, $message, 'outbound', 'failed');
+            $this->saveWhatsappMessage($phone, $message, 'outbound', 'failed', null, $relatedModelType, $relatedModelId);
 
             throw $e;
         }
@@ -112,7 +114,7 @@ class WhapiWhatsAppService
     /**
      * Send media message via Whapi
      */
-    public function sendMediaMessage(string $phone, string $mediaUrl, string $mediaType, string $caption = '', array $options = []): array
+    public function sendMediaMessage(string $phone, string $mediaUrl, string $mediaType, string $caption = '', ?string $relatedModelType = null, ?int $relatedModelId = null): array
     {
         try {
             $formattedPhone = $this->formatNumber($phone);
@@ -126,11 +128,6 @@ class WhapiWhatsAppService
 
             if (!empty($caption)) {
                 $payload['caption'] = $caption;
-            }
-
-            // Add optional parameters
-            if (isset($options['filename'])) {
-                $payload['filename'] = $options['filename'];
             }
 
             Log::info('Sending WhatsApp media message via Whapi', [
@@ -155,7 +152,7 @@ class WhapiWhatsAppService
             ]);
 
             // Save message to database
-            $this->saveMessage($phone, $caption ?: "[{$mediaType}]", 'outbound', 'sent', $responseData['id'] ?? null, $mediaType, $mediaUrl);
+            $this->saveWhatsappMessage($phone, $caption ?: "[{$mediaType}]", 'outbound', 'sent', $responseData['id'] ?? null, $relatedModelType, $relatedModelId, $mediaType, $mediaUrl);
 
             return [
                 'success' => true,
@@ -173,7 +170,7 @@ class WhapiWhatsAppService
             ]);
 
             // Save failed message to database
-            $this->saveMessage($phone, $caption ?: "[{$mediaType}]", 'outbound', 'failed', null, $mediaType, $mediaUrl);
+            $this->saveWhatsappMessage($phone, $caption ?: "[{$mediaType}]", 'outbound', 'failed', null, $relatedModelType, $relatedModelId, $mediaType, $mediaUrl);
 
             throw new Exception('Failed to send WhatsApp media message: ' . $e->getMessage());
         } catch (Exception $e) {
@@ -185,7 +182,7 @@ class WhapiWhatsAppService
             ]);
 
             // Save failed message to database
-            $this->saveMessage($phone, $caption ?: "[{$mediaType}]", 'outbound', 'failed', null, $mediaType, $mediaUrl);
+            $this->saveWhatsappMessage($phone, $caption ?: "[{$mediaType}]", 'outbound', 'failed', null, $relatedModelType, $relatedModelId, $mediaType, $mediaUrl);
 
             throw $e;
         }
@@ -194,7 +191,7 @@ class WhapiWhatsAppService
     /**
      * Send template message via Whapi
      */
-    public function sendTemplateMessage(string $phone, string $templateName, array $parameters = []): array
+    public function sendTemplateMessage(string $phone, string $templateName, array $parameters = [], ?string $relatedModelType = null, ?int $relatedModelId = null): array
     {
         try {
             $formattedPhone = $this->formatNumber($phone);
@@ -228,7 +225,7 @@ class WhapiWhatsAppService
             ]);
 
             // Save message to database
-            $this->saveMessage($phone, "[Template: {$templateName}]", 'outbound', 'sent', $responseData['id'] ?? null);
+            $this->saveWhatsappMessage($phone, "[Template: {$templateName}]", 'outbound', 'sent', $responseData['id'] ?? null, $relatedModelType, $relatedModelId);
 
             return [
                 'success' => true,
@@ -246,7 +243,7 @@ class WhapiWhatsAppService
             ]);
 
             // Save failed message to database
-            $this->saveMessage($phone, "[Template: {$templateName}]", 'outbound', 'failed');
+            $this->saveWhatsappMessage($phone, "[Template: {$templateName}]", 'outbound', 'failed', null, $relatedModelType, $relatedModelId);
 
             throw new Exception('Failed to send WhatsApp template message: ' . $e->getMessage());
         } catch (Exception $e) {
@@ -258,59 +255,205 @@ class WhapiWhatsAppService
             ]);
 
             // Save failed message to database
-            $this->saveMessage($phone, "[Template: {$templateName}]", 'outbound', 'failed');
+            $this->saveWhatsappMessage($phone, "[Template: {$templateName}]", 'outbound', 'failed', null, $relatedModelType, $relatedModelId);
 
             throw $e;
         }
     }
 
     /**
-     * Process incoming message from webhook
+     * Send test message for Conecta templates
      */
-    public function processIncomingMessage(array $webhookData): void
+    public function sendTestMessage(string $phone, string $templateKey, array $customData = []): array
     {
         try {
-            Log::info('Processing incoming WhatsApp message from Whapi', $webhookData);
+            $formattedPhone = $this->formatNumber($phone);
+            
+            // Use custom data if provided, otherwise generate default test data
+            $templateData = empty($customData) 
+                ? $this->generateDefaultTestData($templateKey)
+                : $customData;
+            
+            $payload = [
+                'to' => $formattedPhone,
+                'template' => $templateKey,
+                'parameters' => $templateData,
+            ];
 
-            // Extract message data from webhook
-            $phone = $this->extractPhoneFromWebhook($webhookData);
-            $content = $this->extractContentFromWebhook($webhookData);
-            $messageId = $webhookData['id'] ?? null;
-            $timestamp = $webhookData['timestamp'] ?? now();
-            $type = $webhookData['type'] ?? 'text';
-
-            if (!$phone || !$content) {
-                Log::warning('Invalid webhook data - missing phone or content', $webhookData);
-                return;
-            }
-
-            // Check if we already processed this message
-            if ($messageId) {
-                $existingMessage = Message::where('external_id', $messageId)->first();
-                if ($existingMessage) {
-                    Log::info('Message already processed, skipping', [
-                        'message_id' => $messageId,
-                        'phone' => $phone,
-                    ]);
-                    return;
-                }
-            }
-
-            // Save incoming message to database
-            $this->saveMessage($phone, $content, 'inbound', 'received', $messageId, $type);
-
-            // Identify sender entity
-            $senderEntity = $this->identifySenderEntity($phone);
-
-            Log::info('Processed incoming WhatsApp message', [
+            Log::info('Sending Conecta test template via Whapi', [
                 'phone' => $phone,
-                'content' => $content,
-                'message_id' => $messageId,
-                'sender_entity' => $senderEntity,
+                'template_key' => $templateKey,
+                'template_data' => $templateData,
             ]);
 
+            $response = $this->httpClient->post('/messages/template', [
+                'json' => $payload,
+            ]);
+
+            $responseData = json_decode($response->getBody()->getContents(), true);
+            
+            Log::info('Whapi Conecta template API response', [
+                'phone' => $phone,
+                'response' => $responseData,
+                'status_code' => $response->getStatusCode(),
+            ]);
+
+            // Save message to database
+            $this->saveWhatsappMessage($phone, "[Conecta Template: {$templateKey}]", 'outbound', 'sent', $responseData['id'] ?? null);
+
+            return [
+                'success' => true,
+                'message_id' => $responseData['id'] ?? null,
+                'response' => $responseData,
+            ];
+
+        } catch (GuzzleException $e) {
+            Log::error('Failed to send Conecta test template via Whapi', [
+                'phone' => $phone,
+                'template_key' => $templateKey,
+                'error' => $e->getMessage(),
+                'response' => $e->hasResponse() ? $e->getResponse()->getBody()->getContents() : null,
+            ]);
+
+            // Save failed message to database
+            $this->saveWhatsappMessage($phone, "[Conecta Template: {$templateKey}]", 'outbound', 'failed');
+
+            throw new Exception('Failed to send Conecta test template: ' . $e->getMessage());
         } catch (Exception $e) {
-            Log::error('Failed to process incoming WhatsApp message', [
+            Log::error('Unexpected error sending Conecta test template', [
+                'phone' => $phone,
+                'template_key' => $templateKey,
+                'error' => $e->getMessage(),
+            ]);
+
+            // Save failed message to database
+            $this->saveWhatsappMessage($phone, "[Conecta Template: {$templateKey}]", 'outbound', 'failed');
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Generate default test data for Conecta templates
+     */
+    public function generateDefaultTestData(string $templateKey): array
+    {
+        $currentDate = date('d/m/Y');
+        $futureDate = date('d/m/Y', strtotime('+3 days'));
+        
+        switch ($templateKey) {
+            case 'agendamento_cliente':
+                return [
+                    '1' => 'João da Silva',
+                    '2' => 'Dra. Maria Fernandes',
+                    '3' => 'Cardiologia',
+                    '4' => $futureDate,
+                    '5' => '14:30',
+                    '6' => 'Av. Paulista, 1000, São Paulo - SP',
+                    '7' => 'https://conecta.example.com/confirmar/123456'
+                ];
+                
+            case 'agendamento_cancelado':
+                return [
+                    '1' => 'Ana Souza',
+                    '2' => $futureDate,
+                    '3' => 'Indisponibilidade do médico',
+                    '4' => 'https://conecta.example.com/reagendar/123456'
+                ];
+                
+            case 'agendamento_confirmado':
+                return [
+                    '1' => 'Pedro Santos',
+                    '2' => $futureDate,
+                    '3' => '10:15',
+                    '4' => 'https://conecta.example.com/consulta/123456'
+                ];
+                
+            case 'nps_survey':
+                return [
+                    '1' => 'Carlos Oliveira',
+                    '2' => 'Dr. Ricardo Mendes',
+                    '3' => $currentDate,
+                    '4' => 'https://conecta.example.com/pesquisa/123456'
+                ];
+                
+            case 'nps_survey_prestador':
+                return [
+                    '1' => 'Mariana Costa',
+                    '2' => 'Dra. Juliana Alves',
+                    '3' => $currentDate,
+                    '4' => 'https://conecta.example.com/pesquisa-prestador/123456'
+                ];
+                
+            case 'nps_pergunta':
+                return [
+                    '1' => 'Roberto Ferreira',
+                    '2' => $currentDate,
+                    '3' => 'https://conecta.example.com/nps/123456'
+                ];
+                
+            case 'copy_menssagem_operadora':
+                return [
+                    '1' => 'Fernanda Lima',
+                    '2' => 'Lucas Martins',
+                    '3' => 'Dr. Paulo Cardoso',
+                    '4' => 'Oftalmologia',
+                    '5' => $futureDate,
+                    '6' => '15:45',
+                    '7' => 'Rua Augusta, 500, São Paulo - SP'
+                ];
+                
+            default:
+                return [
+                    '1' => 'Usuário Teste',
+                    '2' => $currentDate,
+                    '3' => 'https://conecta.example.com/teste'
+                ];
+        }
+    }
+
+    /**
+     * Resend a failed message
+     */
+    public function resendMessage(WhatsappMessage $message): WhatsappMessage
+    {
+        try {
+            $result = $this->sendTextMessage($message->recipient, $message->message);
+            
+            // Update message status
+            $message->update([
+                'status' => 'sent',
+                'sent_at' => now(),
+                'external_id' => $result['message_id'],
+            ]);
+            
+            return $message;
+        } catch (Exception $e) {
+            Log::error('Failed to resend message', [
+                'message_id' => $message->id,
+                'error' => $e->getMessage(),
+            ]);
+            
+            $message->update(['status' => 'failed']);
+            throw $e;
+        }
+    }
+
+    /**
+     * Handle webhook for status updates only
+     */
+    public function handleWebhook(array $webhookData): void
+    {
+        try {
+            Log::info('Processing Whapi webhook for status updates', $webhookData);
+            
+            // Handle message status updates
+            if (isset($webhookData['status'])) {
+                $this->updateMessageStatus($webhookData);
+            }
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle Whapi webhook', [
                 'webhook_data' => $webhookData,
                 'error' => $e->getMessage(),
             ]);
@@ -319,168 +462,99 @@ class WhapiWhatsAppService
     }
 
     /**
-     * Get conversation history for a specific phone
+     * Update message status based on webhook data
      */
-    public function getConversationHistory(string $phone, int $limit = 50, int $offset = 0): array
+    protected function updateMessageStatus(array $webhookData): void
     {
         try {
-            $messages = Message::where('recipient_phone', $phone)
-                ->orWhere('sender_phone', $phone)
-                ->orderBy('created_at', 'desc')
-                ->skip($offset)
-                ->take($limit)
-                ->get();
-
-            $total = Message::where('recipient_phone', $phone)
-                ->orWhere('sender_phone', $phone)
-                ->count();
-
-            return [
-                'messages' => $messages->map(function ($message) {
-                    return [
-                        'id' => $message->id,
-                        'content' => $message->content,
-                        'direction' => $message->direction,
-                        'status' => $message->status,
-                        'timestamp' => $message->created_at->format('Y-m-d H:i:s'),
-                        'type' => $message->media_type,
-                        'media_url' => $message->media_url,
-                    ];
-                })->toArray(),
-                'pagination' => [
-                    'total' => $total,
-                    'limit' => $limit,
-                    'offset' => $offset,
-                    'has_more' => ($offset + $limit) < $total,
-                ]
-            ];
-
+            $messageId = $webhookData['id'] ?? null;
+            $status = $webhookData['status'] ?? null;
+            
+            if (!$messageId || !$status) {
+                Log::warning('Invalid webhook data for status update', $webhookData);
+                return;
+            }
+            
+            // Find message by external ID
+            $message = WhatsappMessage::where('external_id', $messageId)->first();
+            
+            if ($message) {
+                $message->update([
+                    'status' => $this->mapWhapiStatus($status),
+                    'sent_at' => $status === 'delivered' ? now() : $message->sent_at,
+                ]);
+                
+                Log::info('Updated message status', [
+                    'message_id' => $message->id,
+                    'external_id' => $messageId,
+                    'status' => $status,
+                    'mapped_status' => $this->mapWhapiStatus($status),
+                ]);
+            } else {
+                Log::warning('Message not found for status update', [
+                    'external_id' => $messageId,
+                    'status' => $status,
+                ]);
+            }
+            
         } catch (Exception $e) {
-            Log::error('Failed to get conversation history', [
-                'phone' => $phone,
+            Log::error('Failed to update message status', [
+                'webhook_data' => $webhookData,
                 'error' => $e->getMessage(),
             ]);
-            return [
-                'messages' => [],
-                'pagination' => [
-                    'total' => 0,
-                    'limit' => $limit,
-                    'offset' => $offset,
-                    'has_more' => false,
-                ]
-            ];
         }
     }
 
     /**
-     * Get all conversations with latest message
+     * Map Whapi status to internal status
      */
-    public function getConversations(int $limit = 20): array
+    protected function mapWhapiStatus(string $whapiStatus): string
+    {
+        $statusMap = [
+            'sent' => 'sent',
+            'delivered' => 'delivered',
+            'read' => 'read',
+            'failed' => 'failed',
+            'pending' => 'pending',
+        ];
+        
+        return $statusMap[$whapiStatus] ?? 'pending';
+    }
+
+    /**
+     * Save message to WhatsappMessage model
+     */
+    protected function saveWhatsappMessage(string $phone, string $content, string $direction, string $status, ?string $externalId = null, ?string $relatedModelType = null, ?int $relatedModelId = null, ?string $mediaType = null, ?string $mediaUrl = null): void
     {
         try {
-            $conversations = Message::select('recipient_phone', 'sender_phone')
-                ->selectRaw('MAX(created_at) as latest_message_at')
-                ->groupBy('recipient_phone', 'sender_phone')
-                ->orderBy('latest_message_at', 'desc')
-                ->limit($limit)
-                ->get();
+            $messageData = [
+                'recipient' => $phone,
+                'message' => $content,
+                'direction' => $direction,
+                'status' => $status,
+                'external_id' => $externalId,
+                'related_model_type' => $relatedModelType,
+                'related_model_id' => $relatedModelId,
+                'media_type' => $mediaType,
+                'media_url' => $mediaUrl,
+            ];
 
-            $formattedConversations = [];
-            foreach ($conversations as $conversation) {
-                $phone = $conversation->recipient_phone ?: $conversation->sender_phone;
-                
-                if ($phone) {
-                    $latestMessage = Message::where('recipient_phone', $phone)
-                        ->orWhere('sender_phone', $phone)
-                        ->orderBy('created_at', 'desc')
-                        ->first();
-
-                    if ($latestMessage) {
-                        $formattedConversations[] = [
-                            'phone' => $phone,
-                            'latest_message' => [
-                                'id' => $latestMessage->id,
-                                'content' => $latestMessage->content,
-                                'direction' => $latestMessage->direction,
-                                'status' => $latestMessage->status,
-                                'timestamp' => $latestMessage->created_at->format('Y-m-d H:i:s'),
-                                'type' => $latestMessage->media_type,
-                            ],
-                            'contact_info' => $this->identifySenderEntity($phone),
-                            'created_at' => $conversation->latest_message_at->format('Y-m-d H:i:s'),
-                        ];
-                    }
-                }
+            if ($direction === 'outbound') {
+                $messageData['sender'] = config('whapi.from_number', 'system');
             }
 
-            return $formattedConversations;
+            WhatsappMessage::create($messageData);
+
+            Log::info('WhatsApp message saved to database', $messageData);
 
         } catch (Exception $e) {
-            Log::error('Failed to get conversations', [
+            Log::error('Failed to save WhatsApp message to database', [
+                'phone' => $phone,
+                'content' => $content,
+                'direction' => $direction,
                 'error' => $e->getMessage(),
             ]);
-            return [];
         }
-    }
-
-    /**
-     * Send message to a phone number (alias for sendTextMessage)
-     */
-    public function sendMessage(string $phone, string $content): array
-    {
-        return $this->sendTextMessage($phone, $content);
-    }
-
-    /**
-     * Identify sender entity by phone number
-     */
-    public function identifySenderEntity(string $phone)
-    {
-        $normalizedPhone = $this->normalizePhoneNumber($phone);
-
-        // Search in Patient phones
-        $patient = Patient::whereHas('phones', function ($query) use ($normalizedPhone) {
-            $query->where('number', $normalizedPhone);
-        })->first();
-
-        if ($patient) {
-            return [
-                'type' => 'Patient',
-                'id' => $patient->id,
-                'name' => $patient->name,
-                'entity' => $patient
-            ];
-        }
-
-        // Search in Professional phones
-        $professional = Professional::whereHas('phones', function ($query) use ($normalizedPhone) {
-            $query->where('number', $normalizedPhone);
-        })->first();
-
-        if ($professional) {
-            return [
-                'type' => 'Professional',
-                'id' => $professional->id,
-                'name' => $professional->name,
-                'entity' => $professional
-            ];
-        }
-
-        // Search in Clinic phones
-        $clinic = Clinic::whereHas('phones', function ($query) use ($normalizedPhone) {
-            $query->where('number', $normalizedPhone);
-        })->first();
-
-        if ($clinic) {
-            return [
-                'type' => 'Clinic',
-                'id' => $clinic->id,
-                'name' => $clinic->name,
-                'entity' => $clinic
-            ];
-        }
-
-        return null;
     }
 
     /**
@@ -497,81 +571,6 @@ class WhapiWhatsAppService
         ];
 
         return $endpoints[$mediaType] ?? '/messages/media';
-    }
-
-    /**
-     * Extract phone number from webhook data
-     */
-    protected function extractPhoneFromWebhook(array $webhookData): ?string
-    {
-        // Handle different webhook formats
-        if (isset($webhookData['from'])) {
-            return $this->normalizePhoneNumber($webhookData['from']);
-        }
-
-        if (isset($webhookData['contact'])) {
-            return $this->normalizePhoneNumber($webhookData['contact']['wa_id'] ?? '');
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract content from webhook data
-     */
-    protected function extractContentFromWebhook(array $webhookData): ?string
-    {
-        if (isset($webhookData['text']['body'])) {
-            return $webhookData['text']['body'];
-        }
-
-        if (isset($webhookData['message']['text'])) {
-            return $webhookData['message']['text'];
-        }
-
-        if (isset($webhookData['body'])) {
-            return $webhookData['body'];
-        }
-
-        return null;
-    }
-
-    /**
-     * Save message to database
-     */
-    protected function saveMessage(string $phone, string $content, string $direction, string $status, ?string $externalId = null, ?string $mediaType = null, ?string $mediaUrl = null): void
-    {
-        try {
-            $messageData = [
-                'content' => $content,
-                'direction' => $direction,
-                'status' => $status,
-                'media_type' => $mediaType,
-                'media_url' => $mediaUrl,
-                'external_id' => $externalId,
-                'message_type' => $mediaType ? 'media' : 'text',
-            ];
-
-            if ($direction === 'outbound') {
-                $messageData['sender_phone'] = config('whapi.from_number', 'system');
-                $messageData['recipient_phone'] = $phone;
-            } else {
-                $messageData['sender_phone'] = $phone;
-                $messageData['recipient_phone'] = config('whapi.from_number', 'system');
-            }
-
-            Message::create($messageData);
-
-            Log::info('Message saved to database', $messageData);
-
-        } catch (Exception $e) {
-            Log::error('Failed to save message to database', [
-                'phone' => $phone,
-                'content' => $content,
-                'direction' => $direction,
-                'error' => $e->getMessage(),
-            ]);
-        }
     }
 
     /**
@@ -599,36 +598,23 @@ class WhapiWhatsAppService
     }
 
     /**
-     * Legacy methods for backward compatibility
+     * Legacy methods for backward compatibility (simplified)
      */
-    public function handleWebhook(array $webhookData): void
+    public function processIncomingMessage(array $webhookData): void
     {
-        $this->processIncomingMessage($webhookData);
+        // No longer processing incoming messages - only status updates
+        Log::info('Incoming message processing disabled - Whapi is send-only');
     }
 
     public function processAppointmentVerificationResponse(string $response, string $phone): void
     {
-        Log::info('Processing appointment verification response', [
-            'response' => $response,
-            'phone' => $phone,
-        ]);
+        // No longer processing appointment verification responses
+        Log::info('Appointment verification response processing disabled - Whapi is send-only');
     }
 
     // Alias methods for backward compatibility
-    public function sendConversationMessage(string $phone, string $content, string $author = 'system'): array
+    public function sendMessage(string $phone, string $content): array
     {
         return $this->sendTextMessage($phone, $content);
-    }
-
-    public function sendMessageViaConversations(string $phone, string $content): array
-    {
-        return $this->sendTextMessage($phone, $content);
-    }
-
-    public function getOrCreateConversation(string $phone): string
-    {
-        // For Whapi, we don't need conversations like Twilio
-        // Return a unique identifier for backward compatibility
-        return "whapi_conversation_{$phone}";
     }
 }

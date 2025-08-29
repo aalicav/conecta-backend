@@ -37,7 +37,7 @@ Conecta is an API-first backend system that connects health plans with clinics a
 - Authentication: Laravel Sanctum
 - Authorization: Spatie Permissions + Policies
 - PDF generation: Barryvdh/Laravel-DomPDF
-- Notifications: Laravel + Twilio (WhatsApp) + Email
+- Notifications: Laravel + Whapi (WhatsApp) + Email
 - Queues: Redis + Horizon
 - Geolocation: Mapbox
 - Payments: Stripe via Laravel Cashier

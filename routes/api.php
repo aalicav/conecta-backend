@@ -39,7 +39,7 @@ use App\Http\Controllers\Api\SolicitationInviteController;
 use App\Http\Controllers\Billing\NFeController;
 use App\Http\Controllers\Api\ExtemporaneousNegotiationController;
 use App\Http\Controllers\Api\ValueVerificationController;
-use App\Http\Controllers\Api\BidirectionalMessageController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -487,7 +487,9 @@ Route::middleware(['auth:sanctum'])->prefix('dashboard')->group(function () {
     Route::get('/pending/items', [DashboardController::class, 'getPendingItems']);
 });
 
-// WhatsApp routes
+
+
+// WhatsApp routes (send-only via Whapi)
 Route::middleware(['auth:sanctum'])->prefix('whatsapp')->group(function () {
     Route::get('messages', [WhatsappController::class, 'index']);
     Route::get('messages/{id}', [WhatsappController::class, 'show']);
@@ -502,33 +504,7 @@ Route::middleware(['auth:sanctum'])->prefix('whatsapp')->group(function () {
     Route::match(['get', 'post'], 'webhook', [WhatsappController::class, 'webhook'])->withoutMiddleware('auth:sanctum');
 });
 
-// Bidirectional WhatsApp routes
-Route::middleware(['auth:sanctum'])->prefix('messages')->group(function () {
-    Route::get('conversations', [BidirectionalMessageController::class, 'getConversations']);
-    Route::get('conversations/{phone}/history', [BidirectionalMessageController::class, 'getConversationHistory']);
-    Route::post('send', [BidirectionalMessageController::class, 'sendBidirectionalMessage']);
-    Route::get('entity/{type}/{id}', [BidirectionalMessageController::class, 'getMessagesByEntity']);
-    Route::get('statistics', [BidirectionalMessageController::class, 'getStatistics']);
-    Route::get('/', [BidirectionalMessageController::class, 'getMessages']);
-    
-    // Template message migration and sync routes
-    Route::post('migrate-template/{phone}', [BidirectionalMessageController::class, 'migrateTemplateMessages']);
-    Route::post('sync-template/{phone}', [BidirectionalMessageController::class, 'syncTemplateMessages']);
-    Route::get('complete-history/{phone}', [BidirectionalMessageController::class, 'getCompleteHistory']);
-    
-    // Conversation management routes
-    Route::post('conversations/{phone}/read', [BidirectionalMessageController::class, 'markAsRead']);
-    
-    // Twilio Conversations specific routes
-    Route::get('twilio/{phone}/messages', [BidirectionalMessageController::class, 'getTwilioMessages']);
-    Route::post('twilio/{phone}/webhook', [BidirectionalMessageController::class, 'setupWebhook']);
-});
 
-// Additional webhook route for external services that expect api/webhook
-Route::match(['get', 'post'], '/webhook', [WhatsappController::class, 'webhook'])->withoutMiddleware('auth:sanctum');
-
-// Additional route outside the middleware group for testing
-Route::post('/api/whatsapp/test/simple', [App\Http\Controllers\Api\WhatsappController::class, 'sendSimpleTest']);
 
 // Auth routes
 Route::prefix('auth')->group(function () {

@@ -24,7 +24,7 @@ return new class extends Migration
             $table->timestamp('sent_at')->nullable(); // When message was sent
             $table->timestamp('delivered_at')->nullable(); // When message was delivered
             $table->timestamp('read_at')->nullable(); // When message was read
-            $table->string('external_id')->nullable(); // External ID from Twilio
+            $table->string('external_id')->nullable(); // External ID from Whapi
             $table->string('related_model_type')->nullable(); // Polymorphic relationship type
             $table->unsignedBigInteger('related_model_id')->nullable(); // Polymorphic relationship ID
             $table->enum('message_type', ['text', 'media', 'template'])->default('text'); // Type of message

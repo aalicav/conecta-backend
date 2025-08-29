@@ -6,7 +6,7 @@ use App\Models\BillingRule;
 use App\Models\BillingBatch;
 use App\Models\Appointment;
 use App\Models\Notification;
-use App\Services\WhatsAppService;
+use App\Services\WhapiWhatsAppService;
 use App\Services\EmailService;
 use App\Services\NFeService;
 use Carbon\Carbon;
@@ -20,7 +20,7 @@ class BillingRuleService
     protected $nfeService;
 
     public function __construct(
-        WhatsAppService $whatsappService,
+        WhapiWhatsAppService $whatsappService,
         EmailService $emailService,
         NFeService $nfeService
     ) {

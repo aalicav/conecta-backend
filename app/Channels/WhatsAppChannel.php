@@ -3,7 +3,7 @@
 namespace App\Channels;
 
 use Illuminate\Notifications\Notification;
-use App\Services\WhatsAppService;
+use App\Services\WhapiWhatsAppService;
 use App\Services\WhatsAppTemplateBuilder;
 use Illuminate\Support\Facades\Log;
 
@@ -12,7 +12,7 @@ class WhatsAppChannel
     /**
      * The WhatsApp service instance.
      *
-     * @var \App\Services\WhatsAppService
+     * @var \App\Services\WhapiWhatsAppService
      */
     protected $whatsAppService;
 
@@ -30,7 +30,7 @@ class WhatsAppChannel
      * @param  \App\Services\WhatsAppTemplateBuilder  $templateBuilder
      * @return void
      */
-    public function __construct(WhatsAppService $whatsAppService, WhatsAppTemplateBuilder $templateBuilder)
+    public function __construct(WhapiWhatsAppService $whatsAppService, WhatsAppTemplateBuilder $templateBuilder)
     {
         $this->whatsAppService = $whatsAppService;
         $this->templateBuilder = $templateBuilder;

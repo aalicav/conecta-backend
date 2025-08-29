@@ -446,88 +446,6 @@ class WhatsappController extends Controller
     }
 
     /**
-     * Generate fake data specifically for Conecta templates
-     * 
-     * @param string $templateKey
-     * @return array
-     */
-    private function generateFakeDataForConectaTemplate($templateKey)
-    {
-        $currentDate = date('d/m/Y');
-        $futureDate = date('d/m/Y', strtotime('+3 days'));
-        
-        switch ($templateKey) {
-            case 'agendamento_cliente':
-                return [
-                    'nome_cliente' => 'João da Silva',
-                    'nome_especialista' => 'Dra. Maria Fernandes',
-                    'especialidade' => 'Cardiologia',
-                    'data_consulta' => $futureDate,
-                    'hora_consulta' => '14:30',
-                    'endereco_clinica' => 'Av. Paulista, 1000, São Paulo - SP',
-                    'link_confirmacao' => 'https://conecta.example.com/confirmar/123456'
-                ];
-                
-            case 'agendamento_cancelado':
-                return [
-                    'nome_cliente' => 'Ana Souza',
-                    'data_consulta' => $futureDate,
-                    'motivo_cancelamento' => 'Indisponibilidade do médico',
-                    'link_reagendamento' => 'https://conecta.example.com/reagendar/123456'
-                ];
-                
-            case 'agendamento_confirmado':
-                return [
-                    'nome_cliente' => 'Pedro Santos',
-                    'data_consulta' => $futureDate,
-                    'hora_consulta' => '10:15',
-                    'link_detalhes' => 'https://conecta.example.com/consulta/123456'
-                ];
-                
-            case 'nps_survey':
-                return [
-                    'nome_cliente' => 'Carlos Oliveira',
-                    'nome_especialista' => 'Dr. Ricardo Mendes',
-                    'data_consulta' => $currentDate,
-                    'link_pesquisa' => 'https://conecta.example.com/pesquisa/123456'
-                ];
-                
-            case 'nps_survey_prestador':
-                return [
-                    'nome_cliente' => 'Mariana Costa',
-                    'nome_especialista' => 'Dra. Juliana Alves',
-                    'data_consulta' => $currentDate,
-                    'link_pesquisa' => 'https://conecta.example.com/pesquisa-prestador/123456'
-                ];
-                
-            case 'nps_pergunta':
-                return [
-                    'nome_cliente' => 'Roberto Ferreira',
-                    'data_consulta' => $currentDate,
-                    'link_pesquisa' => 'https://conecta.example.com/nps/123456'
-                ];
-                
-            case 'copy_menssagem_operadora':
-                return [
-                    'nome_operador' => 'Fernanda Lima',
-                    'nome_cliente' => 'Lucas Martins',
-                    'nome_especialista' => 'Dr. Paulo Cardoso',
-                    'especialidade' => 'Oftalmologia',
-                    'data_consulta' => $futureDate,
-                    'hora_consulta' => '15:45',
-                    'endereco_clinica' => 'Rua Augusta, 500, São Paulo - SP'
-                ];
-                
-            default:
-                return [
-                    'nome' => 'Usuário Teste',
-                    'data' => $currentDate,
-                    'link' => 'https://conecta.example.com/teste'
-                ];
-        }
-    }
-
-    /**
      * Send a template message with custom data
      * 
      * @param Request $request
@@ -573,7 +491,7 @@ class WhatsappController extends Controller
     }
 
     /**
-     * Handle WhatsApp webhook
+     * Handle WhatsApp webhook (simplified - only for status updates)
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -581,13 +499,13 @@ class WhatsappController extends Controller
     public function webhook(Request $request)
     {
         try {
-            // Verify webhook if it's a GET verification request from Facebook
+            // Verify webhook if it's a GET verification request from Whapi
             if ($request->isMethod('get')) {
                 $mode = $request->input('hub_mode');
                 $token = $request->input('hub_verify_token');
                 $challenge = $request->input('hub_challenge');
                 
-                $verifyToken = config('services.whatsapp.webhook_verify_token');
+                $verifyToken = config('whapi.webhook_verify_token');
                 
                 if ($mode === 'subscribe' && $token === $verifyToken) {
                     return response($challenge, 200);
@@ -596,101 +514,13 @@ class WhatsappController extends Controller
                 return response()->json(['error' => 'Verification failed'], 403);
             }
             
-            // Process the webhook data
+            // Process the webhook data for status updates only
             $webhookData = $request->all();
             
-            Log::info('Processing WhatsApp webhook', $webhookData);
+            Log::info('Processing WhatsApp webhook for status updates', $webhookData);
             
-            // Handle Twilio webhook format
-            if (isset($webhookData['MessageType']) && $webhookData['MessageType'] === 'text') {
-                $from = str_replace('whatsapp:+', '', $webhookData['From'] ?? '');
-                $body = $webhookData['Body'] ?? '';
-                $messageSid = $webhookData['MessageSid'] ?? '';
-                $profileName = $webhookData['ProfileName'] ?? '';
-                $waId = $webhookData['WaId'] ?? '';
-                
-                Log::info('Processing Twilio text message', [
-                    'from' => $from,
-                    'body' => $body,
-                    'message_sid' => $messageSid,
-                    'profile_name' => $profileName,
-                    'wa_id' => $waId
-                ]);
-                
-                // Check if this is an appointment verification response
-                if (preg_match('/^(confirm|reject)-\d+$/', $body)) {
-                    Log::info('Processing appointment verification response', [
-                        'from' => $from,
-                        'body' => $body
-                    ]);
-                    
-                    $this->whatsappService->processAppointmentVerificationResponse($body, $from);
-                } else {
-                    // Process as regular incoming message with Conversations
-                    $this->whatsappService->processIncomingMessage($from, $body, [
-                        'message_id' => $messageSid,
-                        'profile_name' => $profileName,
-                        'wa_id' => $waId,
-                        'timestamp' => now(),
-                        'type' => 'text',
-                        'source' => 'twilio_webhook',
-                    ]);
-                    
-                    // Emit notification event for real-time updates
-                    event(new \App\Events\NewWhatsAppMessageReceived($from, $body, $profileName));
-                }
-                
-                return response()->json(['success' => true]);
-            }
-            
-            // Handle interactive messages (buttons)
-            if (isset($webhookData['MessageType']) && $webhookData['MessageType'] === 'interactive') {
-                $from = str_replace('whatsapp:+', '', $webhookData['From'] ?? '');
-                $buttonPayload = $webhookData['ButtonPayload'] ?? '';
-                
-                Log::info('Processing interactive message', [
-                    'from' => $from,
-                    'payload' => $buttonPayload
-                ]);
-                
-                // Check if this is an appointment verification response
-                if (preg_match('/^(confirm|reject)-\d+$/', $buttonPayload)) {
-                    $this->whatsappService->processAppointmentVerificationResponse($buttonPayload, $from);
-                }
-                
-                return response()->json(['success' => true]);
-            }
-            
-            // Handle Facebook webhook format (legacy)
-            if (isset($webhookData['entry'][0]['changes'][0]['value']['messages'])) {
-                $messages = $webhookData['entry'][0]['changes'][0]['value']['messages'];
-                
-                foreach ($messages as $message) {
-                    if ($message['type'] === 'text') {
-                        $from = $message['from'];
-                        $text = $message['text']['body'];
-                        
-                        if (preg_match('/^(confirm|reject)-\d+$/', $text)) {
-                            $this->whatsappService->processAppointmentVerificationResponse($text, $from);
-                        } else {
-                            $this->whatsappService->processIncomingMessage($from, $text, [
-                                'message_id' => $message['id'] ?? null,
-                                'timestamp' => $message['timestamp'] ?? null,
-                                'type' => $message['type'] ?? 'text',
-                                'source' => 'facebook_webhook',
-                            ]);
-                            
-                            // Emit notification event
-                            event(new \App\Events\NewWhatsAppMessageReceived($from, $text));
-                        }
-                    }
-                }
-            }
-            
-            // Process status updates and other webhook data
-            if (!isset($webhookData['MessageType']) || !in_array($webhookData['MessageType'], ['text', 'interactive'])) {
-                $this->whatsappService->handleWebhook($webhookData);
-            }
+            // Handle status updates from Whapi
+            $this->whatsappService->handleWebhook($webhookData);
             
             return response()->json(['success' => true]);
         } catch (\Exception $e) {

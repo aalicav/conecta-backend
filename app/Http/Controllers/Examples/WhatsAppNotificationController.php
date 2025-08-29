@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Examples;
 
 use App\Http\Controllers\Controller;
-use App\Services\WhatsAppService;
+use App\Services\WhapiWhatsAppService;
 use App\Models\Appointment;
 use App\Models\Patient;
 use App\Models\Professional;

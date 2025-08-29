@@ -16,7 +16,7 @@ return [
 
     'base_url' => env('WHAPI_BASE_URL', 'https://gate.whapi.cloud'),
 
-    'webhook_url' => env('WHAPI_WEBHOOK_URL', env('APP_URL') . '/api/whatsapp/webhook'),
+    'webhook_url' => env('WHAPI_WEBHOOK_URL', env('APP_URL') . '/api/webhook'),
 
     'from_number' => env('WHAPI_FROM_NUMBER', 'system'),
 

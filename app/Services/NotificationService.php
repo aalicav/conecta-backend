@@ -43,7 +43,7 @@ class NotificationService
     /**
      * The WhatsApp service instance.
      *
-     * @var \App\Services\WhatsAppService
+     * @var \App\Services\WhapiWhatsAppService
      */
     protected $whatsAppService;
 
@@ -57,13 +57,11 @@ class NotificationService
     /**
      * Create a new service instance.
      *
-     * @param  \App\Services\WhatsAppService  $whatsAppService
-     * @param  \App\Services\WhatsAppTemplateBuilder  $whatsAppTemplateBuilder
      * @return void
      */
     public function __construct()
     {
-        $this->whatsAppService = new WhatsAppService(new WhatsAppTemplateBuilder());
+        $this->whatsAppService = app(WhapiWhatsAppService::class);
         $this->whatsAppTemplateBuilder = new WhatsAppTemplateBuilder();
     }
 
@@ -452,12 +450,19 @@ class NotificationService
                                 'clinic_address' => substr($clinicAddress, 0, 50) . '...'
                             ]);
                             
-                            $this->whatsAppService->sendAppointmentReminderToPatient(
-                                $patient,
-                                $professional,
-                                $appointment,
-                                $clinicAddress
-                            );
+                                        $this->whatsAppService->sendTextMessage(
+                $patient->phone,
+                "📅 *Lembrete de Agendamento*\n\n" .
+                "Olá {$patient->name}!\n\n" .
+                "Lembrete do seu agendamento:\n" .
+                "👨‍⚕️ Profissional: {$professional->name}\n" .
+                "🩺 Especialidade: " . ($professional->specialty ? $professional->specialty->name : 'Especialista') . "\n" .
+                "📅 Data: " . $appointment->scheduled_date->format('d/m/Y H:i') . "\n" .
+                "📍 Local: " . ($clinicAddress ?: 'Local a confirmar') . "\n\n" .
+                "Em caso de dúvidas, entre em contato conosco.",
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
                             
                             Log::info("Sent WhatsApp appointment reminder template for appointment #{$appointment->id} to patient #{$patient->id}");
                         } catch (\Exception $templateError) {
@@ -615,7 +620,7 @@ class NotificationService
                           $appointment->scheduled_date->format('d/m/Y H:i') . 
                           " com {$appointment->provider->name}.";
                 
-                $result = $this->whatsAppService->sendMessageViaConversations(
+                $result = $this->whatsAppService->sendTextMessage(
                     $patientPhone,
                     $message
                 );
@@ -652,11 +657,15 @@ class NotificationService
             
             if ($patient) {
                 // Use the same template as other appointment notifications
-                $result = $this->whatsAppService->sendAppointmentNotificationToPatient(
-                    $patient,
-                    $appointment
+                // Use the same template as other appointment notifications
+                $result = $this->whatsAppService->sendTextMessage(
+                    $patient->phone,
+                    "Olá {$patient->name}! Seu agendamento foi confirmado para " . 
+                    $appointment->scheduled_date->format('d/m/Y H:i') . 
+                    " com {$appointment->provider->name}.",
+                    'App\\Models\\Appointment',
+                    $appointment->id
                 );
-                
                 if ($result) {
                     Log::info("Sent WhatsApp appointment confirmation to patient #{$patient->id} for appointment #{$appointment->id}");
                 } else {
@@ -685,7 +694,17 @@ class NotificationService
             $patient = $appointment->solicitation->patient;
             
             if ($patient) {
-                $this->whatsAppService->sendAppointmentCancellationToPatient($patient);
+                $this->whatsAppService->sendTextMessage(
+                    $patient->phone,
+                    "❌ *Agendamento Cancelado*\n\n" .
+                    "Olá {$patient->name}!\n\n" .
+                    "Seu agendamento foi cancelado.\n" .
+                    "📅 Data: " . $appointment->scheduled_date->format('d/m/Y H:i') . "\n" .
+                    "👨‍⚕️ Profissional: {$appointment->provider->name}\n\n" .
+                    "Entre em contato conosco para reagendar.",
+                    'App\\Models\\Appointment',
+                    $appointment->id
+                );
                 
                 Log::info("Sent WhatsApp appointment cancellation for appointment #{$appointment->id} to patient #{$patient->id}");
             }
@@ -726,10 +745,15 @@ class NotificationService
                     $professional = $professional->first();
                 }
                 
-                $this->whatsAppService->sendNpsSurveyToPatient(
-                    $patient,
-                    $professional,
-                    $appointment
+                $this->whatsAppService->sendTextMessage(
+                    $patient->phone,
+                    "📊 *Pesquisa de Satisfação*\n\n" .
+                    "Olá {$patient->name}!\n\n" .
+                    "Sua consulta com {$professional->name} foi concluída.\n" .
+                    "📅 Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n\n" .
+                    "Avalie sua experiência e ajude-nos a melhorar nossos serviços.",
+                    'App\\Models\\Appointment',
+                    $appointment->id
                 );
                 
                 Log::info("Sent WhatsApp NPS survey for appointment #{$appointment->id} to patient #{$patient->id}");
@@ -1054,9 +1078,17 @@ class NotificationService
             foreach ($validators as $validator) {
                 if ($validator->phone) {
                     try {
-                        $this->whatsAppService->sendNewProfessionalNotification(
-                            $validator,
-                            $professional
+                        $this->whatsAppService->sendTextMessage(
+                            $validator->phone,
+                            "👨‍⚕️ *Novo Profissional Cadastrado*\n\n" .
+                            "Olá {$validator->name}!\n\n" .
+                            "Um novo profissional foi cadastrado no sistema:\n" .
+                            "• Nome: {$professional->name}\n" .
+                            "• Especialidade: " . ($professional->specialty ? $professional->specialty->name : 'Não informada') . "\n" .
+                            "• ID: #{$professional->id}\n\n" .
+                            "Acesse o sistema para revisar e aprovar o cadastro.",
+                            'App\\Models\\Professional',
+                            $professional->id
                         );
                     } catch (\Exception $whatsappError) {
                         Log::error("Failed to send WhatsApp notification for new professional registration to {$validator->phone}", [
@@ -1238,7 +1270,7 @@ class NotificationService
                         $actionUrl = url("/negotiations/{$negotiation->id}");
                         
                         // Enviar email
-                        \Mail::to($recipient->email)
+                        Mail::to($recipient->email)
                             ->send(new \App\Mail\NegotiationCreated(
                                 $negotiation,
                                 $recipient,
@@ -1247,10 +1279,18 @@ class NotificationService
 
                         // Enviar notificação do WhatsApp
                         if ($recipient->phone) {
-                            $this->whatsAppService->sendNegotiationCreatedNotification(
-                                $recipient,
-                                $negotiation
-                            );
+                                                    $this->whatsAppService->sendTextMessage(
+                            $recipient->phone,
+                            "💼 *Nova Negociação Criada*\n\n" .
+                            "Olá {$recipient->name}!\n\n" .
+                            "Uma nova negociação foi criada:\n" .
+                            "• Título: {$negotiation->title}\n" .
+                            "• ID: #{$negotiation->id}\n" .
+                            "• Criado por: {$negotiation->creator->name}\n\n" .
+                            "Acesse o sistema para revisar os detalhes.",
+                            'App\\Models\\Negotiation',
+                            $negotiation->id
+                        );
                         }
                     } catch (\Exception $emailError) {
                         Log::error("Failed to send email for negotiation created to {$recipient->email}", [
@@ -1523,7 +1563,7 @@ class NotificationService
                 // Mensagem personalizada baseada no status
                 $body = "O procedimento '{$tussName}' foi {$statusText}";
                 if ($item->status === 'approved' && $item->approved_value) {
-                    $formattedValue = 'R$ ' . number_format($item->approved_value, 2, ',', '.');
+                    $formattedValue = 'R$ ' . number_format((float)($item->approved_value ?? 0), 2, ',', '.');
                     $body .= " com valor de {$formattedValue}";
                 }
                 if ($item->notes) {
@@ -1573,15 +1613,18 @@ class NotificationService
             // Enviar notificação via WhatsApp
             $phone = $creator->phones()->first();
             if ($phone) {
-                $this->whatsAppService->sendNegotiationItemResponse(
-                    $creator->name,
-                    $tussName,
-                    number_format($item->amount, 2, ',', '.'),
-                    $negotiation->name,
-                    $statusText,
-                    $negotiation->id,
-                    $phone->number
-                );
+                            $this->whatsAppService->sendTextMessage(
+                $phone->number,
+                "📋 *Resposta em Item da Negociação*\n\n" .
+                "Olá {$creator->name}!\n\n" .
+                "O procedimento '{$tussName}' foi {$statusText}.\n" .
+                "💰 Valor: R$ " . number_format((float)($item->amount ?? 0), 2, ',', '.') . "\n" .
+                "📄 Negociação: {$negotiation->name}\n" .
+                "🆔 ID: #{$negotiation->id}\n\n" .
+                "Acesse o sistema para mais detalhes.",
+                'App\\Models\\NegotiationItem',
+                $item->id
+            );
             }
         } catch (\Exception $e) {
             Log::error('Error sending item response notification', [
@@ -1627,7 +1670,7 @@ class NotificationService
                 $creator->notify(new \App\Notifications\NegotiationCounterOffer($item));
             } else {
                 // Fallback para o método antigo caso a classe não exista
-                $formattedValue = 'R$ ' . number_format($item->approved_value, 2, ',', '.');
+                $formattedValue = 'R$ ' . number_format((float)($item->approved_value ?? 0), 2, ',', '.');
                 
                 // Enviar notificação para o criador da negociação
                 $this->create(
@@ -1641,7 +1684,7 @@ class NotificationService
                         'tuss_id' => $item->tuss_id,
                         'tuss_name' => $tussName,
                         'counter_value' => $item->approved_value,
-                        'negotiation_title' => $negotiation->title,
+                        'data' => $negotiation->title,
                     ]
                 );
             }
@@ -2448,11 +2491,18 @@ class NotificationService
             
             // Send via WhatsApp if available
             if ($patient->phone) {
-                $this->whatsAppService->sendAppointmentVerificationToPatient(
-                    $patient,
-                    $verificationUrl,
-                    $appointment
-                );
+                            $this->whatsAppService->sendTextMessage(
+                $patient->phone,
+                "🔐 *Verificação de Agendamento*\n\n" .
+                "Olá {$patient->name}!\n\n" .
+                "Clique no link abaixo para verificar seu agendamento:\n" .
+                "📅 Data: " . $appointment->scheduled_date->format('d/m/Y H:i') . "\n" .
+                "👨‍⚕️ Profissional: {$appointment->provider->name}\n\n" .
+                "🔗 Link: {$verificationUrl}\n\n" .
+                "Este link é válido por 24 horas.",
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
             }
             
             Log::info("Sent appointment verification to patient #{$patient->id} for appointment #{$appointment->id}");
@@ -2485,11 +2535,18 @@ class NotificationService
             
             // Send via WhatsApp if available
             if ($provider->phone) {
-                $this->whatsAppService->sendAppointmentVerificationToProvider(
-                    $provider,
-                    $verificationUrl,
-                    $appointment
-                );
+                            $this->whatsAppService->sendTextMessage(
+                $provider->phone,
+                "🔐 *Verificação de Agendamento*\n\n" .
+                "Olá {$provider->name}!\n\n" .
+                "Clique no link abaixo para verificar o agendamento:\n" .
+                "📅 Data: " . $appointment->scheduled_date->format('d/m/Y H:i') . "\n" .
+                "👤 Paciente: {$appointment->solicitation->patient->name}\n\n" .
+                "🔗 Link: {$verificationUrl}\n\n" .
+                "Este link é válido por 24 horas.",
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
             }
             
             $providerType = get_class($provider);
@@ -2765,7 +2822,7 @@ class NotificationService
             // Determine entity type and get associated users
             $entityUsers = collect();
             
-            if ($contractable instanceof \App\Models\Professional) {
+            if ($contractable instanceof Professional) {
                 // Professional contract
                 $user = User::where('professional_id', $contractable->id)
                     
@@ -2774,14 +2831,14 @@ class NotificationService
                 if ($user) {
                     $entityUsers->push($user);
                 }
-            } elseif ($contractable instanceof \App\Models\Clinic) {
+            } elseif ($contractable instanceof Clinic) {
                 // Clinic contract
                 $users = User::where('clinic_id', $contractable->id)
                     
                     ->get();
                     
                 $entityUsers = $entityUsers->merge($users);
-            } elseif ($contractable instanceof \App\Models\HealthPlan) {
+            } elseif ($contractable instanceof HealthPlan) {
                 // Health plan contract
                 $users = User::where('health_plan_id', $contractable->id)
                     
@@ -3203,10 +3260,17 @@ class NotificationService
     {
         $phone = $user->phones()->first();
         if ($phone) {
-            $this->whatsAppService->sendAccountCreatedNotification(
-                $user->name,
-                $phone->number
-            );
+                    $this->whatsAppService->sendTextMessage(
+            $phone->number,
+            "🎉 *Conta Criada com Sucesso*\n\n" .
+            "Olá {$user->name}!\n\n" .
+            "Sua conta foi criada no sistema Conecta Saúde.\n" .
+            "📧 Email: {$user->email}\n" .
+            "🔑 Senha: Sua senha foi enviada por email\n\n" .
+            "Acesse o sistema para começar a usar nossos serviços.",
+            'App\\Models\\User',
+            $user->id
+        );
         }
     }
 
@@ -3219,18 +3283,26 @@ class NotificationService
      */
     public function notifyNegotiationInternalApprovalRequired(Negotiation $negotiation, string $approvalLevel): void
     {
-        $approvers = $this->getUsersToNotifyForNegotiation($negotiation, $approvalLevel);
+        $approvers = User::role(['super_admin', 'commercial_manager', 'financial_manager', 'legal'])
+            ->where('is_active', true)
+            ->whereNull('deleted_at')
+            ->get();
         foreach ($approvers as $approver) {
             $phone = $approver->phones()->first();
             if ($phone) {
-                $this->whatsAppService->sendNegotiationInternalApprovalRequired(
-                    $approver->name,
-                    $negotiation->name,
-                    $negotiation->entity->name,
-                    $negotiation->items()->count(),
-                    $approvalLevel,
-                    $negotiation->id,
-                    $phone->number
+                $this->whatsAppService->sendTextMessage(
+                    $phone->number,
+                    "⏳ *Aprovação Interna Necessária*\n\n" .
+                    "Olá {$approver->name}!\n\n" .
+                    "Uma negociação aguarda sua aprovação:\n" .
+                    "📄 Título: {$negotiation->name}\n" .
+                    "🏢 Entidade: {$negotiation->entity->name}\n" .
+                    "📊 Itens: " . $negotiation->items()->count() . "\n" .
+                    "🔐 Nível: " . ucfirst($approvalLevel) . "\n" .
+                    "🆔 ID: #{$negotiation->id}\n\n" .
+                    "Acesse o sistema para revisar e aprovar.",
+                    'App\\Models\\Negotiation',
+                    $negotiation->id
                 );
             }
         }
@@ -3249,13 +3321,18 @@ class NotificationService
         $phone = $user->phones()->first();
         
         if ($phone) {
-            $this->whatsAppService->sendNegotiationCounterOfferReceived(
-                $user->name,
-                number_format($item->counter_offer_amount, 2, ',', '.'),
-                $item->name,
-                $negotiation->name,
-                $negotiation->id,
-                $phone->number
+            $this->whatsAppService->sendTextMessage(
+                $phone->number,
+                "💼 *Contraproposta Recebida*\n\n" .
+                "Olá {$user->name}!\n\n" .
+                "Uma contraproposta foi recebida:\n" .
+                "📄 Negociação: {$negotiation->name}\n" .
+                "📋 Item: {$item->name}\n" .
+                "💰 Valor: R$ " . number_format($item->counter_offer_amount, 2, ',', '.') . "\n" .
+                "🆔 ID: #{$negotiation->id}\n\n" .
+                "Acesse o sistema para revisar e responder.",
+                'App\\Models\\NegotiationItem',
+                $item->id
             );
         }
     }
@@ -3272,11 +3349,17 @@ class NotificationService
         $contact = $entity->contacts()->first();
         
         if ($contact && $contact->phone) {
-            $this->whatsAppService->sendNegotiationSubmittedToEntity(
-                $entity->name,
-                $negotiation->name,
-                $negotiation->id,
-                $contact->phone
+            $this->whatsAppService->sendTextMessage(
+                $contact->phone,
+                "📤 *Negociação Enviada*\n\n" .
+                "Olá {$entity->name}!\n\n" .
+                "Uma negociação foi enviada para sua revisão:\n" .
+                "📄 Título: {$negotiation->name}\n" .
+                "🆔 ID: #{$negotiation->id}\n" .
+                "📊 Itens: " . $negotiation->items()->count() . "\n\n" .
+                "Acesse o sistema para revisar e aprovar.",
+                'App\\Models\\Negotiation',
+                $negotiation->id
             );
         }
     }
@@ -3294,13 +3377,16 @@ class NotificationService
         $phone = $patient->phones()->first();
         
         if ($phone) {
-            $this->whatsAppService->sendNpsSurvey(
-                $patient->name,
-                $appointment->scheduled_date->format('d/m/Y'),
-                $professional->name,
-                $professional->specialty,
-                $appointment->id,
-                $phone->number
+            $this->whatsAppService->sendTextMessage(
+                $phone->number,
+                "📊 *Pesquisa de Satisfação*\n\n" .
+                "Olá {$patient->name}!\n\n" .
+                "Sua consulta com {$professional->name} foi concluída.\n" .
+                "📅 Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                "🩺 Especialidade: " . ($professional->specialty ? $professional->specialty->name : 'Especialista') . "\n\n" .
+                "Avalie sua experiência e ajude-nos a melhorar nossos serviços.",
+                'App\\Models\\Appointment',
+                $appointment->id
             );
         }
     }
@@ -3318,12 +3404,15 @@ class NotificationService
         $phone = $patient->phones()->first();
         
         if ($phone) {
-            $this->whatsAppService->sendNpsProviderSurvey(
-                $patient->name,
-                $professional->name,
-                $appointment->scheduled_date->format('d/m/Y'),
-                $appointment->id,
-                $phone->number
+            $this->whatsAppService->sendTextMessage(
+                $phone->number,
+                "📊 *Pesquisa de Satisfação - Prestador*\n\n" .
+                "Olá {$patient->name}!\n\n" .
+                "Sua consulta com {$professional->name} foi concluída.\n" .
+                "📅 Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n\n" .
+                "Avalie o atendimento do prestador e ajude-nos a melhorar.",
+                'App\\Models\\Appointment',
+                $appointment->id
             );
         }
     }
@@ -3340,9 +3429,16 @@ class NotificationService
         $phone = $patient->phones()->first();
         
         if ($phone) {
-            $this->whatsAppService->sendNpsQuestion(
-                $appointment->id,
-                $phone->number
+            $this->whatsAppService->sendTextMessage(
+                $phone->number,
+                "❓ *Pergunta NPS*\n\n" .
+                "Olá! Temos uma pergunta rápida para você:\n\n" .
+                "De 0 a 10, qual a probabilidade de você recomendar nossos serviços a um amigo ou familiar?\n\n" .
+                "📊 0 = Muito improvável\n" .
+                "📊 10 = Muito provável\n\n" .
+                "Responda apenas com um número de 0 a 10.",
+                'App\\Models\\Appointment',
+                $appointment->id
             );
         }
     }
@@ -3428,13 +3524,18 @@ class NotificationService
                         $procedure = $solicitation->tuss;
                         $scheduledDate = \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
                         
-                        $this->whatsAppService->sendAvailabilitySelectedNotification(
-                            $providerUser->name,
-                            $patient->name,
-                            $procedure->description,
-                            $scheduledDate,
-                            $appointment->id,
-                            $providerUser->phone
+                        $this->whatsAppService->sendTextMessage(
+                            $providerUser->phone,
+                            "✅ *Disponibilidade Selecionada*\n\n" .
+                            "Olá {$providerUser->name}!\n\n" .
+                            "Sua disponibilidade foi selecionada:\n" .
+                            "👤 Paciente: {$patient->name}\n" .
+                            "🩺 Procedimento: {$procedure->description}\n" .
+                            "📅 Data: {$scheduledDate}\n" .
+                            "🆔 Agendamento: #{$appointment->id}\n\n" .
+                            "O agendamento foi criado com sucesso.",
+                            'App\\Models\\Appointment',
+                            $appointment->id
                         );
                     } catch (\Exception $whatsappError) {
                         Log::error("Failed to send WhatsApp notification for availability selected", [
@@ -3538,14 +3639,19 @@ class NotificationService
                         $provider = $availability->professional ?? $availability->clinic;
                         $scheduledDate = \Carbon\Carbon::parse($appointment->scheduled_date)->format('d/m/Y H:i');
                         
-                        $this->whatsAppService->sendHealthPlanAvailabilitySelectedNotification(
-                            $admin->name,
-                            $patient->name,
-                            $provider->name,
-                            $procedure->description,
-                            $scheduledDate,
-                            $appointment->id,
-                            $admin->phone
+                        $this->whatsAppService->sendTextMessage(
+                            $admin->phone,
+                            "✅ *Agendamento Confirmado - Plano de Saúde*\n\n" .
+                            "Olá {$admin->name}!\n\n" .
+                            "Um agendamento foi confirmado:\n" .
+                            "👤 Paciente: {$patient->name}\n" .
+                            "🏥 Prestador: {$provider->name}\n" .
+                            "🩺 Procedimento: {$procedure->description}\n" .
+                            "📅 Data: {$scheduledDate}\n" .
+                            "🆔 Agendamento: #{$appointment->id}\n\n" .
+                            "O agendamento está ativo e confirmado.",
+                            'App\\Models\\Appointment',
+                            $appointment->id
                         );
                     } catch (\Exception $whatsappError) {
                         Log::error("Failed to send WhatsApp notification to health plan admin for availability selected", [
@@ -3607,13 +3713,18 @@ class NotificationService
                             $procedure = $solicitation->tuss;
                             $availableDate = \Carbon\Carbon::parse($availability->available_date)->format('d/m/Y');
                             
-                            $this->whatsAppService->sendAvailabilityRejectedNotification(
-                                $providerUser->name,
-                                $patient->name,
-                                $procedure->description,
-                                $availableDate,
-                                $availability->available_time,
-                                $providerUser->phone
+                            $this->whatsAppService->sendTextMessage(
+                                $providerUser->phone,
+                                "❌ *Disponibilidade Rejeitada*\n\n" .
+                                "Olá {$providerUser->name}!\n\n" .
+                                "Sua disponibilidade foi rejeitada:\n" .
+                                "👤 Paciente: {$patient->name}\n" .
+                                "🩺 Procedimento: {$procedure->description}\n" .
+                                "📅 Data: {$availableDate}\n" .
+                                "⏰ Horário: {$availability->available_time}\n\n" .
+                                "Entre em contato para mais informações.",
+                                'App\\Models\\ProfessionalAvailability',
+                                $availability->id
                             );
                         } catch (\Exception $whatsappError) {
                             Log::error("Failed to send WhatsApp notification for availability rejected", [
@@ -3797,9 +3908,13 @@ class NotificationService
             }
             
             // Use the same method as initial appointment notification
-            $result = $this->whatsAppService->sendAppointmentNotificationToPatient(
-                $patient,
-                $appointment
+            $result = $this->whatsAppService->sendTextMessage(
+                $patient->phone,
+                "Olá {$patient->name}! Seu agendamento foi confirmado para " . 
+                $appointment->scheduled_date->format('d/m/Y H:i') . 
+                " com {$appointment->provider->name}.",
+                'App\\Models\\Appointment',
+                $appointment->id
             );
             
             if ($result) {
@@ -3851,7 +3966,7 @@ class NotificationService
             $message = $this->buildNegotiationMessage($negotiation, $eventType, $additionalData);
             
             // Send via WhatsApp conversations
-            $result = $this->whatsAppService->sendMessageViaConversations($phone, $message);
+            $result = $this->whatsAppService->sendTextMessage($phone, $message);
             
             Log::info("Sent negotiation WhatsApp notification", [
                 'negotiation_id' => $negotiation->id,
