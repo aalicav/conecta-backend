@@ -42,10 +42,8 @@ class SolicitationResource extends JsonResource
             'requested_by_user' => new UserResource($this->whenLoaded('requestedBy')),
             'appointments' => AppointmentResource::collection($this->whenLoaded('appointments')),
             
-            // Computed values
-            'is_active' => $this->when(!is_null($this->status), function() {
-                return $this->isActive();
-            }),
+            // Computed values - fixed to avoid closure serialization issues
+            'is_active' => !is_null($this->status) ? $this->isActive() : null,
         ];
     }
 } 

@@ -42,14 +42,13 @@ class AppointmentResource extends JsonResource
             
             // Relationships
             'solicitation' => new SolicitationResource($this->whenLoaded('solicitation')),
-            'provider' => $this->when($this->provider, function() {
-                if ($this->provider_type === 'App\\Models\\Clinic') {
-                    return new ClinicResource($this->provider);
-                } elseif ($this->provider_type === 'App\\Models\\Professional') {
-                    return new ProfessionalResource($this->provider);
-                }
-                return null;
-            }),
+            'provider' => $this->provider ? (
+                $this->provider_type === 'App\\Models\\Clinic' 
+                    ? new ClinicResource($this->provider)
+                    : ($this->provider_type === 'App\\Models\\Professional' 
+                        ? new ProfessionalResource($this->provider) 
+                        : null)
+            ) : null,
             'confirmed_by_user' => new UserResource($this->whenLoaded('confirmedBy')),
             'completed_by_user' => new UserResource($this->whenLoaded('completedBy')),
             'cancelled_by_user' => new UserResource($this->whenLoaded('cancelledBy')),
@@ -58,36 +57,24 @@ class AppointmentResource extends JsonResource
             'payment' => new PaymentResource($this->whenLoaded('payment')),
             'address' => $this->address,
             
-            // Computed values
-            'is_active' => $this->when(!is_null($this->status), function() {
-                return $this->isActive();
-            }),
-            'is_upcoming' => $this->when($this->scheduled_date, function() {
-                return $this->scheduled_date->isFuture() && $this->isActive();
-            }),
-            'is_past_due' => $this->when($this->scheduled_date, function() {
-                return $this->scheduled_date->isPast() && $this->isActive();
-            }),
-            'patient' => $this->when($this->solicitation && $this->solicitation->patient, function() {
-                return [
-                    'id' => $this->solicitation->patient->id,
-                    'name' => $this->solicitation->patient->name, 
-                    'cpf' => $this->solicitation->patient->cpf
-                ];
-            }),
-            'health_plan' => $this->when($this->solicitation && $this->solicitation->healthPlan, function() {
-                return [
-                    'id' => $this->solicitation->healthPlan->id,
-                    'name' => $this->solicitation->healthPlan->name
-                ];
-            }),
-            'procedure' => $this->when($this->solicitation && $this->solicitation->tuss, function() {
-                return [
-                    'id' => $this->solicitation->tuss->id,
-                    'code' => $this->solicitation->tuss->code,
-                    'description' => $this->solicitation->tuss->description
-                ];
-            }),
+            // Computed values - fixed to avoid closure serialization issues
+            'is_active' => !is_null($this->status) ? $this->isActive() : null,
+            'is_upcoming' => $this->scheduled_date ? ($this->scheduled_date->isFuture() && $this->isActive()) : null,
+            'is_past_due' => $this->scheduled_date ? ($this->scheduled_date->isPast() && $this->isActive()) : null,
+            'patient' => ($this->solicitation && $this->solicitation->patient) ? [
+                'id' => $this->solicitation->patient->id,
+                'name' => $this->solicitation->patient->name, 
+                'cpf' => $this->solicitation->patient->cpf
+            ] : null,
+            'health_plan' => ($this->solicitation && $this->solicitation->healthPlan) ? [
+                'id' => $this->solicitation->healthPlan->id,
+                'name' => $this->solicitation->healthPlan->name
+            ] : null,
+            'procedure' => ($this->solicitation && $this->solicitation->tuss) ? [
+                'id' => $this->solicitation->tuss->id,
+                'code' => $this->solicitation->tuss->code,
+                'description' => $this->solicitation->tuss->description
+            ] : null,
         ];
     }
 } 
