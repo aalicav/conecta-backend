@@ -699,7 +699,7 @@ class SolicitationController extends Controller
 
             // Mark as processing and dispatch the job
             $solicitation->markAsProcessing();
-            ProcessAutomaticScheduling::dispatch($solicitation);
+            ProcessAutomaticScheduling::dispatch($solicitation->id);
 
             return response()->json([
                 'success' => true,
@@ -771,7 +771,7 @@ class SolicitationController extends Controller
                         $scheduled++;
                     } else {
                         // If no provider found, dispatch job to send invites
-                        ProcessAutomaticScheduling::dispatch($solicitation);
+                        ProcessAutomaticScheduling::dispatch($solicitation->id);
                         Log::info("Enviado job de agendamento automático para solicitação #{$solicitation->id}");
                         $failed++;
                     }
