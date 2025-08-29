@@ -8,6 +8,9 @@ use App\Models\Patient;
 use App\Models\Professional;
 use App\Models\Clinic;
 use App\Models\Phone;
+use App\Models\HealthPlan;
+use App\Models\User;
+use App\Models\Appointment;
 
 use App\Models\WhatsappMessage;
 use Exception;
@@ -616,5 +619,284 @@ class WhapiWhatsAppService
     public function sendMessage(string $phone, string $content): array
     {
         return $this->sendTextMessage($phone, $content);
+    }
+
+    /**
+     * Send appointment notification to patient.
+     *
+     * @param Patient $patient
+     * @param Appointment $appointment
+     * @return array
+     */
+    public function sendAppointmentNotificationToPatient($patient, $appointment): array
+    {
+        try {
+            if (!$patient || !$patient->phone) {
+                Log::warning("No patient or phone number found for appointment notification", [
+                    'patient_id' => $patient->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No patient or phone number found'];
+            }
+
+            $message = "Olá {$patient->name}! Seu agendamento foi confirmado para " . 
+                      $appointment->scheduled_date->format('d/m/Y H:i') . 
+                      " com {$appointment->provider->name}.";
+
+            return $this->sendTextMessage(
+                $patient->phone,
+                $message,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send appointment notification to patient", [
+                'patient_id' => $patient->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send appointment reminder to patient.
+     *
+     * @param Patient $patient
+     * @param Appointment $appointment
+     * @return array
+     */
+    public function sendAppointmentReminderToPatient($patient, $appointment): array
+    {
+        try {
+            if (!$patient || !$patient->phone) {
+                Log::warning("No patient or phone number found for appointment reminder", [
+                    'patient_id' => $patient->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No patient or phone number found'];
+            }
+
+            $message = "Olá {$patient->name}! Lembrete: seu agendamento está marcado para " . 
+                      $appointment->scheduled_date->format('d/m/Y H:i') . 
+                      " com {$appointment->provider->name}.";
+
+            return $this->sendTextMessage(
+                $patient->phone,
+                $message,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send appointment reminder to patient", [
+                'patient_id' => $patient->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send appointment cancellation to patient.
+     *
+     * @param Patient $patient
+     * @param Appointment $appointment
+     * @return array
+     */
+    public function sendAppointmentCancellationToPatient($patient, $appointment): array
+    {
+        try {
+            if (!$patient || !$patient->phone) {
+                Log::warning("No patient or phone number found for appointment cancellation", [
+                    'patient_id' => $patient->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No patient or phone number found'];
+            }
+
+            $message = "Olá {$patient->name}! Seu agendamento para " . 
+                      $appointment->scheduled_date->format('d/m/Y H:i') . 
+                      " foi cancelado. Entre em contato conosco para reagendar.";
+
+            return $this->sendTextMessage(
+                $patient->phone,
+                $message,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send appointment cancellation to patient", [
+                'patient_id' => $patient->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send appointment confirmation to patient.
+     *
+     * @param Patient $patient
+     * @param Appointment $appointment
+     * @return array
+     */
+    public function sendAppointmentConfirmationToPatient($patient, $appointment): array
+    {
+        try {
+            if (!$patient || !$patient->phone) {
+                Log::warning("No patient or phone number found for appointment confirmation", [
+                    'patient_id' => $patient->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No patient or phone number found'];
+            }
+
+            $message = "Olá {$patient->name}! Seu agendamento foi confirmado para " . 
+                      $appointment->scheduled_date->format('d/m/Y H:i') . 
+                      " com {$appointment->provider->name}. Aguardamos você!";
+
+            return $this->sendTextMessage(
+                $patient->phone,
+                $message,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send appointment confirmation to patient", [
+                'patient_id' => $patient->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send NPS survey to patient.
+     *
+     * @param Patient $patient
+     * @param Appointment $appointment
+     * @return array
+     */
+    public function sendNpsSurveyToPatient($patient, $appointment): array
+    {
+        try {
+            if (!$patient || !$patient->phone) {
+                Log::warning("No patient or phone number found for NPS survey", [
+                    'patient_id' => $patient->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No patient or phone number found'];
+            }
+
+            $message = "Olá {$patient->name}! Como foi sua experiência conosco? " .
+                      "Responda nossa pesquisa de satisfação: [link da pesquisa]";
+
+            return $this->sendTextMessage(
+                $patient->phone,
+                $message,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send NPS survey to patient", [
+                'patient_id' => $patient->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send appointment notification to health plan.
+     *
+     * @param HealthPlan $healthPlan
+     * @param Appointment $appointment
+     * @return array
+     */
+    public function sendAppointmentNotificationToHealthPlan($healthPlan, $appointment): array
+    {
+        try {
+            if (!$healthPlan || !$healthPlan->phone) {
+                Log::warning("No health plan or phone number found for appointment notification", [
+                    'health_plan_id' => $healthPlan->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No health plan or phone number found'];
+            }
+
+            $message = "Novo agendamento criado: Paciente {$appointment->solicitation->patient->name} " .
+                      "para {$appointment->scheduled_date->format('d/m/Y H:i')} " .
+                      "com {$appointment->provider->name}.";
+
+            return $this->sendTextMessage(
+                $healthPlan->phone,
+                $message,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send appointment notification to health plan", [
+                'health_plan_id' => $healthPlan->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send appointment notification to operator.
+     *
+     * @param User $operator
+     * @param Appointment $appointment
+     * @return array
+     */
+    public function sendAppointmentNotificationToOperator($operator, $appointment): array
+    {
+        try {
+            if (!$operator || !$operator->phone) {
+                Log::warning("No operator or phone number found for appointment notification", [
+                    'operator_id' => $operator->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No operator or phone number found'];
+            }
+
+            $message = "Novo agendamento criado: Paciente {$appointment->solicitation->patient->name} " .
+                      "para {$appointment->scheduled_date->format('d/m/Y H:i')} " .
+                      "com {$appointment->provider->name}.";
+
+            return $this->sendTextMessage(
+                $operator->phone,
+                $message,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send appointment notification to operator", [
+                'operator_id' => $operator->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
     }
 }
