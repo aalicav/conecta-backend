@@ -118,7 +118,7 @@ class WhapiWhatsAppService
             
             $payload = [
                 'to' => $formattedPhone,
-                'text' => $message,
+                'body' => $message, // Changed from 'text' to 'body' as required by WhatsApp API
             ];
 
             // Add optional parameters
@@ -130,6 +130,7 @@ class WhapiWhatsAppService
                 'phone' => $phone,
                 'formatted_phone' => $formattedPhone,
                 'message' => $message,
+                'payload' => $payload, // Log the payload for debugging
                 'related_model_type' => $relatedModelType,
                 'related_model_id' => $relatedModelId,
             ]);
