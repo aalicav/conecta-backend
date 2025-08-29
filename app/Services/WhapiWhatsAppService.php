@@ -188,7 +188,7 @@ class WhapiWhatsAppService
     public function sendMediaMessage(string $phone, string $mediaUrl, string $mediaType, string $caption = '', ?string $relatedModelType = null, ?int $relatedModelId = null): array
     {
         try {
-            $formattedPhone = $this->formatNumber($phone);
+            $formattedPhone = $this->validateAndFixPhoneNumber($phone);
             
             $endpoint = $this->getMediaEndpoint($mediaType);
             
@@ -208,6 +208,7 @@ class WhapiWhatsAppService
                 'media_type' => $mediaType,
                 'caption' => $caption,
                 'endpoint' => $endpoint,
+                'payload' => $payload, // Log the payload for debugging
             ]);
 
             $response = $this->httpClient->post($endpoint, [
@@ -265,7 +266,7 @@ class WhapiWhatsAppService
     public function sendTemplateMessage(string $phone, string $templateName, array $parameters = [], ?string $relatedModelType = null, ?int $relatedModelId = null): array
     {
         try {
-            $formattedPhone = $this->formatNumber($phone);
+            $formattedPhone = $this->validateAndFixPhoneNumber($phone);
             
             $payload = [
                 'to' => $formattedPhone,
@@ -281,6 +282,7 @@ class WhapiWhatsAppService
                 'formatted_phone' => $formattedPhone,
                 'template' => $templateName,
                 'parameters' => $parameters,
+                'payload' => $payload, // Log the payload for debugging
             ]);
 
             $response = $this->httpClient->post('/messages/template', [
@@ -338,7 +340,7 @@ class WhapiWhatsAppService
     public function sendTestMessage(string $phone, string $templateKey, array $customData = []): array
     {
         try {
-            $formattedPhone = $this->formatNumber($phone);
+            $formattedPhone = $this->validateAndFixPhoneNumber($phone);
             
             // Use custom data if provided, otherwise generate default test data
             $templateData = empty($customData) 
@@ -355,6 +357,7 @@ class WhapiWhatsAppService
                 'phone' => $phone,
                 'template_key' => $templateKey,
                 'template_data' => $templateData,
+                'payload' => $payload, // Log the payload for debugging
             ]);
 
             $response = $this->httpClient->post('/messages/template', [

@@ -2,8 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Models\Solicitation;
-use App\Models\SolicitationInvite;
 use App\Notifications\Channels\WhatsAppChannel;
 use App\Notifications\Messages\WhatsAppMessage;
 use App\Services\WhatsAppService;
@@ -19,30 +17,30 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
     use Queueable;
 
     /**
-     * The solicitation instance.
+     * The solicitation data.
      *
-     * @var \App\Models\Solicitation
+     * @var array
      */
-    protected $solicitation;
+    protected $solicitationData;
 
     /**
-     * The invite instance.
+     * The invite data.
      *
-     * @var \App\Models\SolicitationInvite
+     * @var array
      */
-    protected $invite;
+    protected $inviteData;
 
     /**
      * Create a new notification instance.
      *
-     * @param  \App\Models\Solicitation  $solicitation
-     * @param  \App\Models\SolicitationInvite  $invite
+     * @param  array  $solicitationData
+     * @param  array  $inviteData
      * @return void
      */
-    public function __construct(Solicitation $solicitation, SolicitationInvite $invite)
+    public function __construct(array $solicitationData, array $inviteData)
     {
-        $this->solicitation = $solicitation;
-        $this->invite = $invite;
+        $this->solicitationData = $solicitationData;
+        $this->inviteData = $inviteData;
     }
 
     /**
@@ -80,24 +78,18 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
         }
 
         try {
-            $tuss = $this->solicitation->tuss;
-            $patient = $this->solicitation->patient;
-            $preferredDateStart = $this->solicitation->preferred_date_start 
-                ? (new \DateTime($this->solicitation->preferred_date_start))->format('d/m/Y')
-                : 'Não definida';
-            
             return (new MailMessage)
                 ->subject('Nova Solicitação de Agendamento')
                 ->greeting('Olá ' . ($notifiable->name ?? 'Profissional') . '!')
                 ->line('Você recebeu uma nova solicitação de agendamento.')
-                ->line("Procedimento: " . ($tuss->description ?? 'Não especificado'))
-                ->line("Paciente: " . ($patient->name ?? 'Não especificado'))
-                ->line("Data Preferencial: " . $preferredDateStart)
-                ->action('Ver Solicitação', url("/solicitations/{$this->solicitation->id}"))
+                ->line("Procedimento: " . ($this->solicitationData['tuss_description'] ?? 'Não especificado'))
+                ->line("Paciente: " . ($this->solicitationData['patient_name'] ?? 'Não especificado'))
+                ->line("Data Preferencial: " . ($this->solicitationData['preferred_date_start'] ?? 'Não definida'))
+                ->action('Ver Solicitação', url("/solicitations/{$this->solicitationData['id']}"))
                 ->line('Por favor, acesse o sistema para responder a esta solicitação.');
         } catch (\Exception $e) {
             Log::error('Error creating mail notification: ' . $e->getMessage(), [
-                'solicitation_id' => $this->solicitation->id ?? 'unknown',
+                'solicitation_id' => $this->solicitationData['id'] ?? 'unknown',
                 'notifiable_id' => $notifiable->id ?? 'unknown'
             ]);
             return null;
@@ -137,13 +129,13 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
                 return null;
             }
             
-            $tuss = $this->solicitation->tuss;
-            $patient = $this->solicitation->patient;
-            $provider = $this->invite->provider;
+            $tuss = $this->solicitationData['tuss'];
+            $patient = $this->solicitationData['patient'];
+            $provider = $this->inviteData['provider'];
             
             if (!$provider || !$provider->user) {
                 Log::warning('Cannot send WhatsApp notification: provider or provider user is null', [
-                    'invite_id' => $this->invite->id ?? 'unknown',
+                    'invite_id' => $this->inviteData['id'] ?? 'unknown',
                     'provider_id' => $provider->id ?? 'unknown'
                 ]);
                 return null;
@@ -151,7 +143,7 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
 
             if (!$patient) {
                 Log::warning('Cannot send WhatsApp notification: patient is null', [
-                    'solicitation_id' => $this->solicitation->id ?? 'unknown'
+                    'solicitation_id' => $this->solicitationData['id'] ?? 'unknown'
                 ]);
                 return null;
             }
@@ -163,14 +155,14 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
                 '1' => $provider->user->name ?? 'Profissional',
                 '2' => $tuss->description ?? 'Procedimento não especificado',
                 '3' => $patient->name ?? 'Paciente não especificado',
-                '4' => $this->solicitation->preferred_date_start ?? 'Data não definida',
-                '5' => $this->solicitation->id
+                '4' => $this->solicitationData['preferred_date_start'] ?? 'Data não definida',
+                '5' => $this->solicitationData['id']
             ];
             
             return $message;
         } catch (\Exception $e) {
             Log::error('Error creating WhatsApp notification: ' . $e->getMessage(), [
-                'solicitation_id' => $this->solicitation->id ?? 'unknown',
+                'solicitation_id' => $this->solicitationData['id'] ?? 'unknown',
                 'notifiable_id' => $notifiable->id ?? 'unknown'
             ]);
             return null;
@@ -186,22 +178,22 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
     public function toArray($notifiable)
     {
         try {
-            $tuss = $this->solicitation->tuss;
-            $patient = $this->solicitation->patient;
-            $preferredDateStart = $this->solicitation->preferred_date_start 
-                ? (new \DateTime($this->solicitation->preferred_date_start))->format('Y-m-d')
+            $tuss = $this->solicitationData['tuss'];
+            $patient = $this->solicitationData['patient'];
+            $preferredDateStart = $this->solicitationData['preferred_date_start'] 
+                ? (new \DateTime($this->solicitationData['preferred_date_start']))->format('Y-m-d')
                 : null;
             
             return [
                 'title' => 'Nova Solicitação de Agendamento',
                 'body' => "Você recebeu uma nova solicitação de agendamento para " . ($tuss->description ?? 'procedimento não especificado'),
-                'action_link' => "/solicitations/{$this->solicitation->id}",
+                'action_link' => "/solicitations/{$this->solicitationData['id']}",
                 'action_text' => 'Ver Solicitação',
                 'icon' => 'calendar',
                 'type' => 'solicitation_invite',
                 'data' => [
-                    'solicitation_id' => $this->solicitation->id,
-                    'invite_id' => $this->invite->id,
+                    'solicitation_id' => $this->solicitationData['id'],
+                    'invite_id' => $this->inviteData['id'],
                     'procedure_name' => $tuss->description ?? 'Não especificado',
                     'patient_name' => $patient->name ?? 'Não especificado',
                     'preferred_date' => $preferredDateStart
@@ -209,7 +201,7 @@ class SolicitationInviteCreated extends Notification implements ShouldQueue
             ];
         } catch (\Exception $e) {
             Log::error('Error creating array notification: ' . $e->getMessage(), [
-                'solicitation_id' => $this->solicitation->id ?? 'unknown',
+                'solicitation_id' => $this->solicitationData['id'] ?? 'unknown',
                 'notifiable_id' => $notifiable->id ?? 'unknown'
             ]);
             return [

@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use App\Notifications\NoProvidersFound;
 use Illuminate\Support\Facades\Notification;
+use App\Notifications\SolicitationInviteCreated;
 
 class ProcessAutomaticScheduling implements ShouldQueue
 {
@@ -114,8 +115,16 @@ class ProcessAutomaticScheduling implements ShouldQueue
                     ->get();
 
                 if (!$usersToNotify->isEmpty()) {
+                    // Prepare solicitation data for notification
+                    $solicitationData = [
+                        'id' => $solicitation->id,
+                        'patient_name' => $solicitation->patient->name,
+                        'tuss_code' => $solicitation->tuss->code,
+                        'tuss_description' => $solicitation->tuss->description,
+                    ];
+                    
                     Notification::send($usersToNotify, new NoProvidersFound(
-                        $solicitation,
+                        $solicitationData,
                         [
                             'message' => $result['message'] ?? 'Nenhum profissional encontrado',
                             'error_type' => 'no_providers',
@@ -159,12 +168,35 @@ class ProcessAutomaticScheduling implements ShouldQueue
                 // Get the provider's user
                 $providerUser = $provider['provider_type']::find($provider['provider_id'])->user;
                 
-                // Send notification using NotificationService
-                $this->notificationService->sendSolicitationInviteNotification(
-                    $solicitation,
-                    $invite,
-                    $providerUser
-                );
+                // Create notification locally to avoid serialization issues
+                if ($providerUser) {
+                    // Prepare solicitation data for notification
+                    $solicitationData = [
+                        'id' => $solicitation->id,
+                        'patient' => [
+                            'name' => $solicitation->patient->name,
+                        ],
+                        'tuss' => [
+                            'description' => $solicitation->tuss->description,
+                        ],
+                        'preferred_date_start' => $solicitation->preferred_date_start ? $solicitation->preferred_date_start->format('d/m/Y') : 'Não definida',
+                    ];
+                    
+                    // Create invite data for notification
+                    $inviteData = [
+                        'id' => $invite->id,
+                        'status' => $invite->status,
+                        'created_at' => $invite->created_at,
+                        'provider' => [
+                            'id' => $provider['provider_id'],
+                            'name' => $providerUser->name,
+                            'user' => $providerUser,
+                        ],
+                    ];
+                    
+                    // Send notification directly to avoid serialization issues
+                    $providerUser->notify(new SolicitationInviteCreated($solicitationData, $inviteData));
+                }
                 
                 $createdInvites++;
             }

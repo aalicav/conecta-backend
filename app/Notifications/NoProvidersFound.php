@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Models\Solicitation;
 use App\Notifications\Channels\WhatsAppChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -15,11 +14,11 @@ class NoProvidersFound extends Notification implements ShouldQueue
     use Queueable;
 
     /**
-     * The solicitation instance.
+     * The solicitation data.
      *
-     * @var \App\Models\Solicitation
+     * @var array
      */
-    protected $solicitation;
+    protected $solicitationData;
 
     /**
      * The notification data.
@@ -31,13 +30,13 @@ class NoProvidersFound extends Notification implements ShouldQueue
     /**
      * Create a new notification instance.
      *
-     * @param  \App\Models\Solicitation  $solicitation
+     * @param  array  $solicitationData
      * @param  array  $data
      * @return void
      */
-    public function __construct(Solicitation $solicitation, array $data)
+    public function __construct(array $solicitationData, array $data)
     {
-        $this->solicitation = $solicitation;
+        $this->solicitationData = $solicitationData;
         $this->data = $data;
     }
 
@@ -66,15 +65,12 @@ class NoProvidersFound extends Notification implements ShouldQueue
      */
     public function toMail($notifiable)
     {
-        $patient = $this->solicitation->patient;
-        $tuss = $this->solicitation->tuss;
-
         return (new MailMessage)
             ->subject('Nenhum Profissional Encontrado para Solicitação')
-            ->line("Não foi possível encontrar profissionais disponíveis para a solicitação #{$this->solicitation->id}.")
-            ->line("Paciente: {$patient->name}")
-            ->line("Procedimento: {$tuss->code} - {$tuss->description}")
-            ->action('Ver Solicitação', url("/solicitations/{$this->solicitation->id}"))
+            ->line("Não foi possível encontrar profissionais disponíveis para a solicitação #{$this->solicitationData['id']}.")
+            ->line("Paciente: {$this->solicitationData['patient_name']}")
+            ->line("Procedimento: {$this->solicitationData['tuss_code']} - {$this->solicitationData['tuss_description']}")
+            ->action('Ver Solicitação', url("/solicitations/{$this->solicitationData['id']}"))
             ->line('Esta solicitação requer atenção imediata.');
     }
 
@@ -86,19 +82,16 @@ class NoProvidersFound extends Notification implements ShouldQueue
      */
     public function toArray($notifiable)
     {
-        $patient = $this->solicitation->patient;
-        $tuss = $this->solicitation->tuss;
-        
         return [
             'title' => 'Nenhum Profissional Encontrado',
-            'body' => "Não foi possível encontrar profissionais disponíveis para a solicitação #{$this->solicitation->id}.",
-            'action_link' => "/solicitations/{$this->solicitation->id}",
+            'body' => "Não foi possível encontrar profissionais disponíveis para a solicitação #{$this->solicitationData['id']}.",
+            'action_link' => "/solicitations/{$this->solicitationData['id']}",
             'icon' => 'alert-triangle',
             'priority' => 'high',
-            'solicitation_id' => $this->solicitation->id,
-            'patient_name' => $patient->name,
-            'procedure_code' => $tuss->code,
-            'procedure_description' => $tuss->description
+            'solicitation_id' => $this->solicitationData['id'],
+            'patient_name' => $this->solicitationData['patient_name'],
+            'procedure_code' => $this->solicitationData['tuss_code'],
+            'procedure_description' => $this->solicitationData['tuss_description']
         ];
     }
 
@@ -111,11 +104,11 @@ class NoProvidersFound extends Notification implements ShouldQueue
             return null;
         }
 
-        $patient = $this->solicitation->patient;
-        $tuss = $this->solicitation->tuss;
+        $patient = $this->solicitationData['patient'];
+        $tuss = $this->solicitationData['tuss'];
 
         if (!$patient || !$tuss) {
-            Log::warning("Missing patient or TUSS data for solicitation #{$this->solicitation->id}", [
+            Log::warning("Missing patient or TUSS data for solicitation #{$this->solicitationData['id']}", [
                 'has_patient' => !is_null($patient),
                 'has_tuss' => !is_null($tuss)
             ]);
@@ -133,15 +126,15 @@ class NoProvidersFound extends Notification implements ShouldQueue
                     'parameters' => [
                         [
                             'type' => 'text',
-                            'text' => $this->solicitation->id
+                            'text' => $this->solicitationData['id']
                         ],
                         [
                             'type' => 'text',
-                            'text' => $patient->name
+                            'text' => $patient['name']
                         ],
                         [
                             'type' => 'text',
-                            'text' => "{$tuss->code} - {$tuss->description}"
+                            'text' => "{$tuss['code']} - {$tuss['description']}"
                         ]
                     ]
                 ]
