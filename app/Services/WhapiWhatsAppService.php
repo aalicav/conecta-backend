@@ -42,12 +42,52 @@ class WhapiWhatsAppService
     }
 
     /**
+     * Validate and fix phone number before sending
+     *
+     * @param string $phone
+     * @return string
+     * @throws Exception
+     */
+    public function validateAndFixPhoneNumber(string $phone): string
+    {
+        try {
+            // First, try to normalize the number
+            $normalized = $this->normalizePhoneNumber($phone);
+            
+            // Validate the final format
+            if (strlen($normalized) === 12 && substr($normalized, 0, 2) === '55') {
+                // Brazilian number with country code: 55 + DDD (2) + number (8)
+                $ddd = substr($normalized, 2, 2);
+                if ($ddd >= 11 && $ddd <= 99) {
+                    return $normalized;
+                }
+            } elseif (strlen($normalized) === 13 && substr($normalized, 0, 2) === '55') {
+                // Brazilian number with country code: 55 + DDD (2) + number (9)
+                $ddd = substr($normalized, 2, 2);
+                if ($ddd >= 11 && $ddd <= 99) {
+                    return $normalized;
+                }
+            }
+            
+            throw new Exception("Invalid phone number format after normalization: {$normalized}");
+            
+        } catch (Exception $e) {
+            Log::error("Phone number validation failed", [
+                'original_phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Send text message via Whapi
      */
     public function sendTextMessage(string $phone, string $message, ?string $relatedModelType = null, ?int $relatedModelId = null): array
     {
         try {
-            $formattedPhone = $this->formatNumber($phone);
+            // Validate and fix phone number before sending
+            $formattedPhone = $this->validateAndFixPhoneNumber($phone);
             
             $payload = [
                 'to' => $formattedPhone,
