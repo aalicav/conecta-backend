@@ -51,23 +51,50 @@ class WhapiWhatsAppService
     public function validateAndFixPhoneNumber(string $phone): string
     {
         try {
+            Log::info('Phone number validation started', [
+                'original_phone' => $phone,
+                'length' => strlen($phone)
+            ]);
+            
             // First, try to normalize the number
             $normalized = $this->normalizePhoneNumber($phone);
+            
+            Log::info('Phone number normalized', [
+                'original_phone' => $phone,
+                'normalized_phone' => $normalized,
+                'normalized_length' => strlen($normalized)
+            ]);
             
             // Validate the final format
             if (strlen($normalized) === 12 && substr($normalized, 0, 2) === '55') {
                 // Brazilian number with country code: 55 + DDD (2) + number (8)
                 $ddd = substr($normalized, 2, 2);
+                Log::info('Phone number validation - 12 digits', [
+                    'normalized' => $normalized,
+                    'ddd' => $ddd,
+                    'ddd_valid' => ($ddd >= 11 && $ddd <= 99)
+                ]);
                 if ($ddd >= 11 && $ddd <= 99) {
                     return $normalized;
                 }
             } elseif (strlen($normalized) === 13 && substr($normalized, 0, 2) === '55') {
                 // Brazilian number with country code: 55 + DDD (2) + number (9)
                 $ddd = substr($normalized, 2, 2);
+                Log::info('Phone number validation - 13 digits', [
+                    'normalized' => $normalized,
+                    'ddd' => $ddd,
+                    'ddd_valid' => ($ddd >= 11 && $ddd <= 99)
+                ]);
                 if ($ddd >= 11 && $ddd <= 99) {
                     return $normalized;
                 }
             }
+            
+            Log::error('Phone number validation failed - invalid format', [
+                'original_phone' => $phone,
+                'normalized_phone' => $normalized,
+                'normalized_length' => strlen($normalized)
+            ]);
             
             throw new Exception("Invalid phone number format after normalization: {$normalized}");
             
