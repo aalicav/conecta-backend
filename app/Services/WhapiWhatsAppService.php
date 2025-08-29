@@ -581,14 +581,54 @@ class WhapiWhatsAppService
      */
     public function normalizePhoneNumber(string $phone): string
     {
+        // Remove all non-numeric characters
         $phone = preg_replace('/[^0-9]/', '', $phone);
         
+        // Validate Brazilian phone number format
         if (strlen($phone) === 11 && substr($phone, 0, 2) === '0') {
+            // Remove leading 0 from 11-digit numbers (0 + DDD + number)
             $phone = substr($phone, 1);
         }
         
+        // Check if it's a valid Brazilian number
         if (strlen($phone) === 10) {
-            $phone = '55' . $phone;
+            // 10 digits: DDD (2) + number (8)
+            $ddd = substr($phone, 0, 2);
+            $number = substr($phone, 2);
+            
+            // Validate DDD (Brazilian area codes are 11-99)
+            if ($ddd >= 11 && $ddd <= 99) {
+                $phone = '55' . $phone;
+            } else {
+                throw new Exception("Invalid Brazilian DDD: {$ddd}");
+            }
+        } elseif (strlen($phone) === 11) {
+            // 11 digits: DDD (2) + number (9)
+            $ddd = substr($phone, 0, 2);
+            $number = substr($phone, 2);
+            
+            // Validate DDD (Brazilian area codes are 11-99)
+            if ($ddd >= 11 && $ddd <= 99) {
+                $phone = '55' . $phone;
+            } else {
+                throw new Exception("Invalid Brazilian DDD: {$ddd}");
+            }
+        } elseif (strlen($phone) === 12 && substr($phone, 0, 2) === '55') {
+            // Already has country code
+            // Validate DDD (Brazilian area codes are 11-99)
+            $ddd = substr($phone, 2, 2);
+            if ($ddd < 11 || $ddd > 99) {
+                throw new Exception("Invalid Brazilian DDD: {$ddd}");
+            }
+        } elseif (strlen($phone) === 13 && substr($phone, 0, 2) === '55') {
+            // Already has country code
+            // Validate DDD (Brazilian area codes are 11-99)
+            $ddd = substr($phone, 2, 2);
+            if ($ddd < 11 || $ddd > 99) {
+                throw new Exception("Invalid Brazilian DDD: {$ddd}");
+            }
+        } else {
+            throw new Exception("Invalid phone number format. Expected 10-11 digits for Brazilian numbers, got " . strlen($phone));
         }
         
         return $phone;
