@@ -66,7 +66,7 @@ class NotificationService
     }
 
     /**
-     * Send notification for a new solicitation.
+     * Send notifications when a solicitation is created.
      *
      * @param Solicitation $solicitation
      * @return void
@@ -85,7 +85,19 @@ class NotificationService
                 return;
             }
             
-            Notification::send($users, new SolicitationCreated($solicitation));
+            // Prepare data array to avoid serialization issues
+            $solicitationData = [
+                'id' => $solicitation->id,
+                'patient_id' => $solicitation->patient->id,
+                'patient_name' => $solicitation->patient->name,
+                'tuss_code' => $solicitation->tuss->code,
+                'tuss_description' => $solicitation->tuss->description,
+                'priority' => $solicitation->priority,
+                'preferred_date_start' => $solicitation->preferred_date_start ? $solicitation->preferred_date_start->format('d/m/Y') : 'Não definido',
+                'preferred_date_end' => $solicitation->preferred_date_end ? $solicitation->preferred_date_end->format('d/m/Y') : 'Não definido',
+            ];
+            
+            Notification::send($users, new SolicitationCreated($solicitationData));
             Log::info("Sent solicitation created notification for solicitation #{$solicitation->id} to " . $users->count() . " users");
         } catch (\Exception $e) {
             Log::error("Failed to send solicitation created notification: " . $e->getMessage());

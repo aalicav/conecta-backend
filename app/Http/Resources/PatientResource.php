@@ -33,10 +33,8 @@ class PatientResource extends JsonResource
             'health_plan' => new HealthPlanResource($this->whenLoaded('healthPlan')),
             'phones' => PhoneResource::collection($this->whenLoaded('phones')),
             
-            // Computed attributes
-            'age' => $this->when($this->birth_date, function() {
-                return $this->birth_date->age;
-            }),
+            // Computed attributes - fixed to avoid closure serialization issues
+            'age' => $this->birth_date ? $this->birth_date->age : null,
         ];
     }
 } 

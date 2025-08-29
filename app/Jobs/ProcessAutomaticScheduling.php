@@ -35,29 +35,21 @@ class ProcessAutomaticScheduling implements ShouldQueue
     public $backoff = 60;
 
     /**
-     * The solicitation instance.
+     * The solicitation ID.
      *
-     * @var \App\Models\Solicitation
+     * @var int
      */
-    protected $solicitation;
-
-    /**
-     * The notification service instance.
-     *
-     * @var \App\Services\NotificationService
-     */
-    protected $notificationService;
+    protected $solicitationId;
 
     /**
      * Create a new job instance.
      *
-     * @param  \App\Models\Solicitation  $solicitation
+     * @param int $solicitationId
      * @return void
      */
-    public function __construct(Solicitation $solicitation)
+    public function __construct(int $solicitationId)
     {
-        $this->solicitation = $solicitation;
-        $this->notificationService = app(NotificationService::class);
+        $this->solicitationId = $solicitationId;
     }
 
     /**
@@ -68,25 +60,28 @@ class ProcessAutomaticScheduling implements ShouldQueue
     public function handle()
     {
         try {
-            Log::info("Iniciando processamento automático para solicitação #{$this->solicitation->id}");
+            // Fetch the solicitation model when needed
+            $solicitation = Solicitation::findOrFail($this->solicitationId);
+            
+            Log::info("Iniciando processamento automático para solicitação #{$solicitation->id}");
 
             // Check if there are already pending invites for this solicitation
-            $existingInvites = SolicitationInvite::where('solicitation_id', $this->solicitation->id)
+            $existingInvites = SolicitationInvite::where('solicitation_id', $solicitation->id)
                 ->where('status', 'pending')
                 ->count();
 
             if ($existingInvites > 0) {
-                Log::info("Solicitação #{$this->solicitation->id} já possui {$existingInvites} convites pendentes. Pulando processamento.");
+                Log::info("Solicitação #{$solicitation->id} já possui {$existingInvites} convites pendentes. Pulando processamento.");
                 return;
             }
 
             $scheduler = new AppointmentScheduler();
             
             // Debug logging before findBestProvider
-            Log::info("Calling findBestProvider for solicitation #{$this->solicitation->id}");
+            Log::info("Calling findBestProvider for solicitation #{$solicitation->id}");
             
             try {
-                $result = $scheduler->findBestProvider($this->solicitation);
+                $result = $scheduler->findBestProvider($solicitation);
             } catch (\Exception $e) {
                 Log::error("Error calling findBestProvider: " . $e->getMessage());
                 throw $e;
@@ -102,15 +97,15 @@ class ProcessAutomaticScheduling implements ShouldQueue
             }
 
             // Debug logging
-            Log::info("Provider search result for solicitation #{$this->solicitation->id}:", [
+            Log::info("Provider search result for solicitation #{$solicitation->id}:", [
                 'result' => $result
             ]);
 
             // Handle the no providers found case
             if (!isset($result['success']) || !$result['success']) {
                 // If no providers found, mark as pending
-                $this->solicitation->markAsPending();
-                Log::warning("Nenhum profissional encontrado para solicitação #{$this->solicitation->id}: " . ($result['message'] ?? 'Unknown error'));
+                $solicitation->markAsPending();
+                Log::warning("Nenhum profissional encontrado para solicitação #{$solicitation->id}: " . ($result['message'] ?? 'Unknown error'));
 
                 // Notify administrators
                 $usersToNotify = User::role(['super_admin', 'network_manager', 'director', 'commercial_manager'])
@@ -120,45 +115,45 @@ class ProcessAutomaticScheduling implements ShouldQueue
 
                 if (!$usersToNotify->isEmpty()) {
                     Notification::send($usersToNotify, new NoProvidersFound(
-                        $this->solicitation,
+                        $solicitation,
                         [
                             'message' => $result['message'] ?? 'Nenhum profissional encontrado',
                             'error_type' => 'no_providers',
                             'search_result' => $result
                         ]
                     ));
-                    Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$this->solicitation->id}");
+                    Log::info("Notificação enviada para " . $usersToNotify->count() . " administradores sobre a falta de profissionais para solicitação #{$solicitation->id}");
                 }
                 return;
             }
 
             // Process found providers
             if (!isset($result['data']) || empty($result['data'])) {
-                Log::error("Invalid response format from findBestProvider for solicitation #{$this->solicitation->id}");
+                Log::error("Invalid response format from findBestProvider for solicitation #{$solicitation->id}");
                 throw new \Exception("Invalid response format from findBestProvider");
             }
 
             $createdInvites = 0;
             foreach ($result['data'] as $provider) {
                 // Double-check if invite already exists for this specific provider
-                $existingProviderInvite = SolicitationInvite::where('solicitation_id', $this->solicitation->id)
+                $existingProviderInvite = SolicitationInvite::where('solicitation_id', $solicitation->id)
                     ->where('provider_type', $provider['provider_type'])
                     ->where('provider_id', $provider['provider_id'])
                     ->where('status', 'pending')
                     ->exists();
 
                 if ($existingProviderInvite) {
-                    Log::info("Convite já existe para provider {$provider['provider_type']}#{$provider['provider_id']} na solicitação #{$this->solicitation->id}");
+                    Log::info("Convite já existe para provider {$provider['provider_type']}#{$provider['provider_id']} na solicitação #{$solicitation->id}");
                     continue;
                 }
 
                 // Create invite for each provider
                 $invite = SolicitationInvite::create([
-                    'solicitation_id' => $this->solicitation->id,
+                    'solicitation_id' => $solicitation->id,
                     'provider_type' => $provider['provider_type'],
                     'provider_id' => $provider['provider_id'],
                     'status' => 'pending',
-                    'created_by' => $this->solicitation->requested_by
+                    'created_by' => $solicitation->requested_by
                 ]);
 
                 // Get the provider's user
@@ -166,7 +161,7 @@ class ProcessAutomaticScheduling implements ShouldQueue
                 
                 // Send notification using NotificationService
                 $this->notificationService->sendSolicitationInviteNotification(
-                    $this->solicitation,
+                    $solicitation,
                     $invite,
                     $providerUser
                 );
@@ -174,7 +169,7 @@ class ProcessAutomaticScheduling implements ShouldQueue
                 $createdInvites++;
             }
             
-            Log::info("Criados {$createdInvites} novos convites para solicitação #{$this->solicitation->id}");
+            Log::info("Criados {$createdInvites} novos convites para solicitação #{$solicitation->id}");
         } catch (\Exception $e) {
             Log::error("Erro no processamento automático da solicitação #{$this->solicitation->id}: " . $e->getMessage());
             

@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Models\Solicitation;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -13,21 +12,21 @@ class SolicitationCreated extends Notification implements ShouldQueue
     use Queueable;
 
     /**
-     * The solicitation instance.
+     * The solicitation data.
      *
-     * @var \App\Models\Solicitation
+     * @var array
      */
-    protected $solicitation;
+    protected $solicitationData;
 
     /**
      * Create a new notification instance.
      *
-     * @param  \App\Models\Solicitation  $solicitation
+     * @param array $solicitationData
      * @return void
      */
-    public function __construct(Solicitation $solicitation)
+    public function __construct(array $solicitationData)
     {
-        $this->solicitation = $solicitation;
+        $this->solicitationData = $solicitationData;
     }
 
     /**
@@ -55,17 +54,14 @@ class SolicitationCreated extends Notification implements ShouldQueue
      */
     public function toMail($notifiable)
     {
-        $patient = $this->solicitation->patient;
-        $tuss = $this->solicitation->tuss;
-        
         return (new MailMessage)
             ->subject('Nova Solicitação Criada')
             ->greeting('Olá ' . $notifiable->name . ',')
-            ->line('Uma nova solicitação foi criada para o paciente ' . $patient->name . '.')
-            ->line('Procedimento: ' . $tuss->code . ' - ' . $tuss->description)
-            ->line('Prioridade: ' . ucfirst($this->solicitation->priority))
-            ->line('Período: ' . $this->solicitation->preferred_date_start->format('d/m/Y') . ' até ' . $this->solicitation->preferred_date_end->format('d/m/Y'))
-            ->action('Ver Detalhes', url('/solicitations/' . $this->solicitation->id))
+            ->line('Uma nova solicitação foi criada para o paciente ' . $this->solicitationData['patient_name'] . '.')
+            ->line('Procedimento: ' . $this->solicitationData['tuss_code'] . ' - ' . $this->solicitationData['tuss_description'])
+            ->line('Prioridade: ' . ucfirst($this->solicitationData['priority']))
+            ->line('Período: ' . $this->solicitationData['preferred_date_start'] . ' até ' . $this->solicitationData['preferred_date_end'])
+            ->action('Ver Detalhes', url('/solicitations/' . $this->solicitationData['id']))
             ->line('Obrigado por usar nossa plataforma!');
     }
 
@@ -77,21 +73,18 @@ class SolicitationCreated extends Notification implements ShouldQueue
      */
     public function toArray($notifiable)
     {
-        $patient = $this->solicitation->patient;
-        $tuss = $this->solicitation->tuss;
-        
         return [
             'title' => 'Nova Solicitação Criada',
             'icon' => 'file-medical',
             'type' => 'solicitation_created',
-            'solicitation_id' => $this->solicitation->id,
-            'patient_id' => $patient->id,
-            'patient_name' => $patient->name,
-            'tuss_code' => $tuss->code,
-            'tuss_description' => $tuss->description,
-            'priority' => $this->solicitation->priority,
-            'message' => "Nova solicitação criada para {$patient->name}",
-            'link' => "/solicitations/{$this->solicitation->id}"
+            'solicitation_id' => $this->solicitationData['id'],
+            'patient_id' => $this->solicitationData['patient_id'],
+            'patient_name' => $this->solicitationData['patient_name'],
+            'tuss_code' => $this->solicitationData['tuss_code'],
+            'tuss_description' => $this->solicitationData['tuss_description'],
+            'priority' => $this->solicitationData['priority'],
+            'message' => "Nova solicitação criada para {$this->solicitationData['patient_name']}",
+            'link' => "/solicitations/{$this->solicitationData['id']}"
         ];
     }
 } 
