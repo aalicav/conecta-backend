@@ -13,6 +13,9 @@ use App\Models\User;
 use App\Models\Appointment;
 
 use App\Models\WhatsappMessage;
+use App\Models\NpsResponse;
+use App\Models\ProfessionalEvaluation;
+use App\Models\MedlarEvaluation;
 use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -1149,31 +1152,29 @@ class WhapiWhatsAppService
     protected function saveNpsResponse(Appointment $appointment, string $category, string $range, string $phone): void
     {
         try {
-            // You can create an NPS responses table/model here
-            // For now, we'll just log it
-            Log::info('NPS response saved', [
+            $npsResponse = NpsResponse::create([
                 'appointment_id' => $appointment->id,
                 'patient_id' => $appointment->patient_id,
                 'category' => $category,
-                'range' => $range,
+                'score_range' => $range,
                 'phone' => $phone,
                 'responded_at' => now(),
                 'source' => 'whatsapp_button'
             ]);
             
-            // TODO: Create actual NPS response record in database
-            // NpsResponse::create([
-            //     'appointment_id' => $appointment->id,
-            //     'patient_id' => $appointment->patient_id,
-            //     'category' => $category,
-            //     'score_range' => $range,
-            //     'responded_at' => now(),
-            //     'source' => 'whatsapp_button',
-            //     'phone' => $phone
-            // ]);
+            Log::info('NPS response saved to database', [
+                'nps_response_id' => $npsResponse->id,
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->patient_id,
+                'category' => $category,
+                'range' => $range,
+                'phone' => $phone,
+                'responded_at' => $npsResponse->responded_at,
+                'source' => 'whatsapp_button'
+            ]);
             
         } catch (Exception $e) {
-            Log::error('Failed to save NPS response', [
+            Log::error('Failed to save NPS response to database', [
                 'appointment_id' => $appointment->id,
                 'category' => $category,
                 'phone' => $phone,
@@ -1393,33 +1394,31 @@ class WhapiWhatsAppService
     protected function saveProfessionalEvaluation(Appointment $appointment, string $category, string $range, string $phone): void
     {
         try {
-            // You can create a professional evaluations table/model here
-            // For now, we'll just log it
-            Log::info('Professional evaluation saved', [
+            $professionalEvaluation = ProfessionalEvaluation::create([
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->patient_id,
+                'professional_id' => $appointment->provider_id,
+                'category' => $category,
+                'score_range' => $range,
+                'phone' => $phone,
+                'responded_at' => now(),
+                'source' => 'whatsapp_button'
+            ]);
+            
+            Log::info('Professional evaluation saved to database', [
+                'professional_evaluation_id' => $professionalEvaluation->id,
                 'appointment_id' => $appointment->id,
                 'patient_id' => $appointment->patient_id,
                 'professional_id' => $appointment->provider_id,
                 'category' => $category,
                 'range' => $range,
                 'phone' => $phone,
-                'responded_at' => now(),
+                'responded_at' => $professionalEvaluation->responded_at,
                 'source' => 'whatsapp_button'
             ]);
             
-            // TODO: Create actual professional evaluation record in database
-            // ProfessionalEvaluation::create([
-            //     'appointment_id' => $appointment->id,
-            //     'patient_id' => $appointment->patient_id,
-            //     'professional_id' => $appointment->provider_id,
-            //     'category' => $category,
-            //     'score_range' => $range,
-            //     'responded_at' => now(),
-            //     'source' => 'whatsapp_button',
-            //     'phone' => $phone
-            // ]);
-            
         } catch (Exception $e) {
-            Log::error('Failed to save professional evaluation', [
+            Log::error('Failed to save professional evaluation to database', [
                 'appointment_id' => $appointment->id,
                 'category' => $category,
                 'phone' => $phone,
@@ -1434,31 +1433,29 @@ class WhapiWhatsAppService
     protected function saveMedlarEvaluation(Appointment $appointment, string $category, string $range, string $phone): void
     {
         try {
-            // You can create a Medlar evaluations table/model here
-            // For now, we'll just log it
-            Log::info('Medlar evaluation saved', [
+            $medlarEvaluation = MedlarEvaluation::create([
                 'appointment_id' => $appointment->id,
                 'patient_id' => $appointment->patient_id,
                 'category' => $category,
-                'range' => $range,
+                'score_range' => $range,
                 'phone' => $phone,
                 'responded_at' => now(),
                 'source' => 'whatsapp_button'
             ]);
             
-            // TODO: Create actual Medlar evaluation record in database
-            // MedlarEvaluation::create([
-            //     'appointment_id' => $appointment->id,
-            //     'patient_id' => $appointment->patient_id,
-            //     'category' => $category,
-            //     'score_range' => $range,
-            //     'responded_at' => now(),
-            //     'source' => 'whatsapp_button',
-            //     'phone' => $phone
-            // ]);
+            Log::info('Medlar evaluation saved to database', [
+                'medlar_evaluation_id' => $medlarEvaluation->id,
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->patient_id,
+                'category' => $category,
+                'range' => $range,
+                'phone' => $phone,
+                'responded_at' => $medlarEvaluation->responded_at,
+                'source' => 'whatsapp_button'
+            ]);
             
         } catch (Exception $e) {
-            Log::error('Failed to save Medlar evaluation', [
+            Log::error('Failed to save Medlar evaluation to database', [
                 'appointment_id' => $appointment->id,
                 'category' => $category,
                 'phone' => $phone,
