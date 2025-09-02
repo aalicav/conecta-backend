@@ -350,16 +350,17 @@ class WhapiWhatsAppService
             foreach ($buttons as $button) {
                 $formattedButtons[] = [
                     'type' => 'quick_reply',
-                    'reply' => [
-                        'id' => $button['id'] ?? '',
-                        'title' => $button['title'] ?? ''
-                    ]
+                    'title' => $button['title'] ?? '',
+                    'id' => $button['id'] ?? ''
                 ];
             }
             
             $payload = [
                 'to' => $formattedPhone,
-                'body' => $body,
+                'type' => 'button',
+                'body' => [
+                    'text' => $body
+                ],
                 'action' => [
                     'buttons' => $formattedButtons
                 ]
