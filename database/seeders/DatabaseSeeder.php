@@ -28,6 +28,8 @@ class DatabaseSeeder extends Seeder
             // ContractTemplateSeeder::class,
             // NegotiationExampleSeeder::class,
             NegotiationPermissionsSeeder::class,
+            GeapHealthPlanProcedureSeeder::class, // Tabela de valores do GEAP
+            UnimedHealthPlanProcedureSeeder::class, // Tabela de valores do UNIMED
         ]);        
         
         // Create default admin user
