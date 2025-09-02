@@ -2050,7 +2050,6 @@ class AppointmentController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error creating appointment: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create appointment',
