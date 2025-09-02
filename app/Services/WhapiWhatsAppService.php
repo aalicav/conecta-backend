@@ -345,17 +345,27 @@ class WhapiWhatsAppService
         try {
             $formattedPhone = $this->validateAndFixPhoneNumber($phone);
             
+            // Ensure buttons are in the correct format for Whapi API
+            $formattedButtons = [];
+            foreach ($buttons as $button) {
+                $formattedButtons[] = [
+                    'id' => $button['id'] ?? '',
+                    'title' => $button['title'] ?? ''
+                ];
+            }
+            
             $payload = [
                 'to' => $formattedPhone,
                 'body' => $body,
-                'buttons' => $buttons,
+                'buttons' => $formattedButtons,
             ];
 
             Log::info('Sending WhatsApp interactive message via Whapi', [
                 'phone' => $phone,
                 'formatted_phone' => $formattedPhone,
                 'body' => $body,
-                'buttons' => $buttons,
+                'original_buttons' => $buttons,
+                'formatted_buttons' => $formattedButtons,
                 'payload' => $payload,
                 'related_model_type' => $relatedModelType,
                 'related_model_id' => $relatedModelId,
@@ -1718,6 +1728,60 @@ class WhapiWhatsAppService
     }
 
     /**
+     * Format address information for messages
+     */
+    protected function formatAddressForMessage($address): string
+    {
+        if (!$address) {
+            return '';
+        }
+
+        $formattedAddress = "📍 *Endereço:* {$address->street}, {$address->number}\n";
+        
+        if ($address->neighborhood) {
+            $formattedAddress .= "🏘️ *Bairro:* {$address->neighborhood}\n";
+        }
+        
+        if ($address->city && $address->state) {
+            $formattedAddress .= "🌆 *Cidade:* {$address->city}/{$address->state}\n";
+        }
+        
+        if ($address->zip_code) {
+            $formattedAddress .= "📮 *CEP:* {$address->zip_code}\n";
+        }
+        
+        if ($address->complement) {
+            $formattedAddress .= "🏢 *Complemento:* {$address->complement}\n";
+        }
+
+        return $formattedAddress;
+    }
+
+    /**
+     * Get contact information for messages
+     */
+    protected function getContactInformation(): string
+    {
+        return "📞 *Contato:*\n" .
+               "• WhatsApp: (11) 99999-9999\n" .
+               "• Telefone: (11) 3333-4444\n" .
+               "• Email: atendimento@conectasaude.com\n" .
+               "• Site: www.conectasaude.com";
+    }
+
+    /**
+     * Get important instructions for appointments
+     */
+    protected function getAppointmentInstructions(): string
+    {
+        return "⚠️ *IMPORTANTE:*\n" .
+               "• Chegue com 15 minutos de antecedência\n" .
+               "• Traga documento de identidade e carteirinha do plano\n" .
+               "• Em caso de dúvidas, entre em contato conosco\n" .
+               "• Se precisar cancelar, avise com pelo menos 24h de antecedência";
+    }
+
+    /**
      * Utility methods
      */
     public function normalizePhoneNumber(string $phone): string
@@ -1820,15 +1884,53 @@ class WhapiWhatsAppService
                 return ['success' => false, 'message' => 'No patient or phone number found'];
             }
 
-            $message = "Olá {$patient->name}! Seu agendamento foi confirmado para " . 
-                      $appointment->scheduled_date->format('d/m/Y H:i') . 
-                      " com {$appointment->provider->name}.\n\n" .
-                      "Por favor, confirme sua presença:";
+            // Get additional appointment information
+            $solicitation = $appointment->solicitation;
+            $provider = $appointment->provider;
+            $address = $appointment->address;
+            $procedure = $appointment->procedure;
+            $specialty = $solicitation->medicalSpecialty ?? null;
+            $healthPlan = $solicitation->healthPlan ?? null;
+
+            // Build comprehensive message
+            $message = "📅 *AGENDAMENTO CONFIRMADO*\n\n";
+            $message .= "Olá {$patient->name}!\n\n";
+            $message .= "Seu agendamento foi confirmado com sucesso:\n\n";
+            
+            // Professional information
+            if ($provider) {
+                $message .= "👨‍⚕️ *Profissional:* {$provider->name}\n";
+                if ($specialty) {
+                    $message .= "🩺 *Especialidade:* {$specialty->name}\n";
+                }
+            }
+            
+            // Date and time
+            $message .= "📅 *Data:* " . $appointment->scheduled_date->format('d/m/Y') . "\n";
+            $message .= "🕐 *Horário:* " . $appointment->scheduled_date->format('H:i') . "\n";
+            
+            // Procedure information
+            if ($procedure) {
+                $message .= "🔬 *Procedimento:* {$procedure->name}\n";
+            }
+            
+            // Health plan information
+            if ($healthPlan) {
+                $message .= "🏥 *Plano de Saúde:* {$healthPlan->name}\n";
+            }
+            
+            // Address information
+            if ($address) {
+                $message .= $this->formatAddressForMessage($address);
+            }
+            
+            $message .= "\n" . $this->getAppointmentInstructions() . "\n\n";
+            $message .= "Por favor, confirme sua presença:";
 
             $buttons = [
                 [
                     'id' => 'confirm_appointment',
-                    'title' => '✅ Confirmar'
+                    'title' => '✅ Confirmar Presença'
                 ],
                 [
                     'id' => 'cancel_appointment',
@@ -1877,15 +1979,65 @@ class WhapiWhatsAppService
                 return ['success' => false, 'message' => 'No patient or phone number found'];
             }
 
-            $message = "Olá {$patient->name}! Lembrete: seu agendamento está marcado para " . 
-                      $appointment->scheduled_date->format('d/m/Y H:i') . 
-                      " com {$appointment->provider->name}.\n\n" .
-                      "Você pode:";
+            // Get additional appointment information
+            $solicitation = $appointment->solicitation;
+            $provider = $appointment->provider;
+            $address = $appointment->address;
+            $procedure = $appointment->procedure;
+            $specialty = $solicitation->medicalSpecialty ?? null;
+            $healthPlan = $solicitation->healthPlan ?? null;
+
+            // Calculate time until appointment
+            $now = now();
+            $appointmentTime = $appointment->scheduled_date;
+            $timeUntil = $now->diffForHumans($appointmentTime, true);
+
+            // Build comprehensive reminder message
+            $message = "⏰ *LEMBRETE DE AGENDAMENTO*\n\n";
+            $message .= "Olá {$patient->name}!\n\n";
+            $message .= "Este é um lembrete do seu agendamento:\n\n";
+            
+            // Professional information
+            if ($provider) {
+                $message .= "👨‍⚕️ *Profissional:* {$provider->name}\n";
+                if ($specialty) {
+                    $message .= "🩺 *Especialidade:* {$specialty->name}\n";
+                }
+            }
+            
+            // Date and time
+            $message .= "📅 *Data:* " . $appointment->scheduled_date->format('d/m/Y') . "\n";
+            $message .= "🕐 *Horário:* " . $appointment->scheduled_date->format('H:i') . "\n";
+            $message .= "⏳ *Faltam:* {$timeUntil}\n";
+            
+            // Procedure information
+            if ($procedure) {
+                $message .= "🔬 *Procedimento:* {$procedure->name}\n";
+            }
+            
+            // Health plan information
+            if ($healthPlan) {
+                $message .= "🏥 *Plano de Saúde:* {$healthPlan->name}\n";
+            }
+            
+            // Address information (simplified for reminder)
+            if ($address) {
+                $message .= "📍 *Local:* {$address->street}, {$address->number}\n";
+                if ($address->neighborhood) {
+                    $message .= "🏘️ *Bairro:* {$address->neighborhood}\n";
+                }
+            }
+            
+            $message .= "\n⚠️ *LEMBRE-SE:*\n";
+            $message .= "• Chegue com 15 minutos de antecedência\n";
+            $message .= "• Traga documento de identidade e carteirinha\n";
+            $message .= "• Em caso de dúvidas, entre em contato conosco\n\n";
+            $message .= "Você pode:";
 
             $buttons = [
                 [
                     'id' => 'confirm_appointment',
-                    'title' => '✅ Confirmar'
+                    'title' => '✅ Confirmar Presença'
                 ],
                 [
                     'id' => 'cancel_appointment',
@@ -1934,9 +2086,45 @@ class WhapiWhatsAppService
                 return ['success' => false, 'message' => 'No patient or phone number found'];
             }
 
-            $message = "Olá {$patient->name}! Seu agendamento para " . 
-                      $appointment->scheduled_date->format('d/m/Y H:i') . 
-                      " foi cancelado. Entre em contato conosco para reagendar.";
+            // Get additional appointment information
+            $solicitation = $appointment->solicitation;
+            $provider = $appointment->provider;
+            $procedure = $appointment->procedure;
+            $specialty = $solicitation->medicalSpecialty ?? null;
+            $healthPlan = $solicitation->healthPlan ?? null;
+
+            // Build comprehensive cancellation message
+            $message = "❌ *AGENDAMENTO CANCELADO*\n\n";
+            $message .= "Olá {$patient->name}!\n\n";
+            $message .= "Infelizmente, seu agendamento foi cancelado:\n\n";
+            
+            // Professional information
+            if ($provider) {
+                $message .= "👨‍⚕️ *Profissional:* {$provider->name}\n";
+                if ($specialty) {
+                    $message .= "🩺 *Especialidade:* {$specialty->name}\n";
+                }
+            }
+            
+            // Date and time
+            $message .= "📅 *Data:* " . $appointment->scheduled_date->format('d/m/Y') . "\n";
+            $message .= "🕐 *Horário:* " . $appointment->scheduled_date->format('H:i') . "\n";
+            
+            // Procedure information
+            if ($procedure) {
+                $message .= "🔬 *Procedimento:* {$procedure->name}\n";
+            }
+            
+            // Health plan information
+            if ($healthPlan) {
+                $message .= "🏥 *Plano de Saúde:* {$healthPlan->name}\n";
+            }
+            
+            $message .= "\n🔄 *PRÓXIMOS PASSOS:*\n";
+            $message .= "• Entre em contato conosco para reagendar\n";
+            $message .= "• Estamos disponíveis para ajudar\n";
+            $message .= "• Lamentamos qualquer inconveniente\n\n";
+            $message .= $this->getContactInformation();
 
             return $this->sendTextMessage(
                 $patient->phone,
@@ -1974,9 +2162,52 @@ class WhapiWhatsAppService
                 return ['success' => false, 'message' => 'No patient or phone number found'];
             }
 
-            $message = "Olá {$patient->name}! Seu agendamento foi confirmado para " . 
-                      $appointment->scheduled_date->format('d/m/Y H:i') . 
-                      " com {$appointment->provider->name}. Aguardamos você!";
+            // Get additional appointment information
+            $solicitation = $appointment->solicitation;
+            $provider = $appointment->provider;
+            $address = $appointment->address;
+            $procedure = $appointment->procedure;
+            $specialty = $solicitation->medicalSpecialty ?? null;
+            $healthPlan = $solicitation->healthPlan ?? null;
+
+            // Build comprehensive confirmation message
+            $message = "✅ *AGENDAMENTO CONFIRMADO*\n\n";
+            $message .= "Olá {$patient->name}!\n\n";
+            $message .= "Perfeito! Seu agendamento foi confirmado com sucesso:\n\n";
+            
+            // Professional information
+            if ($provider) {
+                $message .= "👨‍⚕️ *Profissional:* {$provider->name}\n";
+                if ($specialty) {
+                    $message .= "🩺 *Especialidade:* {$specialty->name}\n";
+                }
+            }
+            
+            // Date and time
+            $message .= "📅 *Data:* " . $appointment->scheduled_date->format('d/m/Y') . "\n";
+            $message .= "🕐 *Horário:* " . $appointment->scheduled_date->format('H:i') . "\n";
+            
+            // Procedure information
+            if ($procedure) {
+                $message .= "🔬 *Procedimento:* {$procedure->name}\n";
+            }
+            
+            // Health plan information
+            if ($healthPlan) {
+                $message .= "🏥 *Plano de Saúde:* {$healthPlan->name}\n";
+            }
+            
+            // Address information
+            if ($address) {
+                $message .= $this->formatAddressForMessage($address);
+            }
+            
+            $message .= "\n🎉 *TUDO PRONTO!*\n";
+            $message .= "• Aguardamos você no horário marcado\n";
+            $message .= "• Chegue com 15 minutos de antecedência\n";
+            $message .= "• Traga documento de identidade e carteirinha\n";
+            $message .= "• Em caso de dúvidas, entre em contato conosco\n\n";
+            $message .= "Obrigado por escolher nossos serviços! 😊";
 
             return $this->sendTextMessage(
                 $patient->phone,
