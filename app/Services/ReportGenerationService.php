@@ -5,7 +5,7 @@ namespace App\Services;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
-use Barryvdh\DomPDF\Facade\Pdf;
+use TCPDF;
 use League\Csv\Writer;
 use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
 use OpenSpout\Writer\XLSX\Options;
@@ -422,36 +422,115 @@ class ReportGenerationService
     }
 
     /**
-     * Export data to PDF
+     * Export data to PDF using TCPDF
      */
     private function exportToPdf($data, string $type)
     {
-        $view = "reports.{$type}";
+        // Create new TCPDF instance
+        $pdf = new TCPDF('L', 'mm', 'A4', true, 'UTF-8', false);
         
-        // For appointment report, ensure we have both appointments and statistics
-        if ($type === 'appointment') {
-            if (!isset($data['appointments']) || !isset($data['statistics'])) {
-                throw new \Exception("Invalid data structure for appointment report");
-            }
-            $viewData = [
-                'data' => $data['appointments'],
-                'statistics' => $data['statistics']
-            ];
-        } else {
-            $viewData = ['data' => $data];
-        }
-            
-        $pdf = PDF::loadView($view, $viewData);
+        // Set document information
+        $pdf->SetCreator('Medical System');
+        $pdf->SetAuthor('Medical System');
+        $pdf->SetTitle("Relatório de {$type}");
+        $pdf->SetSubject("Relatório de {$type}");
         
-        // Set paper size and orientation for better layout
-        $pdf->setPaper('A4', 'landscape');
+        // Set margins
+        $pdf->SetMargins(15, 15, 15);
+        $pdf->SetHeaderMargin(5);
+        $pdf->SetFooterMargin(10);
+        
+        // Add a page
+        $pdf->AddPage();
+        
+        // Set font
+        $pdf->SetFont('helvetica', 'B', 16);
+        
+        // Add title
+        $pdf->Cell(0, 10, "Relatório de " . ucfirst($type), 0, 1, 'C');
+        $pdf->Ln(5);
+        
+        // Set font for content
+        $pdf->SetFont('helvetica', '', 10);
+        
+        // Generate content based on data type
+        $content = $this->generatePdfContent($data, $type);
+        $pdf->writeHTML($content, true, false, true, false, '');
         
         $filename = "{$type}_report_" . date('Y-m-d_His') . '.pdf';
         $path = "reports/{$filename}";
         
-        Storage::put($path, $pdf->output());
+        // Get PDF content
+        $pdfContent = $pdf->Output('', 'S');
+        
+        // Save to storage
+        Storage::put($path, $pdfContent);
         
         return $path;
+    }
+    
+    /**
+     * Generate HTML content for PDF based on data type
+     */
+    private function generatePdfContent($data, string $type): string
+    {
+        $html = '<table border="1" cellpadding="5" cellspacing="0">';
+        
+        switch ($type) {
+            case 'appointment':
+                if (isset($data['appointments']) && is_array($data['appointments'])) {
+                    $html .= '<tr style="background-color:#f0f0f0;">
+                        <th>ID</th>
+                        <th>Paciente</th>
+                        <th>Profissional</th>
+                        <th>Data</th>
+                        <th>Status</th>
+                    </tr>';
+                    
+                    foreach ($data['appointments'] as $appointment) {
+                        $html .= '<tr>
+                            <td>' . ($appointment->id ?? '') . '</td>
+                            <td>' . ($appointment->patient->name ?? '') . '</td>
+                            <td>' . ($appointment->provider->name ?? '') . '</td>
+                            <td>' . ($appointment->scheduled_date ?? '') . '</td>
+                            <td>' . ($appointment->status ?? '') . '</td>
+                        </tr>';
+                    }
+                }
+                break;
+                
+            case 'billing':
+                if (is_array($data)) {
+                    $html .= '<tr style="background-color:#f0f0f0;">
+                        <th>ID</th>
+                        <th>Paciente</th>
+                        <th>Valor</th>
+                        <th>Status</th>
+                        <th>Data</th>
+                    </tr>';
+                    
+                    foreach ($data as $item) {
+                        $html .= '<tr>
+                            <td>' . ($item->id ?? '') . '</td>
+                            <td>' . ($item->patient->name ?? '') . '</td>
+                            <td>R$ ' . number_format($item->amount ?? 0, 2, ',', '.') . '</td>
+                            <td>' . ($item->status ?? '') . '</td>
+                            <td>' . ($item->created_at ?? '') . '</td>
+                        </tr>';
+                    }
+                }
+                break;
+                
+            default:
+                $html .= '<tr><td colspan="5">Dados não disponíveis</td></tr>';
+        }
+        
+        $html .= '</table>';
+        
+        // Add generation date
+        $html .= '<br><p><small>Gerado em: ' . date('d/m/Y H:i:s') . '</small></p>';
+        
+        return $html;
     }
 
     /**

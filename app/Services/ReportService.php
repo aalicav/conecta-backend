@@ -11,7 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Exception;
-use Barryvdh\DomPDF\Facade\Pdf;
+use TCPDF;
 use League\Csv\Writer;
 use OpenSpout\Writer\XLSX\Writer as XlsxWriter;
 use OpenSpout\Writer\XLSX\Options;
@@ -317,9 +317,7 @@ class ReportService
     }
 
     /**
-     * Generate a PDF file from the data.
-     * 
-     * This is a placeholder - actual implementation would use a library like DOMPDF.
+     * Generate a PDF file from the data using TCPDF.
      *
      * @param string $filePath
      * @param array $data
@@ -328,21 +326,103 @@ class ReportService
      */
     public function generatePdfFile(string $filePath, array $data, Report $report): void
     {
-        $hasSummary = isset($data['summary']) && isset($data['transactions']);
-        $reportData = $hasSummary ? $data['transactions'] : $data;
-
-        $view = view('reports.pdf', [
-            'report' => $report,
-            'data' => $reportData,
-            'summary' => $hasSummary ? $data['summary'] : null,
-            'generatedAt' => now()->format('Y-m-d H:i:s'),
-        ])->render();
-
-        $pdf = PDF::loadHTML($view);
-        $pdf->setPaper('A4', 'portrait');
+        // Create new TCPDF instance
+        $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
         
-        // Save the PDF to storage
-        Storage::put($filePath, $pdf->output());
+        // Set document information
+        $pdf->SetCreator('Medical System');
+        $pdf->SetAuthor('Medical System');
+        $pdf->SetTitle($report->name);
+        $pdf->SetSubject($report->description);
+        
+        // Set margins
+        $pdf->SetMargins(15, 15, 15);
+        $pdf->SetHeaderMargin(5);
+        $pdf->SetFooterMargin(10);
+        
+        // Add a page
+        $pdf->AddPage();
+        
+        // Set font
+        $pdf->SetFont('helvetica', 'B', 16);
+        
+        // Add title
+        $pdf->Cell(0, 10, $report->name, 0, 1, 'C');
+        $pdf->Ln(5);
+        
+        // Set font for content
+        $pdf->SetFont('helvetica', '', 10);
+        
+        // Generate content
+        $content = $this->generateReportContent($data, $report);
+        $pdf->writeHTML($content, true, false, true, false, '');
+        
+        // Get PDF content
+        $pdfContent = $pdf->Output('', 'S');
+        
+        // Save to storage
+        Storage::put($filePath, $pdfContent);
+    }
+    
+    /**
+     * Generate HTML content for the report
+     */
+    private function generateReportContent(array $data, Report $report): string
+    {
+        $html = '<table border="1" cellpadding="5" cellspacing="0">';
+        
+        // Add headers based on report type
+        $headers = $this->getDefaultHeaders($report->type);
+        if (!empty($headers)) {
+            $html .= '<tr style="background-color:#f0f0f0;">';
+            foreach ($headers as $header) {
+                $html .= '<th>' . $header . '</th>';
+            }
+            $html .= '</tr>';
+        }
+        
+        // Add data rows
+        $reportData = isset($data['transactions']) ? $data['transactions'] : $data;
+        if (is_array($reportData)) {
+            foreach ($reportData as $item) {
+                $html .= '<tr>';
+                foreach ($headers as $key => $header) {
+                    $value = $this->getFieldValue($item, $key);
+                    $html .= '<td>' . $value . '</td>';
+                }
+                $html .= '</tr>';
+            }
+        }
+        
+        $html .= '</table>';
+        
+        // Add summary if available
+        if (isset($data['summary'])) {
+            $html .= '<br><h3>Resumo</h3>';
+            $html .= '<table border="1" cellpadding="5" cellspacing="0">';
+            foreach ($data['summary'] as $key => $value) {
+                $html .= '<tr><td><strong>' . $key . '</strong></td><td>' . $value . '</td></tr>';
+            }
+            $html .= '</table>';
+        }
+        
+        // Add generation date
+        $html .= '<br><p><small>Gerado em: ' . now()->format('d/m/Y H:i:s') . '</small></p>';
+        
+        return $html;
+    }
+    
+    /**
+     * Get field value from data item
+     */
+    private function getFieldValue($item, $key): string
+    {
+        if (is_object($item)) {
+            return $item->$key ?? '';
+        } elseif (is_array($item)) {
+            return $item[$key] ?? '';
+        }
+        return '';
     }
 
     /**
