@@ -349,15 +349,20 @@ class WhapiWhatsAppService
             $formattedButtons = [];
             foreach ($buttons as $button) {
                 $formattedButtons[] = [
-                    'id' => $button['id'] ?? '',
-                    'title' => $button['title'] ?? ''
+                    'type' => 'quick_reply',
+                    'reply' => [
+                        'id' => $button['id'] ?? '',
+                        'title' => $button['title'] ?? ''
+                    ]
                 ];
             }
             
             $payload = [
                 'to' => $formattedPhone,
                 'body' => $body,
-                'buttons' => $formattedButtons,
+                'action' => [
+                    'buttons' => $formattedButtons
+                ]
             ];
 
             Log::info('Sending WhatsApp interactive message via Whapi', [
