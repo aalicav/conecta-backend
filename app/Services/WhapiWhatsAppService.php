@@ -683,6 +683,26 @@ class WhapiWhatsAppService
                 case 'nps_9_10':
                     $this->handleNpsResponse($from, $messageId, 'promoter', '9-10');
                     break;
+                // Professional evaluation buttons
+                case 'prof_0_6':
+                    $this->handleProfessionalEvaluation($from, $messageId, 'detractor', '0-6');
+                    break;
+                case 'prof_7_8':
+                    $this->handleProfessionalEvaluation($from, $messageId, 'neutral', '7-8');
+                    break;
+                case 'prof_9_10':
+                    $this->handleProfessionalEvaluation($from, $messageId, 'promoter', '9-10');
+                    break;
+                // Medlar service evaluation buttons
+                case 'medlar_0_6':
+                    $this->handleMedlarEvaluation($from, $messageId, 'detractor', '0-6');
+                    break;
+                case 'medlar_7_8':
+                    $this->handleMedlarEvaluation($from, $messageId, 'neutral', '7-8');
+                    break;
+                case 'medlar_9_10':
+                    $this->handleMedlarEvaluation($from, $messageId, 'promoter', '9-10');
+                    break;
                 default:
                     Log::info('Unknown button action', [
                         'button_id' => $buttonId,
@@ -1232,6 +1252,363 @@ class WhapiWhatsAppService
     }
 
     /**
+     * Handle professional evaluation response
+     */
+    protected function handleProfessionalEvaluation(string $from, string $messageId, string $category, string $range): void
+    {
+        Log::info('Handling professional evaluation response', [
+            'from' => $from,
+            'message_id' => $messageId,
+            'category' => $category,
+            'range' => $range
+        ]);
+        
+        try {
+            // Find the patient and appointment
+            $appointment = $this->findAppointmentByPhone($from);
+            
+            if ($appointment) {
+                // Save professional evaluation to database
+                $this->saveProfessionalEvaluation($appointment, $category, $range, $from);
+                
+                // Send thank you message based on category
+                $thankYouMessage = $this->getProfessionalThankYouMessage($category);
+                if ($thankYouMessage) {
+                    $this->sendTextMessage($from, $thankYouMessage);
+                }
+                
+                // If it's a detractor, create a follow-up task
+                if ($category === 'detractor') {
+                    $this->createProfessionalDetractorFollowUp($appointment, $from);
+                }
+                
+            } else {
+                // Send generic thank you message if appointment not found
+                $thankYouMessage = "Obrigado por avaliar o profissional!";
+                $this->sendTextMessage($from, $thankYouMessage);
+            }
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle professional evaluation', [
+                'from' => $from,
+                'message_id' => $messageId,
+                'category' => $category,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Send generic thank you message on error
+            $thankYouMessage = "Obrigado por avaliar o profissional!";
+            $this->sendTextMessage($from, $thankYouMessage);
+        }
+    }
+
+    /**
+     * Handle Medlar service evaluation response
+     */
+    protected function handleMedlarEvaluation(string $from, string $messageId, string $category, string $range): void
+    {
+        Log::info('Handling Medlar evaluation response', [
+            'from' => $from,
+            'message_id' => $messageId,
+            'category' => $category,
+            'range' => $range
+        ]);
+        
+        try {
+            // Find the patient and appointment
+            $appointment = $this->findAppointmentByPhone($from);
+            
+            if ($appointment) {
+                // Save Medlar evaluation to database
+                $this->saveMedlarEvaluation($appointment, $category, $range, $from);
+                
+                // Send thank you message based on category
+                $thankYouMessage = $this->getMedlarThankYouMessage($category);
+                if ($thankYouMessage) {
+                    $this->sendTextMessage($from, $thankYouMessage);
+                }
+                
+                // If it's a detractor, create a follow-up task
+                if ($category === 'detractor') {
+                    $this->createMedlarDetractorFollowUp($appointment, $from);
+                }
+                
+            } else {
+                // Send generic thank you message if appointment not found
+                $thankYouMessage = "Obrigado por avaliar nosso atendimento!";
+                $this->sendTextMessage($from, $thankYouMessage);
+            }
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle Medlar evaluation', [
+                'from' => $from,
+                'message_id' => $messageId,
+                'category' => $category,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Send generic thank you message on error
+            $thankYouMessage = "Obrigado por avaliar nosso atendimento!";
+            $this->sendTextMessage($from, $thankYouMessage);
+        }
+    }
+
+    /**
+     * Get thank you message for professional evaluation based on category
+     */
+    protected function getProfessionalThankYouMessage(string $category): ?string
+    {
+        switch ($category) {
+            case 'promoter':
+                return "Obrigado pela excelente avaliação do profissional! Ficamos felizes em saber que você teve uma ótima experiência com o atendimento médico. Sua opinião é muito importante para nós! 😊";
+            case 'neutral':
+                return "Obrigado pelo seu feedback sobre o profissional! Estamos sempre trabalhando para melhorar a qualidade dos nossos profissionais. Se tiver alguma sugestão, ficaremos felizes em ouvir! 🙂";
+            case 'detractor':
+                return "Obrigado pelo seu feedback honesto sobre o profissional. Lamentamos que sua experiência não tenha sido a melhor. Gostaríamos de conversar com você para entender melhor e melhorar nossos serviços. Entre em contato conosco! 📞";
+            default:
+                return "Obrigado por avaliar o profissional!";
+        }
+    }
+
+    /**
+     * Get thank you message for Medlar evaluation based on category
+     */
+    protected function getMedlarThankYouMessage(string $category): ?string
+    {
+        switch ($category) {
+            case 'promoter':
+                return "Obrigado pela excelente avaliação do nosso atendimento! Ficamos muito felizes em saber que você teve uma ótima experiência com o serviço Medlar. Sua recomendação é muito importante para nós! 😊";
+            case 'neutral':
+                return "Obrigado pelo seu feedback sobre nosso atendimento! Estamos sempre trabalhando para melhorar nossos serviços. Se tiver alguma sugestão, ficaremos felizes em ouvir! 🙂";
+            case 'detractor':
+                return "Obrigado pelo seu feedback honesto sobre nosso atendimento. Lamentamos que sua experiência não tenha sido a melhor. Gostaríamos de conversar com você para entender melhor e melhorar nossos serviços. Entre em contato conosco! 📞";
+            default:
+                return "Obrigado por avaliar nosso atendimento!";
+        }
+    }
+
+    /**
+     * Save professional evaluation to database
+     */
+    protected function saveProfessionalEvaluation(Appointment $appointment, string $category, string $range, string $phone): void
+    {
+        try {
+            // You can create a professional evaluations table/model here
+            // For now, we'll just log it
+            Log::info('Professional evaluation saved', [
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->patient_id,
+                'professional_id' => $appointment->provider_id,
+                'category' => $category,
+                'range' => $range,
+                'phone' => $phone,
+                'responded_at' => now(),
+                'source' => 'whatsapp_button'
+            ]);
+            
+            // TODO: Create actual professional evaluation record in database
+            // ProfessionalEvaluation::create([
+            //     'appointment_id' => $appointment->id,
+            //     'patient_id' => $appointment->patient_id,
+            //     'professional_id' => $appointment->provider_id,
+            //     'category' => $category,
+            //     'score_range' => $range,
+            //     'responded_at' => now(),
+            //     'source' => 'whatsapp_button',
+            //     'phone' => $phone
+            // ]);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to save professional evaluation', [
+                'appointment_id' => $appointment->id,
+                'category' => $category,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Save Medlar evaluation to database
+     */
+    protected function saveMedlarEvaluation(Appointment $appointment, string $category, string $range, string $phone): void
+    {
+        try {
+            // You can create a Medlar evaluations table/model here
+            // For now, we'll just log it
+            Log::info('Medlar evaluation saved', [
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->patient_id,
+                'category' => $category,
+                'range' => $range,
+                'phone' => $phone,
+                'responded_at' => now(),
+                'source' => 'whatsapp_button'
+            ]);
+            
+            // TODO: Create actual Medlar evaluation record in database
+            // MedlarEvaluation::create([
+            //     'appointment_id' => $appointment->id,
+            //     'patient_id' => $appointment->patient_id,
+            //     'category' => $category,
+            //     'score_range' => $range,
+            //     'responded_at' => now(),
+            //     'source' => 'whatsapp_button',
+            //     'phone' => $phone
+            // ]);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to save Medlar evaluation', [
+                'appointment_id' => $appointment->id,
+                'category' => $category,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Create follow-up task for professional detractors
+     */
+    protected function createProfessionalDetractorFollowUp(Appointment $appointment, string $phone): void
+    {
+        try {
+            // You can create a follow-up tasks table/model here
+            // For now, we'll just log it
+            Log::info('Professional detractor follow-up task created', [
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->patient_id,
+                'professional_id' => $appointment->provider_id,
+                'patient_phone' => $phone,
+                'created_at' => now(),
+                'priority' => 'high',
+                'type' => 'professional_detractor_follow_up'
+            ]);
+            
+            // TODO: Create actual follow-up task record in database
+            // FollowUpTask::create([
+            //     'appointment_id' => $appointment->id,
+            //     'patient_id' => $appointment->patient_id,
+            //     'professional_id' => $appointment->provider_id,
+            //     'type' => 'professional_detractor_follow_up',
+            //     'priority' => 'high',
+            //     'status' => 'pending',
+            //     'assigned_to' => null, // Can be assigned to a specific team member
+            //     'due_date' => now()->addHours(24), // Follow up within 24 hours
+            //     'created_at' => now()
+            // ]);
+            
+            // Notify the team about the professional detractor response
+            $this->notifyTeamAboutProfessionalDetractor($appointment, $phone);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to create professional detractor follow-up', [
+                'appointment_id' => $appointment->id,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Create follow-up task for Medlar detractors
+     */
+    protected function createMedlarDetractorFollowUp(Appointment $appointment, string $phone): void
+    {
+        try {
+            // You can create a follow-up tasks table/model here
+            // For now, we'll just log it
+            Log::info('Medlar detractor follow-up task created', [
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->patient_id,
+                'patient_phone' => $phone,
+                'created_at' => now(),
+                'priority' => 'high',
+                'type' => 'medlar_detractor_follow_up'
+            ]);
+            
+            // TODO: Create actual follow-up task record in database
+            // FollowUpTask::create([
+            //     'appointment_id' => $appointment->id,
+            //     'patient_id' => $appointment->patient_id,
+            //     'type' => 'medlar_detractor_follow_up',
+            //     'priority' => 'high',
+            //     'status' => 'pending',
+            //     'assigned_to' => null, // Can be assigned to a specific team member
+            //     'due_date' => now()->addHours(24), // Follow up within 24 hours
+            //     'created_at' => now()
+            // ]);
+            
+            // Notify the team about the Medlar detractor response
+            $this->notifyTeamAboutMedlarDetractor($appointment, $phone);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to create Medlar detractor follow-up', [
+                'appointment_id' => $appointment->id,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify team about professional detractor response
+     */
+    protected function notifyTeamAboutProfessionalDetractor(Appointment $appointment, string $phone): void
+    {
+        try {
+            // You can implement team notification logic here
+            // For example, send email, Slack notification, etc.
+            
+            Log::info('Team notification sent about professional detractor response', [
+                'appointment_id' => $appointment->id,
+                'professional_id' => $appointment->provider_id,
+                'patient_phone' => $phone,
+                'notified_at' => now()
+            ]);
+            
+            // TODO: Implement actual team notification
+            // Example: Send email to customer service team
+            // Mail::to('customer-service@conectasaude.com')->send(new ProfessionalDetractorAlert($appointment, $phone));
+            
+        } catch (Exception $e) {
+            Log::error('Failed to notify team about professional detractor', [
+                'appointment_id' => $appointment->id,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify team about Medlar detractor response
+     */
+    protected function notifyTeamAboutMedlarDetractor(Appointment $appointment, string $phone): void
+    {
+        try {
+            // You can implement team notification logic here
+            // For example, send email, Slack notification, etc.
+            
+            Log::info('Team notification sent about Medlar detractor response', [
+                'appointment_id' => $appointment->id,
+                'patient_phone' => $phone,
+                'notified_at' => now()
+            ]);
+            
+            // TODO: Implement actual team notification
+            // Example: Send email to customer service team
+            // Mail::to('customer-service@conectasaude.com')->send(new MedlarDetractorAlert($appointment, $phone));
+            
+        } catch (Exception $e) {
+            Log::error('Failed to notify team about Medlar detractor', [
+                'appointment_id' => $appointment->id,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
      * Update message status based on webhook data
      */
     protected function updateMessageStatus(array $webhookData): void
@@ -1668,6 +2045,116 @@ class WhapiWhatsAppService
 
         } catch (\Exception $e) {
             Log::error("Failed to send NPS survey to patient", [
+                'patient_id' => $patient->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send professional evaluation survey to patient with interactive rating buttons.
+     *
+     * @param Patient $patient
+     * @param Appointment $appointment
+     * @return array
+     */
+    public function sendProfessionalEvaluationToPatient($patient, $appointment): array
+    {
+        try {
+            if (!$patient || !$patient->phone) {
+                Log::warning("No patient or phone number found for professional evaluation", [
+                    'patient_id' => $patient->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No patient or phone number found'];
+            }
+
+            $message = "Olá {$patient->name}! Como foi sua experiência com o(a) {$appointment->provider->name}?\n\n" .
+                      "Em uma escala de 0 a 10, como você avalia o atendimento do profissional?";
+
+            $buttons = [
+                [
+                    'id' => 'prof_0_6',
+                    'title' => '0-6 (Detratores)'
+                ],
+                [
+                    'id' => 'prof_7_8',
+                    'title' => '7-8 (Neutros)'
+                ],
+                [
+                    'id' => 'prof_9_10',
+                    'title' => '9-10 (Promotores)'
+                ]
+            ];
+
+            return $this->sendInteractiveMessage(
+                $patient->phone,
+                $message,
+                $buttons,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send professional evaluation to patient", [
+                'patient_id' => $patient->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send Medlar service evaluation survey to patient with interactive rating buttons.
+     *
+     * @param Patient $patient
+     * @param Appointment $appointment
+     * @return array
+     */
+    public function sendMedlarEvaluationToPatient($patient, $appointment): array
+    {
+        try {
+            if (!$patient || !$patient->phone) {
+                Log::warning("No patient or phone number found for Medlar evaluation", [
+                    'patient_id' => $patient->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No patient or phone number found'];
+            }
+
+            $message = "Olá {$patient->name}! Como foi sua experiência com o atendimento Medlar?\n\n" .
+                      "Em uma escala de 0 a 10, como você avalia nosso serviço de agendamento e atendimento?";
+
+            $buttons = [
+                [
+                    'id' => 'medlar_0_6',
+                    'title' => '0-6 (Detratores)'
+                ],
+                [
+                    'id' => 'medlar_7_8',
+                    'title' => '7-8 (Neutros)'
+                ],
+                [
+                    'id' => 'medlar_9_10',
+                    'title' => '9-10 (Promotores)'
+                ]
+            ];
+
+            return $this->sendInteractiveMessage(
+                $patient->phone,
+                $message,
+                $buttons,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send Medlar evaluation to patient", [
                 'patient_id' => $patient->id ?? 'null',
                 'appointment_id' => $appointment->id ?? 'null',
                 'error' => $e->getMessage()

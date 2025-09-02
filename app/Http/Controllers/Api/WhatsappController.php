@@ -339,7 +339,7 @@ class WhatsappController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'recipient' => 'required|string',
-            'message_type' => 'required|string|in:appointment_notification,appointment_reminder,nps_survey'
+            'message_type' => 'required|string|in:appointment_notification,appointment_reminder,nps_survey,professional_evaluation,medlar_evaluation'
         ]);
 
         if ($validator->fails()) {
@@ -373,6 +373,12 @@ class WhatsappController extends Controller
                     break;
                 case 'nps_survey':
                     $result = $this->whatsappService->sendNpsSurveyToPatient($mockPatient, $mockAppointment);
+                    break;
+                case 'professional_evaluation':
+                    $result = $this->whatsappService->sendProfessionalEvaluationToPatient($mockPatient, $mockAppointment);
+                    break;
+                case 'medlar_evaluation':
+                    $result = $this->whatsappService->sendMedlarEvaluationToPatient($mockPatient, $mockAppointment);
                     break;
             }
 
