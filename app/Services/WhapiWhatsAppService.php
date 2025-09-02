@@ -161,7 +161,7 @@ class WhapiWhatsAppService
                 'phone' => $phone,
                 'message' => $message,
                 'error' => $e->getMessage(),
-                'response' => $e->hasResponse() ? $e->getResponse()->getBody()->getContents() : null,
+                'response' => method_exists($e, 'hasResponse') && $e->hasResponse() && method_exists($e, 'getResponse') ? $e->getResponse()->getBody()->getContents() : null,
             ]);
 
             // Save failed message to database
@@ -238,7 +238,7 @@ class WhapiWhatsAppService
                 'media_url' => $mediaUrl,
                 'media_type' => $mediaType,
                 'error' => $e->getMessage(),
-                'response' => $e->hasResponse() ? $e->getResponse()->getBody()->getContents() : null,
+                'response' => method_exists($e, 'hasResponse') && $e->hasResponse() && method_exists($e, 'getResponse') ? $e->getResponse()->getBody()->getContents() : null,
             ]);
 
             // Save failed message to database
@@ -312,7 +312,7 @@ class WhapiWhatsAppService
                 'template' => $templateName,
                 'parameters' => $parameters,
                 'error' => $e->getMessage(),
-                'response' => $e->hasResponse() ? $e->getResponse()->getBody()->getContents() : null,
+                'response' => method_exists($e, 'hasResponse') && $e->hasResponse() && method_exists($e, 'getResponse') ? $e->getResponse()->getBody()->getContents() : null,
             ]);
 
             // Save failed message to database
@@ -329,6 +329,70 @@ class WhapiWhatsAppService
 
             // Save failed message to database
             $this->saveWhatsappMessage($phone, "[Template: {$templateName}]", 'outbound', 'failed', null, $relatedModelType, $relatedModelId);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Send interactive message with buttons via Whapi
+     */
+    public function sendInteractiveMessage(string $phone, string $body, array $buttons, ?string $relatedModelType = null, ?int $relatedModelId = null): array
+    {
+        try {
+            $formattedPhone = $this->validateAndFixPhoneNumber($phone);
+            
+            $payload = [
+                'to' => $formattedPhone,
+                'body' => $body,
+                'buttons' => $buttons,
+            ];
+
+            Log::info('Sending WhatsApp interactive message via Whapi', [
+                'phone' => $phone,
+                'formatted_phone' => $formattedPhone,
+                'body' => $body,
+                'buttons' => $buttons,
+                'payload' => $payload,
+                'related_model_type' => $relatedModelType,
+                'related_model_id' => $relatedModelId,
+            ]);
+
+            $response = $this->httpClient->post('/messages/interactive', [
+                'json' => $payload,
+            ]);
+
+            $responseData = json_decode($response->getBody()->getContents(), true);
+            
+            Log::info('Whapi interactive API response', [
+                'phone' => $phone,
+                'response' => $responseData,
+                'status_code' => $response->getStatusCode(),
+            ]);
+
+            return [
+                'success' => true,
+                'message_id' => $responseData['id'] ?? null,
+                'response' => $responseData,
+            ];
+
+        } catch (GuzzleException $e) {
+            Log::error('Failed to send WhatsApp interactive message via Whapi', [
+                'phone' => $phone,
+                'body' => $body,
+                'buttons' => $buttons,
+                'error' => $e->getMessage(),
+                'response' => method_exists($e, 'hasResponse') && $e->hasResponse() && method_exists($e, 'getResponse') ? $e->getResponse()->getBody()->getContents() : null,
+            ]);
+
+            throw new Exception('Failed to send WhatsApp interactive message: ' . $e->getMessage());
+        } catch (Exception $e) {
+            Log::error('Unexpected error sending WhatsApp interactive message', [
+                'phone' => $phone,
+                'body' => $body,
+                'buttons' => $buttons,
+                'error' => $e->getMessage(),
+            ]);
 
             throw $e;
         }
@@ -386,7 +450,7 @@ class WhapiWhatsAppService
                 'phone' => $phone,
                 'template_key' => $templateKey,
                 'error' => $e->getMessage(),
-                'response' => $e->hasResponse() ? $e->getResponse()->getBody()->getContents() : null,
+                'response' => method_exists($e, 'hasResponse') && $e->hasResponse() && method_exists($e, 'getResponse') ? $e->getResponse()->getBody()->getContents() : null,
             ]);
 
             // Save failed message to database
@@ -514,16 +578,21 @@ class WhapiWhatsAppService
     }
 
     /**
-     * Handle webhook for status updates only
+     * Handle webhook for status updates and interactive responses
      */
     public function handleWebhook(array $webhookData): void
     {
         try {
-            Log::info('Processing Whapi webhook for status updates', $webhookData);
+            Log::info('Processing Whapi webhook', $webhookData);
             
             // Handle message status updates
             if (isset($webhookData['status'])) {
                 $this->updateMessageStatus($webhookData);
+            }
+            
+            // Handle interactive button responses
+            if (isset($webhookData['type']) && $webhookData['type'] === 'interactive') {
+                $this->processInteractiveResponse($webhookData);
             }
             
         } catch (Exception $e) {
@@ -532,6 +601,633 @@ class WhapiWhatsAppService
                 'error' => $e->getMessage(),
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * Process interactive button response
+     */
+    protected function processInteractiveResponse(array $webhookData): void
+    {
+        try {
+            $messageId = $webhookData['id'] ?? null;
+            $from = $webhookData['from'] ?? null;
+            $interactiveData = $webhookData['interactive'] ?? null;
+            
+            if (!$messageId || !$from || !$interactiveData) {
+                Log::warning('Invalid interactive response data', $webhookData);
+                return;
+            }
+            
+            $buttonId = $interactiveData['button_reply']['id'] ?? null;
+            $buttonTitle = $interactiveData['button_reply']['title'] ?? null;
+            
+            if (!$buttonId) {
+                Log::warning('No button ID found in interactive response', $webhookData);
+                return;
+            }
+            
+            Log::info('Processing interactive button response', [
+                'message_id' => $messageId,
+                'from' => $from,
+                'button_id' => $buttonId,
+                'button_title' => $buttonTitle,
+                'interactive_data' => $interactiveData
+            ]);
+            
+            // Here you can add custom logic to handle different button responses
+            // For example, trigger specific actions based on button_id
+            $this->handleButtonAction($from, $buttonId, $buttonTitle, $messageId);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to process interactive response', [
+                'webhook_data' => $webhookData,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+    
+    /**
+     * Handle specific button actions
+     */
+    protected function handleButtonAction(string $from, string $buttonId, string $buttonTitle, string $messageId): void
+    {
+        try {
+            Log::info('Handling button action', [
+                'from' => $from,
+                'button_id' => $buttonId,
+                'button_title' => $buttonTitle,
+                'message_id' => $messageId
+            ]);
+            
+            // Example: Handle different button actions
+            switch ($buttonId) {
+                case 'confirm_appointment':
+                    $this->handleAppointmentConfirmation($from, $messageId);
+                    break;
+                case 'cancel_appointment':
+                    $this->handleAppointmentCancellation($from, $messageId);
+                    break;
+                case 'reschedule_appointment':
+                    $this->handleAppointmentReschedule($from, $messageId);
+                    break;
+                case 'contact_support':
+                    $this->handleContactSupport($from, $messageId);
+                    break;
+                case 'nps_0_6':
+                    $this->handleNpsResponse($from, $messageId, 'detractor', '0-6');
+                    break;
+                case 'nps_7_8':
+                    $this->handleNpsResponse($from, $messageId, 'neutral', '7-8');
+                    break;
+                case 'nps_9_10':
+                    $this->handleNpsResponse($from, $messageId, 'promoter', '9-10');
+                    break;
+                default:
+                    Log::info('Unknown button action', [
+                        'button_id' => $buttonId,
+                        'from' => $from
+                    ]);
+                    break;
+            }
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle button action', [
+                'from' => $from,
+                'button_id' => $buttonId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+    
+    /**
+     * Handle appointment confirmation button
+     */
+    protected function handleAppointmentConfirmation(string $from, string $messageId): void
+    {
+        Log::info('Handling appointment confirmation', [
+            'from' => $from,
+            'message_id' => $messageId
+        ]);
+        
+        try {
+            // Find the appointment by phone number
+            $appointment = $this->findAppointmentByPhone($from);
+            
+            if ($appointment) {
+                // Update appointment status to confirmed
+                $appointment->update([
+                    'status' => 'confirmed',
+                    'confirmed_at' => now(),
+                    'confirmation_method' => 'whatsapp_button'
+                ]);
+                
+                // Send confirmation message
+                $confirmationMessage = "✅ Agendamento confirmado com sucesso!\n\n" .
+                                     "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                                     "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
+                                     "Profissional: " . $appointment->provider->name . "\n\n" .
+                                     "Aguardamos você! Se precisar de algo, entre em contato conosco.";
+                
+                $this->sendTextMessage($from, $confirmationMessage);
+                
+                // Log the confirmation
+                Log::info('Appointment confirmed via WhatsApp button', [
+                    'appointment_id' => $appointment->id,
+                    'patient_phone' => $from,
+                    'confirmed_at' => now()
+                ]);
+            } else {
+                // Send error message if appointment not found
+                $errorMessage = "❌ Não foi possível encontrar seu agendamento. " .
+                               "Entre em contato conosco para mais informações.";
+                $this->sendTextMessage($from, $errorMessage);
+            }
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle appointment confirmation', [
+                'from' => $from,
+                'message_id' => $messageId,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Send error message to user
+            $errorMessage = "❌ Ocorreu um erro ao confirmar seu agendamento. " .
+                           "Entre em contato conosco para mais informações.";
+            $this->sendTextMessage($from, $errorMessage);
+        }
+    }
+    
+    /**
+     * Handle appointment cancellation button
+     */
+    protected function handleAppointmentCancellation(string $from, string $messageId): void
+    {
+        Log::info('Handling appointment cancellation', [
+            'from' => $from,
+            'message_id' => $messageId
+        ]);
+        
+        try {
+            // Find the appointment by phone number
+            $appointment = $this->findAppointmentByPhone($from);
+            
+            if ($appointment) {
+                // Update appointment status to cancelled
+                $appointment->update([
+                    'status' => 'cancelled',
+                    'cancelled_at' => now(),
+                    'cancellation_method' => 'whatsapp_button'
+                ]);
+                
+                // Send cancellation confirmation message
+                $cancellationMessage = "❌ Agendamento cancelado com sucesso!\n\n" .
+                                     "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                                     "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
+                                     "Profissional: " . $appointment->provider->name . "\n\n" .
+                                     "Se desejar reagendar, entre em contato conosco. " .
+                                     "Obrigado por nos avisar!";
+                
+                $this->sendTextMessage($from, $cancellationMessage);
+                
+                // Log the cancellation
+                Log::info('Appointment cancelled via WhatsApp button', [
+                    'appointment_id' => $appointment->id,
+                    'patient_phone' => $from,
+                    'cancelled_at' => now()
+                ]);
+                
+                // Notify the provider about the cancellation
+                $this->notifyProviderAboutCancellation($appointment);
+                
+            } else {
+                // Send error message if appointment not found
+                $errorMessage = "❌ Não foi possível encontrar seu agendamento. " .
+                               "Entre em contato conosco para mais informações.";
+                $this->sendTextMessage($from, $errorMessage);
+            }
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle appointment cancellation', [
+                'from' => $from,
+                'message_id' => $messageId,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Send error message to user
+            $errorMessage = "❌ Ocorreu um erro ao cancelar seu agendamento. " .
+                           "Entre em contato conosco para mais informações.";
+            $this->sendTextMessage($from, $errorMessage);
+        }
+    }
+    
+    /**
+     * Handle appointment reschedule button
+     */
+    protected function handleAppointmentReschedule(string $from, string $messageId): void
+    {
+        Log::info('Handling appointment reschedule', [
+            'from' => $from,
+            'message_id' => $messageId
+        ]);
+        
+        try {
+            // Find the appointment by phone number
+            $appointment = $this->findAppointmentByPhone($from);
+            
+            if ($appointment) {
+                // Send reschedule options message
+                $rescheduleMessage = "🔄 Reagendamento solicitado!\n\n" .
+                                   "Agendamento atual:\n" .
+                                   "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                                   "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
+                                   "Profissional: " . $appointment->provider->name . "\n\n" .
+                                   "Para reagendar, entre em contato conosco através dos canais:\n" .
+                                   "📞 Telefone: (11) 99999-9999\n" .
+                                   "💬 WhatsApp: (11) 99999-9999\n" .
+                                   "🌐 Site: www.conectasaude.com\n\n" .
+                                   "Ou responda esta mensagem com sua preferência de data e horário.";
+                
+                $this->sendTextMessage($from, $rescheduleMessage);
+                
+                // Log the reschedule request
+                Log::info('Appointment reschedule requested via WhatsApp button', [
+                    'appointment_id' => $appointment->id,
+                    'patient_phone' => $from,
+                    'requested_at' => now()
+                ]);
+                
+                // Create a reschedule request record
+                $this->createRescheduleRequest($appointment, $from);
+                
+            } else {
+                // Send error message if appointment not found
+                $errorMessage = "❌ Não foi possível encontrar seu agendamento. " .
+                               "Entre em contato conosco para mais informações.";
+                $this->sendTextMessage($from, $errorMessage);
+            }
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle appointment reschedule', [
+                'from' => $from,
+                'message_id' => $messageId,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Send error message to user
+            $errorMessage = "❌ Ocorreu um erro ao processar sua solicitação de reagendamento. " .
+                           "Entre em contato conosco para mais informações.";
+            $this->sendTextMessage($from, $errorMessage);
+        }
+    }
+    
+    /**
+     * Handle contact support button
+     */
+    protected function handleContactSupport(string $from, string $messageId): void
+    {
+        Log::info('Handling contact support', [
+            'from' => $from,
+            'message_id' => $messageId
+        ]);
+        
+        try {
+            // Send support contact information
+            $supportMessage = "📞 Central de Atendimento\n\n" .
+                            "Estamos aqui para ajudar! Entre em contato conosco:\n\n" .
+                            "🕐 Horário de funcionamento:\n" .
+                            "Segunda a Sexta: 8h às 18h\n" .
+                            "Sábado: 8h às 12h\n\n" .
+                            "📱 Canais de atendimento:\n" .
+                            "• WhatsApp: (11) 99999-9999\n" .
+                            "• Telefone: (11) 3333-4444\n" .
+                            "• Email: atendimento@conectasaude.com\n" .
+                            "• Site: www.conectasaude.com\n\n" .
+                            "💬 Ou responda esta mensagem com sua dúvida e nossa equipe entrará em contato!";
+            
+            $this->sendTextMessage($from, $supportMessage);
+            
+            // Log the support request
+            Log::info('Support contact requested via WhatsApp button', [
+                'patient_phone' => $from,
+                'requested_at' => now()
+            ]);
+            
+            // Create a support ticket
+            $this->createSupportTicket($from);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle contact support', [
+                'from' => $from,
+                'message_id' => $messageId,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Send simple error message
+            $errorMessage = "❌ Ocorreu um erro. Entre em contato conosco pelo telefone (11) 3333-4444";
+            $this->sendTextMessage($from, $errorMessage);
+        }
+    }
+    
+    /**
+     * Handle NPS survey response
+     */
+    protected function handleNpsResponse(string $from, string $messageId, string $category, string $range): void
+    {
+        Log::info('Handling NPS response', [
+            'from' => $from,
+            'message_id' => $messageId,
+            'category' => $category,
+            'range' => $range
+        ]);
+        
+        try {
+            // Find the patient and appointment
+            $appointment = $this->findAppointmentByPhone($from);
+            
+            if ($appointment) {
+                // Save NPS response to database
+                $this->saveNpsResponse($appointment, $category, $range, $from);
+                
+                // Send thank you message based on category
+                $thankYouMessage = $this->getNpsThankYouMessage($category);
+                if ($thankYouMessage) {
+                    $this->sendTextMessage($from, $thankYouMessage);
+                }
+                
+                // If it's a detractor, create a follow-up task
+                if ($category === 'detractor') {
+                    $this->createDetractorFollowUp($appointment, $from);
+                }
+                
+            } else {
+                // Send generic thank you message if appointment not found
+                $thankYouMessage = "Obrigado por responder nossa pesquisa de satisfação!";
+                $this->sendTextMessage($from, $thankYouMessage);
+            }
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle NPS response', [
+                'from' => $from,
+                'message_id' => $messageId,
+                'category' => $category,
+                'error' => $e->getMessage()
+            ]);
+            
+            // Send generic thank you message on error
+            $thankYouMessage = "Obrigado por responder nossa pesquisa de satisfação!";
+            $this->sendTextMessage($from, $thankYouMessage);
+        }
+    }
+    
+    /**
+     * Get thank you message based on NPS category
+     */
+    protected function getNpsThankYouMessage(string $category): ?string
+    {
+        switch ($category) {
+            case 'promoter':
+                return "Obrigado pela excelente avaliação! Ficamos muito felizes em saber que você teve uma ótima experiência conosco. Sua recomendação é muito importante para nós! 😊";
+            case 'neutral':
+                return "Obrigado pelo seu feedback! Estamos sempre trabalhando para melhorar nossos serviços. Se tiver alguma sugestão, ficaremos felizes em ouvir! 🙂";
+            case 'detractor':
+                return "Obrigado pelo seu feedback honesto. Lamentamos que sua experiência não tenha sido a melhor. Gostaríamos de conversar com você para entender melhor e melhorar nossos serviços. Entre em contato conosco! 📞";
+            default:
+                return "Obrigado por responder nossa pesquisa de satisfação!";
+        }
+    }
+
+    /**
+     * Find appointment by patient phone number
+     */
+    protected function findAppointmentByPhone(string $phone): ?Appointment
+    {
+        try {
+            // Normalize phone number for search
+            $normalizedPhone = $this->normalizePhoneNumber($phone);
+            
+            // Find patient by phone
+            $patient = Patient::whereHas('phones', function ($query) use ($normalizedPhone) {
+                $query->where('number', 'like', '%' . substr($normalizedPhone, -8) . '%');
+            })->first();
+            
+            if ($patient) {
+                // Find the most recent appointment for this patient
+                return Appointment::where('patient_id', $patient->id)
+                    ->where('status', '!=', 'cancelled')
+                    ->where('scheduled_date', '>=', now())
+                    ->orderBy('scheduled_date', 'asc')
+                    ->first();
+            }
+            
+            return null;
+            
+        } catch (Exception $e) {
+            Log::error('Failed to find appointment by phone', [
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Notify provider about appointment cancellation
+     */
+    protected function notifyProviderAboutCancellation(Appointment $appointment): void
+    {
+        try {
+            if ($appointment->provider && $appointment->provider->phone) {
+                $message = "📋 Cancelamento de Agendamento\n\n" .
+                          "Paciente: " . $appointment->solicitation->patient->name . "\n" .
+                          "Data: " . $appointment->scheduled_date->format('d/m/Y H:i') . "\n" .
+                          "Cancelado via WhatsApp pelo paciente.\n\n" .
+                          "Horário liberado para novos agendamentos.";
+                
+                $this->sendTextMessage($appointment->provider->phone, $message);
+                
+                Log::info('Provider notified about appointment cancellation', [
+                    'appointment_id' => $appointment->id,
+                    'provider_id' => $appointment->provider->id
+                ]);
+            }
+        } catch (Exception $e) {
+            Log::error('Failed to notify provider about cancellation', [
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Create reschedule request record
+     */
+    protected function createRescheduleRequest(Appointment $appointment, string $phone): void
+    {
+        try {
+            // You can create a reschedule request table/model here
+            // For now, we'll just log it
+            Log::info('Reschedule request created', [
+                'appointment_id' => $appointment->id,
+                'patient_phone' => $phone,
+                'current_date' => $appointment->scheduled_date,
+                'requested_at' => now()
+            ]);
+            
+            // TODO: Create actual reschedule request record in database
+            // RescheduleRequest::create([
+            //     'appointment_id' => $appointment->id,
+            //     'patient_id' => $appointment->patient_id,
+            //     'requested_at' => now(),
+            //     'status' => 'pending',
+            //     'request_method' => 'whatsapp_button'
+            // ]);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to create reschedule request', [
+                'appointment_id' => $appointment->id,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Create support ticket
+     */
+    protected function createSupportTicket(string $phone): void
+    {
+        try {
+            // You can create a support ticket table/model here
+            // For now, we'll just log it
+            Log::info('Support ticket created', [
+                'patient_phone' => $phone,
+                'created_at' => now(),
+                'source' => 'whatsapp_button'
+            ]);
+            
+            // TODO: Create actual support ticket record in database
+            // SupportTicket::create([
+            //     'patient_phone' => $phone,
+            //     'status' => 'open',
+            //     'priority' => 'medium',
+            //     'source' => 'whatsapp_button',
+            //     'created_at' => now()
+            // ]);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to create support ticket', [
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Save NPS response to database
+     */
+    protected function saveNpsResponse(Appointment $appointment, string $category, string $range, string $phone): void
+    {
+        try {
+            // You can create an NPS responses table/model here
+            // For now, we'll just log it
+            Log::info('NPS response saved', [
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->patient_id,
+                'category' => $category,
+                'range' => $range,
+                'phone' => $phone,
+                'responded_at' => now(),
+                'source' => 'whatsapp_button'
+            ]);
+            
+            // TODO: Create actual NPS response record in database
+            // NpsResponse::create([
+            //     'appointment_id' => $appointment->id,
+            //     'patient_id' => $appointment->patient_id,
+            //     'category' => $category,
+            //     'score_range' => $range,
+            //     'responded_at' => now(),
+            //     'source' => 'whatsapp_button',
+            //     'phone' => $phone
+            // ]);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to save NPS response', [
+                'appointment_id' => $appointment->id,
+                'category' => $category,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Create follow-up task for detractors
+     */
+    protected function createDetractorFollowUp(Appointment $appointment, string $phone): void
+    {
+        try {
+            // You can create a follow-up tasks table/model here
+            // For now, we'll just log it
+            Log::info('Detractor follow-up task created', [
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->patient_id,
+                'patient_phone' => $phone,
+                'created_at' => now(),
+                'priority' => 'high',
+                'type' => 'detractor_follow_up'
+            ]);
+            
+            // TODO: Create actual follow-up task record in database
+            // FollowUpTask::create([
+            //     'appointment_id' => $appointment->id,
+            //     'patient_id' => $appointment->patient_id,
+            //     'type' => 'detractor_follow_up',
+            //     'priority' => 'high',
+            //     'status' => 'pending',
+            //     'assigned_to' => null, // Can be assigned to a specific team member
+            //     'due_date' => now()->addHours(24), // Follow up within 24 hours
+            //     'created_at' => now()
+            // ]);
+            
+            // Notify the team about the detractor response
+            $this->notifyTeamAboutDetractor($appointment, $phone);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to create detractor follow-up', [
+                'appointment_id' => $appointment->id,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Notify team about detractor response
+     */
+    protected function notifyTeamAboutDetractor(Appointment $appointment, string $phone): void
+    {
+        try {
+            // You can implement team notification logic here
+            // For example, send email, Slack notification, etc.
+            
+            Log::info('Team notification sent about detractor response', [
+                'appointment_id' => $appointment->id,
+                'patient_phone' => $phone,
+                'notified_at' => now()
+            ]);
+            
+            // TODO: Implement actual team notification
+            // Example: Send email to customer service team
+            // Mail::to('customer-service@conectasaude.com')->send(new DetractorAlert($appointment, $phone));
+            
+        } catch (Exception $e) {
+            Log::error('Failed to notify team about detractor', [
+                'appointment_id' => $appointment->id,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 
@@ -733,7 +1429,7 @@ class WhapiWhatsAppService
     }
 
     /**
-     * Send appointment notification to patient.
+     * Send appointment notification to patient with interactive buttons.
      *
      * @param Patient $patient
      * @param Appointment $appointment
@@ -752,11 +1448,28 @@ class WhapiWhatsAppService
 
             $message = "Olá {$patient->name}! Seu agendamento foi confirmado para " . 
                       $appointment->scheduled_date->format('d/m/Y H:i') . 
-                      " com {$appointment->provider->name}.";
+                      " com {$appointment->provider->name}.\n\n" .
+                      "Por favor, confirme sua presença:";
 
-            return $this->sendTextMessage(
+            $buttons = [
+                [
+                    'id' => 'confirm_appointment',
+                    'title' => '✅ Confirmar'
+                ],
+                [
+                    'id' => 'cancel_appointment',
+                    'title' => '❌ Cancelar'
+                ],
+                [
+                    'id' => 'reschedule_appointment',
+                    'title' => '🔄 Reagendar'
+                ]
+            ];
+
+            return $this->sendInteractiveMessage(
                 $patient->phone,
                 $message,
+                $buttons,
                 'App\\Models\\Appointment',
                 $appointment->id
             );
@@ -773,7 +1486,7 @@ class WhapiWhatsAppService
     }
 
     /**
-     * Send appointment reminder to patient.
+     * Send appointment reminder to patient with interactive buttons.
      *
      * @param Patient $patient
      * @param Appointment $appointment
@@ -792,11 +1505,28 @@ class WhapiWhatsAppService
 
             $message = "Olá {$patient->name}! Lembrete: seu agendamento está marcado para " . 
                       $appointment->scheduled_date->format('d/m/Y H:i') . 
-                      " com {$appointment->provider->name}.";
+                      " com {$appointment->provider->name}.\n\n" .
+                      "Você pode:";
 
-            return $this->sendTextMessage(
+            $buttons = [
+                [
+                    'id' => 'confirm_appointment',
+                    'title' => '✅ Confirmar'
+                ],
+                [
+                    'id' => 'cancel_appointment',
+                    'title' => '❌ Cancelar'
+                ],
+                [
+                    'id' => 'contact_support',
+                    'title' => '📞 Suporte'
+                ]
+            ];
+
+            return $this->sendInteractiveMessage(
                 $patient->phone,
                 $message,
+                $buttons,
                 'App\\Models\\Appointment',
                 $appointment->id
             );
@@ -893,7 +1623,7 @@ class WhapiWhatsAppService
     }
 
     /**
-     * Send NPS survey to patient.
+     * Send NPS survey to patient with interactive rating buttons.
      *
      * @param Patient $patient
      * @param Appointment $appointment
@@ -910,12 +1640,28 @@ class WhapiWhatsAppService
                 return ['success' => false, 'message' => 'No patient or phone number found'];
             }
 
-            $message = "Olá {$patient->name}! Como foi sua experiência conosco? " .
-                      "Responda nossa pesquisa de satisfação: [link da pesquisa]";
+            $message = "Olá {$patient->name}! Como foi sua experiência conosco?\n\n" .
+                      "Em uma escala de 0 a 10, qual a probabilidade de você nos recomendar para um amigo ou familiar?";
 
-            return $this->sendTextMessage(
+            $buttons = [
+                [
+                    'id' => 'nps_0_6',
+                    'title' => '0-6 (Detratores)'
+                ],
+                [
+                    'id' => 'nps_7_8',
+                    'title' => '7-8 (Neutros)'
+                ],
+                [
+                    'id' => 'nps_9_10',
+                    'title' => '9-10 (Promotores)'
+                ]
+            ];
+
+            return $this->sendInteractiveMessage(
                 $patient->phone,
                 $message,
+                $buttons,
                 'App\\Models\\Appointment',
                 $appointment->id
             );

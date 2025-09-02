@@ -495,10 +495,12 @@ Route::middleware(['auth:sanctum'])->prefix('whatsapp')->group(function () {
     Route::get('messages/{id}', [WhatsappController::class, 'show']);
     Route::post('send/text', [WhatsappController::class, 'sendText']);
     Route::post('send/media', [WhatsappController::class, 'sendMedia']);
+    Route::post('send/interactive', [WhatsappController::class, 'sendInteractive']);
     Route::post('send/template', [WhatsappController::class, 'sendTemplate']);
     Route::post('test/template', [WhatsappController::class, 'testTemplate']);
     Route::post('test/conecta-template', [WhatsappController::class, 'testConectaTemplate']);
     Route::post('test/simple', [WhatsappController::class, 'sendSimpleTest']);
+    Route::post('test/interactive', [WhatsappController::class, 'sendInteractiveTest']);
     Route::post('resend/{id}', [WhatsappController::class, 'resend']);
     Route::get('statistics', [WhatsappController::class, 'statistics']);
     Route::match(['get', 'post'], 'webhook', [WhatsappController::class, 'webhook'])->withoutMiddleware('auth:sanctum');

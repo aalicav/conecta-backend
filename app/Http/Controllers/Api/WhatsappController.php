@@ -113,6 +113,53 @@ class WhatsappController extends Controller
     }
 
     /**
+     * Send a new WhatsApp interactive message with buttons
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function sendInteractive(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'recipient' => 'required|string',
+            'body' => 'required|string',
+            'buttons' => 'required|array|min:1|max:3',
+            'buttons.*.id' => 'required|string|max:200',
+            'buttons.*.title' => 'required|string|max:20',
+            'related_model_type' => 'nullable|string',
+            'related_model_id' => 'nullable|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $message = $this->whatsappService->sendInteractiveMessage(
+                $request->recipient,
+                $request->body,
+                $request->buttons,
+                $request->related_model_type,
+                $request->related_model_id
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Mensagem interativa enviada com sucesso',
+                'data' => $message
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar mensagem interativa: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao enviar mensagem interativa',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Send a new WhatsApp media message
      *
      * @param Request $request
@@ -277,6 +324,70 @@ class WhatsappController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Falha ao enviar template Conecta',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Send a test interactive message
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function sendInteractiveTest(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'recipient' => 'required|string',
+            'message_type' => 'required|string|in:appointment_notification,appointment_reminder,nps_survey'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $recipient = $request->recipient;
+            $messageType = $request->message_type;
+            
+            // Create mock data for testing
+            $mockPatient = (object) [
+                'name' => 'João Silva',
+                'phone' => $recipient
+            ];
+            
+            $mockAppointment = (object) [
+                'id' => 123,
+                'scheduled_date' => now()->addDays(2),
+                'provider' => (object) ['name' => 'Dr. Maria Santos']
+            ];
+
+            $result = null;
+            
+            switch ($messageType) {
+                case 'appointment_notification':
+                    $result = $this->whatsappService->sendAppointmentNotificationToPatient($mockPatient, $mockAppointment);
+                    break;
+                case 'appointment_reminder':
+                    $result = $this->whatsappService->sendAppointmentReminderToPatient($mockPatient, $mockAppointment);
+                    break;
+                case 'nps_survey':
+                    $result = $this->whatsappService->sendNpsSurveyToPatient($mockPatient, $mockAppointment);
+                    break;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Mensagem interativa de teste enviada com sucesso',
+                'message_type' => $messageType,
+                'data' => $result
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Erro ao enviar mensagem interativa de teste: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Falha ao enviar mensagem interativa de teste',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -508,7 +619,7 @@ class WhatsappController extends Controller
                 $verifyToken = config('whapi.webhook_verify_token');
                 
                 if ($mode === 'subscribe' && $token === $verifyToken) {
-                    return response($challenge, 200);
+                    return response()->json($challenge, 200);
                 }
                 
                 return response()->json(['error' => 'Verification failed'], 403);
