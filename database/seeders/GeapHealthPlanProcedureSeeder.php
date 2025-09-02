@@ -36,193 +36,193 @@ class GeapHealthPlanProcedureSeeder extends Seeder
 
         // Dados do GEAP baseados no CSV
         $geapProcedures = [
-            // CEARÁ - JUAZEIRO DO NORTE
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'PNEUMO', 470, 12],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'PNEUMO Ped', 490, 222],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'ENDOCRINO PED', 472, 160],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'ENDOCRINO', 430, 114],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'NEURO PED', 640, 195],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'GASTRO PED', 470, 18],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'REUMATO', 350, 6],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'GERIATRIA', 420, 23],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'Alergologista', 540, 0],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'Nutrólogo Pediátrico', 540, 0],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'Proctologista', 480, 0],
-            ['CEARÁ', 'JUAZEIRO DO NORTE', 'Infectologista', 450, 0],
+            // CE - JUAZEIRO DO NORTE
+            ['CE', 'JUAZEIRO DO NORTE', 'PNEUMO', 470, 12],
+            ['CE', 'JUAZEIRO DO NORTE', 'PNEUMO Ped', 490, 222],
+            ['CE', 'JUAZEIRO DO NORTE', 'ENDOCRINO PED', 472, 160],
+            ['CE', 'JUAZEIRO DO NORTE', 'ENDOCRINO', 430, 114],
+            ['CE', 'JUAZEIRO DO NORTE', 'NEURO PED', 640, 195],
+            ['CE', 'JUAZEIRO DO NORTE', 'GASTRO PED', 470, 18],
+            ['CE', 'JUAZEIRO DO NORTE', 'REUMATO', 350, 6],
+            ['CE', 'JUAZEIRO DO NORTE', 'GERIATRIA', 420, 23],
+            ['CE', 'JUAZEIRO DO NORTE', 'Alergologista', 540, 0],
+            ['CE', 'JUAZEIRO DO NORTE', 'Nutrólogo Pediátrico', 540, 0],
+            ['CE', 'JUAZEIRO DO NORTE', 'Proctologista', 480, 0],
+            ['CE', 'JUAZEIRO DO NORTE', 'Infectologista', 450, 0],
 
-            // CEARÁ - IGUATU
-            ['CEARÁ', 'IGUATU', 'OTORRINO', 400, 52],
-            ['CEARÁ', 'IGUATU', 'PSIQUIATRA PED', 585, 80],
-            ['CEARÁ', 'IGUATU', 'ALERGOLOGISTA', 540, 28],
-            ['CEARÁ', 'IGUATU', 'NUTROLOGO', 490, 15],
-            ['CEARÁ', 'IGUATU', 'OFTALMO PED', 550, 18],
-            ['CEARÁ', 'IGUATU', 'NEURO PED', 650, 130],
-            ['CEARÁ', 'IGUATU', 'Endocrinologista', 730, 0],
-            ['CEARÁ', 'IGUATU', 'DERMATO', 420, 21],
+            // CE - IGUATU
+            ['CE', 'IGUATU', 'OTORRINO', 400, 52],
+            ['CE', 'IGUATU', 'PSIQUIATRA PED', 585, 80],
+            ['CE', 'IGUATU', 'ALERGOLOGISTA', 540, 28],
+            ['CE', 'IGUATU', 'NUTROLOGO', 490, 15],
+            ['CE', 'IGUATU', 'OFTALMO PED', 550, 18],
+            ['CE', 'IGUATU', 'NEURO PED', 650, 130],
+            ['CE', 'IGUATU', 'Endocrinologista', 730, 0],
+            ['CE', 'IGUATU', 'DERMATO', 420, 21],
 
-            // CEARÁ - ICÓ
-            ['CEARÁ', 'ICÓ', 'PEDIATRA', 400, 24],
-            ['CEARÁ', 'ICÓ', 'DERMATO', 410, 12],
+            // CE - ICÓ
+            ['CE', 'ICÓ', 'PEDIATRA', 400, 24],
+            ['CE', 'ICÓ', 'DERMATO', 410, 12],
 
-            // CEARÁ - MAURITI
-            ['CEARÁ', 'MAURITI', 'DERMATOLOGIA', 400, 1],
-            ['CEARÁ', 'MAURITI', 'ENDOCRINOLOGIA', 400, 1],
-            ['CEARÁ', 'MAURITI', 'GERIATRIA', 400, 1],
-            ['CEARÁ', 'MAURITI', 'PNEUMOLOGISTA', 450, 1],
+            // CE - MAURITI
+            ['CE', 'MAURITI', 'DERMATOLOGIA', 400, 1],
+            ['CE', 'MAURITI', 'ENDOCRINOLOGIA', 400, 1],
+            ['CE', 'MAURITI', 'GERIATRIA', 400, 1],
+            ['CE', 'MAURITI', 'PNEUMOLOGISTA', 450, 1],
 
-            // CEARÁ - SOBRAL
-            ['CEARÁ', 'SOBRAL', 'NEUROLOGISTA', 595, 48],
-            ['CEARÁ', 'SOBRAL', 'ENDOCRINO PED', 540, 62],
-            ['CEARÁ', 'SOBRAL', 'REUMATO', 540, 45],
-            ['CEARÁ', 'SOBRAL', 'ALERGOLOGISTA', 545, 31],
-            ['CEARÁ', 'SOBRAL', 'ENDOCRINO', 540, 340],
-            ['CEARÁ', 'SOBRAL', 'GASTRO', 400, 12],
-            ['CEARÁ', 'SOBRAL', 'GINECOLOGISTA', 436, 26],
-            ['CEARÁ', 'SOBRAL', 'Dermatologista', 430, 0],
-            ['CEARÁ', 'SOBRAL', 'Neurologista Pediátrico', 750, 0],
-            ['CEARÁ', 'SOBRAL', 'Otorrinolaringologista', 540, 0],
-            ['CEARÁ', 'SOBRAL', 'Pneumologista', 650, 0],
-            ['CEARÁ', 'SOBRAL', 'Psiquiatra', 580, 0],
-            ['CEARÁ', 'SOBRAL', 'Infectologista', 650, 0],
-            ['CEARÁ', 'SOBRAL', 'Nutrologo', 670, 0],
-            ['CEARÁ', 'SOBRAL', 'Gatropediatra', 850, 0],
-            ['CEARÁ', 'SOBRAL', 'Proctologista', 500, 0],
-            ['CEARÁ', 'SOBRAL', 'Pneumologista Pediátrico', 650, 0],
+            // CE - SOBRAL
+            ['CE', 'SOBRAL', 'NEUROLOGISTA', 595, 48],
+            ['CE', 'SOBRAL', 'ENDOCRINO PED', 540, 62],
+            ['CE', 'SOBRAL', 'REUMATO', 540, 45],
+            ['CE', 'SOBRAL', 'ALERGOLOGISTA', 545, 31],
+            ['CE', 'SOBRAL', 'ENDOCRINO', 540, 340],
+            ['CE', 'SOBRAL', 'GASTRO', 400, 12],
+            ['CE', 'SOBRAL', 'GINECOLOGISTA', 436, 26],
+            ['CE', 'SOBRAL', 'Dermatologista', 430, 0],
+            ['CE', 'SOBRAL', 'Neurologista Pediátrico', 750, 0],
+            ['CE', 'SOBRAL', 'Otorrinolaringologista', 540, 0],
+            ['CE', 'SOBRAL', 'Pneumologista', 650, 0],
+            ['CE', 'SOBRAL', 'Psiquiatra', 580, 0],
+            ['CE', 'SOBRAL', 'Infectologista', 650, 0],
+            ['CE', 'SOBRAL', 'Nutrologo', 670, 0],
+            ['CE', 'SOBRAL', 'Gatropediatra', 850, 0],
+            ['CE', 'SOBRAL', 'Proctologista', 500, 0],
+            ['CE', 'SOBRAL', 'Pneumologista Pediátrico', 650, 0],
 
-            // CEARÁ - TIANGUÁ
-            ['CEARÁ', 'TIANGUÁ', 'PSIQUIATRA', 460, 95],
-            ['CEARÁ', 'TIANGUÁ', 'ENDOCRINO', 540, 104],
-            ['CEARÁ', 'TIANGUÁ', 'OTORRINO', 520, 58],
-            ['CEARÁ', 'TIANGUÁ', 'NEURO PED', 640, 146],
-            ['CEARÁ', 'TIANGUÁ', 'Proctologista', 480, 0],
+            // CE - TIANGUÁ
+            ['CE', 'TIANGUÁ', 'PSIQUIATRA', 460, 95],
+            ['CE', 'TIANGUÁ', 'ENDOCRINO', 540, 104],
+            ['CE', 'TIANGUÁ', 'OTORRINO', 520, 58],
+            ['CE', 'TIANGUÁ', 'NEURO PED', 640, 146],
+            ['CE', 'TIANGUÁ', 'Proctologista', 480, 0],
 
-            // CEARÁ - OUTRAS CIDADES
-            ['CEARÁ', 'NOVA RUSSAS', 'Otorrinolaringologista', 540, 0],
-            ['CEARÁ', 'RUSSAS', 'Dermatologista', 480, 0],
-            ['CEARÁ', 'CRATEÚ', 'Otorrinolaringologista', 480, 0],
-            ['CEARÁ', 'ACARAU', 'NEUROPED', 650, 0],
+            // CE - OUTRAS CIDADES
+            ['CE', 'NOVA RUSSAS', 'Otorrinolaringologista', 540, 0],
+            ['CE', 'RUSSAS', 'Dermatologista', 480, 0],
+            ['CE', 'CRATEÚ', 'Otorrinolaringologista', 480, 0],
+            ['CE', 'ACARAU', 'NEUROPED', 650, 0],
 
-            // RIO GRANDE DO NORTE - MOSSORÓ
-            ['RIO GRANDE DO NORTE', 'MOSSORÓ', 'NEUROLOGISTA', 540, 2],
-            ['RIO GRANDE DO NORTE', 'MOSSORÓ', 'GINECOLOGISTA', 350, 2],
-            ['RIO GRANDE DO NORTE', 'MOSSORÓ', 'NUTROLOGO', 480, 5],
+            // RN - MOSSORÓ
+            ['RN', 'MOSSORÓ', 'NEUROLOGISTA', 540, 2],
+            ['RN', 'MOSSORÓ', 'GINECOLOGISTA', 350, 2],
+            ['RN', 'MOSSORÓ', 'NUTROLOGO', 480, 5],
 
-            // RORAIMA - BOA VISTA
-            ['RORAIMA', 'BOA VISTA', 'CARDIO PED', 550, 0],
-            ['RORAIMA', 'BOA VISTA', 'CARDIO', 440, 9],
-            ['RORAIMA', 'BOA VISTA', 'OFTALMO', 300, 17],
-            ['RORAIMA', 'BOA VISTA', 'PEDIATRA', 400, 13],
-            ['RORAIMA', 'BOA VISTA', 'PSIQUIATRA', 600, 14],
-            ['RORAIMA', 'BOA VISTA', 'PSIQUIATRA PED', 600, 1],
-            ['RORAIMA', 'BOA VISTA', 'NEURO', 575, 3],
-            ['RORAIMA', 'BOA VISTA', 'NEURO PED', 690, 0],
-            ['RORAIMA', 'BOA VISTA', 'OTORRINO', 410, 4],
-            ['RORAIMA', 'BOA VISTA', 'GASTRO', 440, 19],
-            ['RORAIMA', 'BOA VISTA', 'ENDOCRINO', 470, 6],
-            ['RORAIMA', 'BOA VISTA', 'DERMATO', 520, 26],
-            ['RORAIMA', 'BOA VISTA', 'GINECOLOGISTA', 500, 18],
-            ['RORAIMA', 'BOA VISTA', 'COLOPROCTOLOGISTA', 620, 2],
-            ['RORAIMA', 'BOA VISTA', 'Ortopedista', 430, 0],
-            ['RORAIMA', 'BOA VISTA', 'USG de Mamas', 380, 0],
+            // RR - BOA VISTA
+            ['RR', 'BOA VISTA', 'CARDIO PED', 550, 0],
+            ['RR', 'BOA VISTA', 'CARDIO', 440, 9],
+            ['RR', 'BOA VISTA', 'OFTALMO', 300, 17],
+            ['RR', 'BOA VISTA', 'PEDIATRA', 400, 13],
+            ['RR', 'BOA VISTA', 'PSIQUIATRA', 600, 14],
+            ['RR', 'BOA VISTA', 'PSIQUIATRA PED', 600, 1],
+            ['RR', 'BOA VISTA', 'NEURO', 575, 3],
+            ['RR', 'BOA VISTA', 'NEURO PED', 690, 0],
+            ['RR', 'BOA VISTA', 'OTORRINO', 410, 4],
+            ['RR', 'BOA VISTA', 'GASTRO', 440, 19],
+            ['RR', 'BOA VISTA', 'ENDOCRINO', 470, 6],
+            ['RR', 'BOA VISTA', 'DERMATO', 520, 26],
+            ['RR', 'BOA VISTA', 'GINECOLOGISTA', 500, 18],
+            ['RR', 'BOA VISTA', 'COLOPROCTOLOGISTA', 620, 2],
+            ['RR', 'BOA VISTA', 'Ortopedista', 430, 0],
+            ['RR', 'BOA VISTA', 'USG de Mamas', 380, 0],
 
-            // PERNAMBUCO - RECIFE
-            ['PERNAMBUCO', 'RECIFE', 'Psiquiatra', 650, 0],
-            ['PERNAMBUCO', 'RECIFE', 'Nutrólogo', 650, 0],
+            // PE - RECIFE
+            ['PE', 'RECIFE', 'Psiquiatra', 650, 0],
+            ['PE', 'RECIFE', 'Nutrólogo', 650, 0],
 
-            // PERNAMBUCO - CARUARU
-            ['PERNAMBUCO', 'CARUARU', 'DERMATOLOGIA', 350, 1],
-            ['PERNAMBUCO', 'CARUARU', 'ENDOCRINOLOGIA', 350, 0],
-            ['PERNAMBUCO', 'CARUARU', 'GERIATRIA', 400, 0],
-            ['PERNAMBUCO', 'CARUARU', 'NEUROPEDIATRA', 585, 2],
-            ['PERNAMBUCO', 'CARUARU', 'PNEUMOLOGISTA', 370, 0],
-            ['PERNAMBUCO', 'CARUARU', 'PEDIATRA', 320, 0],
+            // PE - CARUARU
+            ['PE', 'CARUARU', 'DERMATOLOGIA', 350, 1],
+            ['PE', 'CARUARU', 'ENDOCRINOLOGIA', 350, 0],
+            ['PE', 'CARUARU', 'GERIATRIA', 400, 0],
+            ['PE', 'CARUARU', 'NEUROPEDIATRA', 585, 2],
+            ['PE', 'CARUARU', 'PNEUMOLOGISTA', 370, 0],
+            ['PE', 'CARUARU', 'PEDIATRA', 320, 0],
 
-            // PERNAMBUCO - OUTRAS CIDADES
-            ['PERNAMBUCO', 'CARPINA', 'DERMATOLOGIA', 350, 0],
-            ['PERNAMBUCO', 'CARPINA', 'ENDOCRINOLOGIA', 350, 0],
-            ['PERNAMBUCO', 'CARPINA', 'GERIATRIA', 400, 0],
-            ['PERNAMBUCO', 'CARPINA', 'NEUROPEDIATRA', 500, 1],
-            ['PERNAMBUCO', 'CARPINA', 'PNEUMOLOGISTA', 370, 0],
+            // PE - OUTRAS CIDADES
+            ['PE', 'CARPINA', 'DERMATOLOGIA', 350, 0],
+            ['PE', 'CARPINA', 'ENDOCRINOLOGIA', 350, 0],
+            ['PE', 'CARPINA', 'GERIATRIA', 400, 0],
+            ['PE', 'CARPINA', 'NEUROPEDIATRA', 500, 1],
+            ['PE', 'CARPINA', 'PNEUMOLOGISTA', 370, 0],
 
-            ['PERNAMBUCO', 'GARANHUNS', 'DERMATOLOGIA', 350, 0],
-            ['PERNAMBUCO', 'GARANHUNS', 'ENDOCRINOLOGIA', 350, 0],
-            ['PERNAMBUCO', 'GARANHUNS', 'GERIATRIA', 450, 0],
-            ['PERNAMBUCO', 'GARANHUNS', 'NEUROPEDIATRA', 500, 0],
-            ['PERNAMBUCO', 'GARANHUNS', 'PNEUMOLOGISTA', 400, 0],
+            ['PE', 'GARANHUNS', 'DERMATOLOGIA', 350, 0],
+            ['PE', 'GARANHUNS', 'ENDOCRINOLOGIA', 350, 0],
+            ['PE', 'GARANHUNS', 'GERIATRIA', 450, 0],
+            ['PE', 'GARANHUNS', 'NEUROPEDIATRA', 500, 0],
+            ['PE', 'GARANHUNS', 'PNEUMOLOGISTA', 400, 0],
 
-            ['PERNAMBUCO', 'PETROLINA', 'DERMATOLOGIA', 420, 0],
-            ['PERNAMBUCO', 'PETROLINA', 'ENDOCRINOLOGIA', 420, 0],
-            ['PERNAMBUCO', 'PETROLINA', 'GERIATRIA', 400, 0],
-            ['PERNAMBUCO', 'PETROLINA', 'NEUROPEDIATRA', 600, 4],
-            ['PERNAMBUCO', 'PETROLINA', 'PNEUMOLOGISTA', 400, 0],
+            ['PE', 'PETROLINA', 'DERMATOLOGIA', 420, 0],
+            ['PE', 'PETROLINA', 'ENDOCRINOLOGIA', 420, 0],
+            ['PE', 'PETROLINA', 'GERIATRIA', 400, 0],
+            ['PE', 'PETROLINA', 'NEUROPEDIATRA', 600, 4],
+            ['PE', 'PETROLINA', 'PNEUMOLOGISTA', 400, 0],
 
-            ['PERNAMBUCO', 'GRAVATÁ', 'DERMATOLOGIA', 350, 0],
-            ['PERNAMBUCO', 'GRAVATÁ', 'ENDOCRINOLOGIA', 350, 0],
-            ['PERNAMBUCO', 'GRAVATÁ', 'GERIATRIA', 400, 0],
-            ['PERNAMBUCO', 'GRAVATÁ', 'NEUROPEDIATRA', 500, 0],
-            ['PERNAMBUCO', 'GRAVATÁ', 'PNEUMOLOGISTA', 430, 0],
+            ['PE', 'GRAVATÁ', 'DERMATOLOGIA', 350, 0],
+            ['PE', 'GRAVATÁ', 'ENDOCRINOLOGIA', 350, 0],
+            ['PE', 'GRAVATÁ', 'GERIATRIA', 400, 0],
+            ['PE', 'GRAVATÁ', 'NEUROPEDIATRA', 500, 0],
+            ['PE', 'GRAVATÁ', 'PNEUMOLOGISTA', 430, 0],
 
-            ['PERNAMBUCO', 'ESCADA', 'DERMATOLOGIA', 350, 0],
-            ['PERNAMBUCO', 'ESCADA', 'ENDOCRINOLOGIA', 350, 0],
-            ['PERNAMBUCO', 'ESCADA', 'GERIATRIA', 400, 0],
-            ['PERNAMBUCO', 'ESCADA', 'NEUROPEDIATRA', 500, 0],
+            ['PE', 'ESCADA', 'DERMATOLOGIA', 350, 0],
+            ['PE', 'ESCADA', 'ENDOCRINOLOGIA', 350, 0],
+            ['PE', 'ESCADA', 'GERIATRIA', 400, 0],
+            ['PE', 'ESCADA', 'NEUROPEDIATRA', 500, 0],
 
-            ['PERNAMBUCO', 'ARCOVERDE', 'DERMATOLOGIA', 480, 1],
-            ['PERNAMBUCO', 'ARCOVERDE', 'ENDOCRINOLOGIA', 480, 0],
-            ['PERNAMBUCO', 'ARCOVERDE', 'GERIATRIA', 480, 0],
-            ['PERNAMBUCO', 'ARCOVERDE', 'NEUROPEDIATRA', 550, 0],
-            ['PERNAMBUCO', 'ARCOVERDE', 'PNEUMOLOGISTA', 480, 0],
+            ['PE', 'ARCOVERDE', 'DERMATOLOGIA', 480, 1],
+            ['PE', 'ARCOVERDE', 'ENDOCRINOLOGIA', 480, 0],
+            ['PE', 'ARCOVERDE', 'GERIATRIA', 480, 0],
+            ['PE', 'ARCOVERDE', 'NEUROPEDIATRA', 550, 0],
+            ['PE', 'ARCOVERDE', 'PNEUMOLOGISTA', 480, 0],
 
-            ['PERNAMBUCO', 'SERRA TALHADA', 'DERMATOLOGIA', 480, 3],
-            ['PERNAMBUCO', 'SERRA TALHADA', 'ENDOCRINOLOGIA', 480, 0],
-            ['PERNAMBUCO', 'SERRA TALHADA', 'GERIATRIA', 480, 0],
-            ['PERNAMBUCO', 'SERRA TALHADA', 'NEUROPEDIATRA', 550, 0],
-            ['PERNAMBUCO', 'SERRA TALHADA', 'PNEUMOLOGISTA', 480, 0],
+            ['PE', 'SERRA TALHADA', 'DERMATOLOGIA', 480, 3],
+            ['PE', 'SERRA TALHADA', 'ENDOCRINOLOGIA', 480, 0],
+            ['PE', 'SERRA TALHADA', 'GERIATRIA', 480, 0],
+            ['PE', 'SERRA TALHADA', 'NEUROPEDIATRA', 550, 0],
+            ['PE', 'SERRA TALHADA', 'PNEUMOLOGISTA', 480, 0],
 
-            // PIAUÍ - TERESINA
-            ['PIAUÍ', 'TERESINA', 'Psiquiatra', 650, 0],
-            ['PIAUÍ', 'TERESINA', 'Neurologista ADULTO', 550, 0],
-            ['PIAUÍ', 'TERESINA', 'Neurologista Pediátrico', 650, 0],
-            ['PIAUÍ', 'TERESINA', 'Endocrinologista Pediatra', 650, 0],
+            // PI - TERESINA
+            ['PI', 'TERESINA', 'Psiquiatra', 650, 0],
+            ['PI', 'TERESINA', 'Neurologista ADULTO', 550, 0],
+            ['PI', 'TERESINA', 'Neurologista Pediátrico', 650, 0],
+            ['PI', 'TERESINA', 'Endocrinologista Pediatra', 650, 0],
 
-            // PIAUÍ - PARNAÍBA
-            ['PIAUÍ', 'PARNAÍBA', 'Gastroenterologia', 580, 0],
-            ['PIAUÍ', 'PARNAÍBA', 'Psiquiatra', 490, 0],
-            ['PIAUÍ', 'PARNAÍBA', 'Endocrinologista', 540, 0],
+            // PI - PARNAÍBA
+            ['PI', 'PARNAÍBA', 'Gastroenterologia', 580, 0],
+            ['PI', 'PARNAÍBA', 'Psiquiatra', 490, 0],
+            ['PI', 'PARNAÍBA', 'Endocrinologista', 540, 0],
 
-            // PARAÍBA - JOÃO PESSOA
-            ['PARAÍBA', 'JOÃO PESSOA', 'Psiquiatra', 480, 0],
+            // PB - JOÃO PESSOA
+            ['PB', 'JOÃO PESSOA', 'Psiquiatra', 480, 0],
 
-            // PARAÍBA - SOUSA
-            ['PARAÍBA', 'SOUSA', 'Neurologista Pediátrico', 600, 0],
+            // PB - SOUSA
+            ['PB', 'SOUSA', 'Neurologista Pediátrico', 600, 0],
 
-            // MARANHÃO - IMPERATRIZ
-            ['MARANHÃO', 'IMPERATRIZ', 'Endocrinologista', 450, 0],
-            ['MARANHÃO', 'IMPERATRIZ', 'Psiquiatra', 720, 0],
-            ['MARANHÃO', 'IMPERATRIZ', 'Neurologista Pediátrico', 600, 0],
+            // MA - IMPERATRIZ
+            ['MA', 'IMPERATRIZ', 'Endocrinologista', 450, 0],
+            ['MA', 'IMPERATRIZ', 'Psiquiatra', 720, 0],
+            ['MA', 'IMPERATRIZ', 'Neurologista Pediátrico', 600, 0],
 
-            // MARANHÃO - SANTA INÊS
-            ['MARANHÃO', 'SANTA INÊS', 'Pediatra', 480, 0],
-            ['MARANHÃO', 'SANTA INÊS', 'Neuropeditra', 680, 0],
+            // MA - SANTA INÊS
+            ['MA', 'SANTA INÊS', 'Pediatra', 480, 0],
+            ['MA', 'SANTA INÊS', 'Neuropeditra', 680, 0],
 
-            // MATO GROSSO - SINOP
-            ['MATO GROSSO', 'SINOP', 'Gastroenterologia Ped', 650, 0],
+            // MT - SINOP
+            ['MT', 'SINOP', 'Gastroenterologia Ped', 650, 0],
 
-            // MATO GROSSO - ARIPUANÃ
-            ['MATO GROSSO', 'ARIPUANÃ', 'Pediatria', 550, 0],
+            // MT - ARIPUANÃ
+            ['MT', 'ARIPUANÃ', 'Pediatria', 550, 0],
 
-            // PARÁ - MARABÁ
-            ['PARÁ', 'MARABÁ', 'Neurologista Pediátrico', 950, 0],
-            ['PARÁ', 'MARABÁ', 'Oftalmologista', 390, 0],
-            ['PARÁ', 'MARABÁ', 'Neurologista Adulto', 630, 0],
-            ['PARÁ', 'MARABÁ', 'Pediatra', 650, 0],
+            // PA - MARABÁ
+            ['PA', 'MARABÁ', 'Neurologista Pediátrico', 950, 0],
+            ['PA', 'MARABÁ', 'Oftalmologista', 390, 0],
+            ['PA', 'MARABÁ', 'Neurologista Adulto', 630, 0],
+            ['PA', 'MARABÁ', 'Pediatra', 650, 0],
 
-            // PARÁ - TUCUMÃ (Serviços de terapia)
-            ['PARÁ', 'TUCUMÃ', 'PSICOLOGIA', 0, 3],
-            ['PARÁ', 'TUCUMÃ', 'PSICOPEDAGOGIA', 0, 2],
-            ['PARÁ', 'TUCUMÃ', 'PSICOMOTRICIDADE', 0, 1],
-            ['PARÁ', 'TUCUMÃ', 'FONOTERAPIA', 0, 3],
-            ['PARÁ', 'TUCUMÃ', 'TERAPIA OCUPACIOAL', 0, 3],
+            // PA - TUCUMÃ (Serviços de terapia)
+            ['PA', 'TUCUMÃ', 'PSICOLOGIA', 0, 3],
+            ['PA', 'TUCUMÃ', 'PSICOPEDAGOGIA', 0, 2],
+            ['PA', 'TUCUMÃ', 'PSICOMOTRICIDADE', 0, 1],
+            ['PA', 'TUCUMÃ', 'FONOTERAPIA', 0, 3],
+            ['PA', 'TUCUMÃ', 'TERAPIA OCUPACIOAL', 0, 3],
         ];
 
         $created = 0;
