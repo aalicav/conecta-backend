@@ -136,7 +136,7 @@ class AuthController extends Controller
             ]);
             
             // Build frontend URL
-            $resetUrl = config('app.frontend_url', 'http://localhost:3000') . '/reset-password?' . http_build_query([
+            $resetUrl = config('app.frontend_url', 'https://medlarsaude.com.br/conecta') . '/login/reset-password?' . http_build_query([
                 'token' => $token,
                 'email' => $user->email
             ]);

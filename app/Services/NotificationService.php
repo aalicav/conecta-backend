@@ -128,7 +128,7 @@ class NotificationService
             if (!$users->isEmpty()) {
                 // Send system notification
                 Notification::send($users, new AppointmentScheduled($appointment));
-                Log::info("Sent appointment scheduled notification for appointment #{$appointment->id} to " . $users->count() . " users");
+                Log::info(message: "Sent appointment scheduled notification for appointment #{$appointment->id} to " . $users->count() . " users");
             }
             
             // Send WhatsApp notification
