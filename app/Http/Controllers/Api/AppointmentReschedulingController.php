@@ -125,6 +125,7 @@ class AppointmentReschedulingController extends Controller
                 'reason_description' => 'required|string|min:10',
                 'new_provider_id' => 'nullable|integer',
                 'new_provider_type' => 'nullable|string|in:App\\Models\\Clinic,App\\Models\\Professional',
+                'new_provider_type_id' => 'nullable|integer',
                 'notes' => 'nullable|string|max:500'
             ]);
 
@@ -160,7 +161,11 @@ class AppointmentReschedulingController extends Controller
             $newProvider = null;
 
             // Get new provider if specified
-            if ($request->new_provider_id && $request->new_provider_type) {
+            if ($request->new_provider_type_id && $request->new_provider_type) {
+                $providerClass = $request->new_provider_type;
+                $newProvider = $providerClass::findOrFail($request->new_provider_type_id);
+            } elseif ($request->new_provider_id && $request->new_provider_type) {
+                // Fallback for old field names
                 $providerClass = $request->new_provider_type;
                 $newProvider = $providerClass::findOrFail($request->new_provider_id);
             }
@@ -571,5 +576,113 @@ class AppointmentReschedulingController extends Controller
                "📝 *Motivo:* {$reason}\n" .
                "📋 *Descrição:* {$rescheduling->reason_description}\n\n" .
                "Aguarde a confirmação da clínica. Você receberá uma notificação quando o reagendamento for aprovado.";
+    }
+
+    /**
+     * Get professionals and clinics by specialty for rescheduling
+     */
+    public function getProvidersBySpecialty(Request $request): JsonResponse
+    {
+        try {
+            $specialty = $request->get('specialty');
+            $city = $request->get('city');
+            $state = $request->get('state');
+
+            if (!$specialty) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Especialidade é obrigatória'
+                ], 400);
+            }
+
+            $professionals = collect();
+            $clinics = collect();
+
+            // Get professionals with the specialty
+            $professionalQuery = \App\Models\Professional::where('specialty', 'like', '%' . $specialty . '%')
+                ->where('status', 'active')
+                ->with(['clinic', 'user']);
+
+            if ($city) {
+                $professionalQuery->where('city', 'like', '%' . $city . '%');
+            }
+
+            if ($state) {
+                $professionalQuery->where('state', 'like', '%' . $state . '%');
+            }
+
+            $professionals = $professionalQuery->get()->map(function ($professional) {
+                return [
+                    'id' => $professional->id,
+                    'name' => $professional->name,
+                    'specialty' => $professional->specialty,
+                    'council_number' => $professional->council_number,
+                    'council_state' => $professional->council_state,
+                    'clinic_id' => $professional->clinic_id,
+                    'clinic_name' => $professional->clinic?->name,
+                    'city' => $professional->city,
+                    'state' => $professional->state,
+                    'provider_type' => 'professional',
+                    'provider_type_id' => $professional->id
+                ];
+            });
+
+            // Get clinics that have professionals with the specialty
+            $clinicQuery = \App\Models\Clinic::whereHas('professionals', function ($query) use ($specialty) {
+                $query->where('specialty', 'like', '%' . $specialty . '%')
+                      ->where('status', 'active');
+            });
+
+            if ($city) {
+                $clinicQuery->where('city', 'like', '%' . $city . '%');
+            }
+
+            if ($state) {
+                $clinicQuery->where('state', 'like', '%' . $state . '%');
+            }
+
+            $clinics = $clinicQuery->with(['professionals' => function ($query) use ($specialty) {
+                $query->where('specialty', 'like', '%' . $specialty . '%')
+                      ->where('status', 'active');
+            }])->get()->map(function ($clinic) {
+                $specialtyProfessionals = $clinic->professionals->map(function ($professional) {
+                    return [
+                        'id' => $professional->id,
+                        'name' => $professional->name,
+                        'specialty' => $professional->specialty,
+                        'council_number' => $professional->council_number
+                    ];
+                });
+
+                return [
+                    'id' => $clinic->id,
+                    'name' => $clinic->name,
+                    'cnpj' => $clinic->cnpj,
+                    'city' => $clinic->city,
+                    'state' => $clinic->state,
+                    'address' => $clinic->address,
+                    'provider_type' => 'clinic',
+                    'provider_type_id' => $clinic->id,
+                    'professionals' => $specialtyProfessionals
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'professionals' => $professionals,
+                    'clinics' => $clinics,
+                    'total_professionals' => $professionals->count(),
+                    'total_clinics' => $clinics->count()
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting providers by specialty: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao buscar prestadores por especialidade'
+            ], 500);
+        }
     }
 }

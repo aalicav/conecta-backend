@@ -782,6 +782,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/', [AppointmentReschedulingController::class, 'index']);
         Route::post('/', [AppointmentReschedulingController::class, 'store'])->middleware('permission:create appointment_reschedulings');
         Route::get('/statistics', [AppointmentReschedulingController::class, 'statistics']);
+        Route::get('/providers-by-specialty', [AppointmentReschedulingController::class, 'getProvidersBySpecialty']);
         Route::get('/{rescheduling}', [AppointmentReschedulingController::class, 'show']);
         Route::post('/{rescheduling}/approve', [AppointmentReschedulingController::class, 'approve'])->middleware('role:admin,super_admin,network_manager');
         Route::post('/{rescheduling}/reject', [AppointmentReschedulingController::class, 'reject'])->middleware('role:admin,super_admin,network_manager');
