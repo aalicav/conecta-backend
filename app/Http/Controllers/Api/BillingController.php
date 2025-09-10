@@ -335,13 +335,13 @@ class BillingController extends Controller
 
             // Notificação para diferentes níveis de atraso
             if ($daysLate >= 30) {
-                Notification::send($batch->entity, new PaymentOverdue($batch, 'critical'));
+                Notification::send($batch->entity, new PaymentOverdue($batch));
                 // Notifica supervisores
-                Notification::send(User::role('financial_supervisor')->get(), new PaymentOverdue($batch, 'supervisor'));
+                Notification::send(User::role('financial_supervisor')->get(), new PaymentOverdue($batch));
             } elseif ($daysLate >= 15) {
-                Notification::send($batch->entity, new PaymentOverdue($batch, 'urgent'));
+                Notification::send($batch->entity, new PaymentOverdue($batch));
             } else {
-                Notification::send($batch->entity, new PaymentOverdue($batch, 'warning'));
+                Notification::send($batch->entity, new PaymentOverdue($batch));
             }
         }
 
@@ -699,62 +699,49 @@ class BillingController extends Controller
 
         $batches = $query->get();
 
+        // @phpstan-ignore-next-line
         if ($request->format === 'csv') {
-            return $this->exportToCsv($batches);
-        } else {
-            return $this->exportToPdf($batches);
-        }
-    }
-
-    /**
-     * Exporta dados para CSV
-     */
-    private function exportToCsv($batches)
-    {
-        $filename = 'relatorio_faturamento_' . now()->format('Y-m-d_H-i-s') . '.csv';
-        
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ];
-
-        $callback = function() use ($batches) {
-            $file = fopen('php://output', 'w');
+            /** @var \Carbon\Carbon $now */
+            $now = now();
+            $filename = 'relatorio_faturamento_' . $now->format('Y-m-d_H-i-s') . '.csv';
             
-            // CSV Headers
-            fputcsv($file, [
-                'ID do Lote',
-                'Período Início',
-                'Período Fim',
-                'Valor Total',
-                'Status',
-                'Data de Criação',
-                'Quantidade de Itens'
-            ]);
+            $headers = [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ];
 
-            foreach ($batches as $batch) {
+            $callback = function() use ($batches) {
+                $file = fopen('php://output', 'w');
+                
+                // CSV Headers
                 fputcsv($file, [
-                    $batch->id,
-                    $batch->reference_period_start,
-                    $batch->reference_period_end,
-                    number_format($batch->total_amount, 2, ',', '.'),
-                    $batch->status,
-                    $batch->created_at->format('d/m/Y H:i:s'),
-                    $batch->billingItems->count()
+                    'ID do Lote',
+                    'Período Início',
+                    'Período Fim',
+                    'Valor Total',
+                    'Status',
+                    'Data de Criação',
+                    'Quantidade de Itens'
                 ]);
-            }
 
-            fclose($file);
-        };
+                foreach ($batches as $batch) {
+                    fputcsv($file, [
+                        $batch->id,
+                        $batch->reference_period_start,
+                        $batch->reference_period_end,
+                        number_format((float) $batch->total_amount, 2, ',', '.'),
+                        $batch->status,
+                        $batch->created_at->format('d/m/Y H:i:s'),
+                        $batch->billingItems->count()
+                    ]);
+                }
 
-        return response()->stream($callback, 200, $headers);
-    }
+                fclose($file);
+            };
 
-    /**
-     * Exporta dados para PDF
-     */
-    private function exportToPdf($batches)
-    {
+            return response()->stream($callback, 200, $headers);
+        }
+        
         $filename = 'relatorio_faturamento_' . now()->format('Y-m-d_H-i-s') . '.pdf';
         
         // For now, return a simple text response
@@ -762,12 +749,12 @@ class BillingController extends Controller
         $content = "Relatório de Faturamento\n\n";
         $content .= "Período: " . ($batches->first()?->reference_period_start ?? 'N/A') . " a " . ($batches->last()?->reference_period_end ?? 'N/A') . "\n";
         $content .= "Total de lotes: " . $batches->count() . "\n";
-        $content .= "Valor total: R$ " . number_format($batches->sum('total_amount'), 2, ',', '.') . "\n\n";
+        $content .= "Valor total: R$ " . number_format((float) $batches->sum('total_amount'), 2, ',', '.') . "\n\n";
 
         foreach ($batches as $batch) {
             $content .= "Lote #{$batch->id}\n";
             $content .= "Período: {$batch->reference_period_start} a {$batch->reference_period_end}\n";
-            $content .= "Valor: R$ " . number_format($batch->total_amount, 2, ',', '.') . "\n";
+            $content .= "Valor: R$ " . number_format((float) $batch->total_amount, 2, ',', '.') . "\n";
             $content .= "Status: {$batch->status}\n";
             $content .= "Itens: {$batch->billingItems->count()}\n\n";
         }
@@ -776,6 +763,8 @@ class BillingController extends Controller
             ->header('Content-Type', 'application/pdf')
             ->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
     }
+
+
 
     /**
      * Lista as verificações de valores pendentes

@@ -7,7 +7,7 @@ use App\Models\BillingBatch;
 use App\Models\Appointment;
 use App\Models\Notification;
 use App\Services\WhapiWhatsAppService;
-use App\Services\EmailService;
+// use App\Services\EmailService;
 use App\Services\NFeService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -21,11 +21,11 @@ class BillingRuleService
 
     public function __construct(
         WhapiWhatsAppService $whatsappService,
-        EmailService $emailService,
+        // EmailService $emailService,
         NFeService $nfeService
     ) {
         $this->whatsappService = $whatsappService;
-        $this->emailService = $emailService;
+        // $this->emailService = $emailService;
         $this->nfeService = $nfeService;
     }
 
@@ -182,7 +182,7 @@ class BillingRuleService
         $healthPlan = $batch->healthPlan;
         $contract = $batch->contract;
 
-        $message = "Foi gerada uma nova cobrança para o contrato {$contract->number} do plano {$healthPlan->name} no valor de R$ " . number_format($batch->total_amount, 2, ',', '.');
+        $message = "Foi gerada uma nova cobrança para o contrato {$contract->number} do plano {$healthPlan->name} no valor de R$ " . number_format((float) $batch->total_amount, 2, ',', '.');
 
         if ($batch->nfe_number) {
             $message .= "\nNFe: {$batch->nfe_number}";
@@ -238,7 +238,7 @@ class BillingRuleService
         $message = "Nova cobrança gerada:\n\n" .
             "Plano: {$healthPlan->name}\n" .
             "Contrato: {$contract->number}\n" .
-            "Valor: R$ " . number_format($batch->total_amount, 2, ',', '.') . "\n" .
+            "Valor: R$ " . number_format((float) $batch->total_amount, 2, ',', '.') . "\n" .
             "Vencimento: " . $batch->due_date->format('d/m/Y');
 
         if ($batch->nfe_number) {

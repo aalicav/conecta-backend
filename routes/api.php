@@ -39,6 +39,8 @@ use App\Http\Controllers\Api\SolicitationInviteController;
 use App\Http\Controllers\Billing\NFeController;
 use App\Http\Controllers\Api\ExtemporaneousNegotiationController;
 use App\Http\Controllers\Api\ValueVerificationController;
+use App\Http\Controllers\Api\DeliberationController;
+use App\Http\Controllers\Api\DeliberationReportController;
 
 
 /*
@@ -568,6 +570,26 @@ Route::middleware(['auth:sanctum'])->prefix('value-verifications')->group(functi
     Route::post('/{id}/verify', [App\Http\Controllers\Api\ValueVerificationController::class, 'verify'])->middleware('role:director,super_admin');
     Route::post('/{id}/reject', [App\Http\Controllers\Api\ValueVerificationController::class, 'reject'])->middleware('role:director,super_admin');
     Route::get('/pending/count', [App\Http\Controllers\Api\ValueVerificationController::class, 'getPendingCount']);
+});
+
+// Deliberations API Routes
+Route::middleware(['auth:sanctum'])->prefix('deliberations')->group(function () {
+    Route::get('/', [DeliberationController::class, 'index']);
+    Route::post('/', [DeliberationController::class, 'store'])->middleware('permission:create deliberations');
+    Route::get('/statistics', [DeliberationController::class, 'statistics']);
+    Route::get('/{id}', [DeliberationController::class, 'show']);
+    Route::post('/{id}/approve', [DeliberationController::class, 'approve'])->middleware('role:network_manager,admin,super_admin');
+    Route::post('/{id}/reject', [DeliberationController::class, 'reject'])->middleware('role:network_manager,admin,super_admin');
+    Route::post('/{id}/approve-operator', [DeliberationController::class, 'approveByOperator'])->middleware('role:operator,admin,super_admin');
+    Route::post('/{id}/reject-operator', [DeliberationController::class, 'rejectByOperator'])->middleware('role:operator,admin,super_admin');
+    Route::post('/{id}/cancel', [DeliberationController::class, 'cancel'])->middleware('role:network_manager,commercial,admin,super_admin');
+});
+
+// Deliberation Reports API Routes
+Route::middleware(['auth:sanctum'])->prefix('deliberation-reports')->group(function () {
+    Route::get('/summary', [DeliberationReportController::class, 'summary']);
+    Route::get('/detailed', [DeliberationReportController::class, 'detailed']);
+    Route::get('/financial', [DeliberationReportController::class, 'financial']);
 });
 
 // Entity Document Types

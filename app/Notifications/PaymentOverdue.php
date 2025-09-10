@@ -45,7 +45,7 @@ class PaymentOverdue extends Notification implements ShouldQueue
             ->greeting('Olá!')
             ->line('O pagamento do lote de faturamento está em atraso.')
             ->line("Período de referência: {$period}")
-            ->line("Valor pendente: R$ " . number_format($this->batch->total_amount, 2, ',', '.'))
+            ->line("Valor pendente: R$ " . number_format((float) $this->batch->total_amount, 2, ',', '.'))
             ->line("Data de vencimento: " . $this->batch->due_date->format('d/m/Y'))
             ->line("Dias em atraso: {$this->batch->days_late}")
             ->action('Regularizar Pagamento', url("/billing/batches/{$this->batch->id}/pay"))

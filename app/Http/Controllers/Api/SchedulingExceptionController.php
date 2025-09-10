@@ -165,13 +165,7 @@ class SchedulingExceptionController extends Controller
             
             if ($solicitation->preferred_location_lat && $solicitation->preferred_location_lng) {
                 // Usar o AppointmentScheduler injetado para encontrar o melhor provedor
-                $recommender = $this->scheduler->findBestProvider(
-                    $solicitation, 
-                    $solicitation->tuss, 
-                    $solicitation->preferred_location_lat, 
-                    $solicitation->preferred_location_lng, 
-                    $solicitation->max_distance_km ?? 50
-                );
+                $recommender = $this->scheduler->findBestProvider($solicitation);
                 
                 if ($recommender) {
                     $recommendedPrice = $recommender['price'] ?? null;
@@ -486,7 +480,7 @@ class SchedulingExceptionController extends Controller
             DB::beginTransaction();
             
             // Rejeitar a exceção
-            $exception->reject(Auth::id(), $request->rejection_reason);
+            $exception->reject($request->rejection_reason);
             
             // Notificar sobre a rejeição
             $this->notificationService->notifySchedulingExceptionRejected($exception);

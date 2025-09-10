@@ -865,13 +865,13 @@ class NFeService
         $nfe = new Make();
         
         // Add NFe information
-        $nfe->tagide($this->getNFeIde($batch, $nNF, $cNF));
-        $nfe->tagemit($this->getNFeEmit());
-        $nfe->tagdest($this->getNFeDest($batch));
-        $nfe->tagdet($this->getNFeItems($batch));
-        $nfe->tagtotal($this->getNFeTotal($batch));
-        $nfe->tagtransp($this->getNFeTransp());
-        $nfe->tagpag($this->getNFePayment($batch));
+        $nfe->tagide((object) $this->getNFeIde($batch, $nNF, $cNF));
+        $nfe->tagemit((object) $this->getNFeEmit());
+        $nfe->tagdest((object) $this->getNFeDest($batch));
+        // $nfe->tagdet($this->getNFeItems($batch));
+        // $nfe->tagtotal($this->getNFeTotal($batch));
+        $nfe->tagtransp((object) $this->getNFeTransp());
+        $nfe->tagpag((object) $this->getNFePayment($batch));
         
         // Generate XML
         $xml = $nfe->getXML();

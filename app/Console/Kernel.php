@@ -10,6 +10,7 @@ use App\Console\Commands\SendTestMail;
 use App\Console\Commands\UpdateNegotiationPermissions;
 use App\Console\Commands\CleanupOldNegotiations;
 use App\Console\Commands\ProcessHealthPlanBilling;
+use App\Console\Commands\ProcessDeliberationBilling;
 
 class Kernel extends ConsoleKernel
 {
@@ -25,6 +26,7 @@ class Kernel extends ConsoleKernel
         UpdateNegotiationPermissions::class,
         CleanupOldNegotiations::class,
         ProcessHealthPlanBilling::class,
+        ProcessDeliberationBilling::class,
     ];
 
     /**
@@ -58,6 +60,12 @@ class Kernel extends ConsoleKernel
             ->dailyAt('01:00')
             ->withoutOverlapping()
             ->appendOutputTo(storage_path('logs/billing.log'));
+
+        // Process deliberation billing daily at 9 AM
+        $schedule->command('deliberations:process-billing')
+            ->dailyAt('09:00')
+            ->withoutOverlapping()
+            ->appendOutputTo(storage_path('logs/deliberation-billing.log'));
 
         // Process appointment attendance daily
         $schedule->command('appointments:process-attendance')

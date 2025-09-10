@@ -1218,7 +1218,7 @@ class AppointmentController extends Controller
      * Download appointment guide.
      *
      * @param int $id
-     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse|\Symfony\Component\HttpFoundation\BinaryFileResponse
      */
     public function downloadGuide($id)
     {
