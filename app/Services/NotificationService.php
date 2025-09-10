@@ -4133,4 +4133,31 @@ class NotificationService
             'new_status' => $newStatus
         ]);
     }
+
+    /**
+     * Notify about rescheduling request
+     *
+     * @param \App\Models\AppointmentRescheduling $rescheduling
+     * @return void
+     */
+    public function notifyReschedulingRequested($rescheduling): void
+    {
+        try {
+            // Get admin users who should be notified
+            $adminUsers = User::role(['admin', 'super_admin', 'network_manager'])->get();
+            
+            // Create notification for each admin
+            foreach ($adminUsers as $admin) {
+                $admin->notify(new \App\Notifications\AppointmentReschedulingRequested($rescheduling));
+            }
+            
+            Log::info('Rescheduling request notifications sent', [
+                'rescheduling_id' => $rescheduling->id,
+                'admin_count' => $adminUsers->count()
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error sending rescheduling request notifications: ' . $e->getMessage());
+        }
+    }
 }

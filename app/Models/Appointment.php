@@ -509,4 +509,136 @@ class Appointment extends Model
             'eligible_for_billing' => true
         ]);
     }
+
+    /**
+     * Rescheduling relationships and methods
+     */
+    public function reschedulings()
+    {
+        return $this->hasMany(AppointmentRescheduling::class, 'original_appointment_id');
+    }
+
+    public function rescheduledFrom()
+    {
+        return $this->hasOne(AppointmentRescheduling::class, 'new_appointment_id');
+    }
+
+    /**
+     * Check if appointment can be rescheduled
+     */
+    public function canBeRescheduled(): bool
+    {
+        return in_array($this->status, [
+            self::STATUS_SCHEDULED,
+            self::STATUS_CONFIRMED,
+            self::STATUS_PENDING_CONFIRMATION
+        ]) && !$this->isCompleted() && !$this->isCancelled();
+    }
+
+    /**
+     * Reschedule appointment to new date/time
+     */
+    public function reschedule(
+        Carbon $newScheduledDate,
+        User $requestedBy,
+        string $reason,
+        string $reasonDescription,
+        ?Model $newProvider = null,
+        ?string $notes = null
+    ): AppointmentRescheduling {
+        // Create new appointment
+        $newAppointment = $this->replicate();
+        $newAppointment->scheduled_date = $newScheduledDate;
+        $newAppointment->status = self::STATUS_SCHEDULED;
+        $newAppointment->patient_confirmed = false;
+        $newAppointment->professional_confirmed = false;
+        $newAppointment->guide_status = 'pending';
+        $newAppointment->eligible_for_billing = false;
+        $newAppointment->billing_batch_id = null;
+        $newAppointment->created_by = $requestedBy->id;
+        
+        if ($newProvider) {
+            $newAppointment->provider_type = get_class($newProvider);
+            $newAppointment->provider_id = $newProvider->id;
+        }
+        
+        $newAppointment->save();
+
+        // Create rescheduling record
+        $rescheduling = AppointmentRescheduling::create([
+            'original_appointment_id' => $this->id,
+            'new_appointment_id' => $newAppointment->id,
+            'reason' => $reason,
+            'reason_description' => $reasonDescription,
+            'original_scheduled_date' => $this->scheduled_date,
+            'new_scheduled_date' => $newScheduledDate,
+            'original_provider_type_id' => $this->provider_id,
+            'original_provider_type' => $this->provider_type,
+            'new_provider_type_id' => $newAppointment->provider_id,
+            'new_provider_type' => $newAppointment->provider_type,
+            'provider_changed' => $newProvider ? true : false,
+            'financial_impact' => $this->eligible_for_billing,
+            'original_amount' => $this->getBillingAmount(),
+            'new_amount' => $newAppointment->getBillingAmount(),
+            'notes' => $notes,
+            'requested_by' => $requestedBy->id,
+            'status' => AppointmentRescheduling::STATUS_PENDING
+        ]);
+
+        // Cancel original appointment
+        $this->cancel($requestedBy, "Reagendado para {$newScheduledDate->format('d/m/Y H:i')} - {$reasonDescription}");
+
+        return $rescheduling;
+    }
+
+    /**
+     * Get billing amount for appointment
+     */
+    public function getBillingAmount(): float
+    {
+        if (!$this->eligible_for_billing) {
+            return 0;
+        }
+
+        // This would integrate with your existing billing logic
+        // For now, return a placeholder
+        return 0;
+    }
+
+    /**
+     * Check if appointment was rescheduled
+     */
+    public function wasRescheduled(): bool
+    {
+        return $this->rescheduledFrom()->exists();
+    }
+
+    /**
+     * Get original appointment if this was rescheduled
+     */
+    public function getOriginalAppointment(): ?Appointment
+    {
+        $rescheduling = $this->rescheduledFrom;
+        return $rescheduling ? $rescheduling->originalAppointment : null;
+    }
+
+    /**
+     * Get rescheduling history
+     */
+    public function getReschedulingHistory(): \Illuminate\Database\Eloquent\Collection
+    {
+        $history = collect();
+        
+        // Get all reschedulings from this appointment
+        $reschedulings = $this->reschedulings()->with('newAppointment')->get();
+        $history = $history->merge($reschedulings);
+        
+        // Get rescheduling that created this appointment
+        $rescheduledFrom = $this->rescheduledFrom;
+        if ($rescheduledFrom) {
+            $history->prepend($rescheduledFrom);
+        }
+        
+        return $history->sortBy('created_at');
+    }
 } 

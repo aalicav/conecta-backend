@@ -41,6 +41,7 @@ use App\Http\Controllers\Api\ExtemporaneousNegotiationController;
 use App\Http\Controllers\Api\ValueVerificationController;
 use App\Http\Controllers\Api\DeliberationController;
 use App\Http\Controllers\Api\DeliberationReportController;
+use App\Http\Controllers\Api\AppointmentReschedulingController;
 
 
 /*
@@ -774,5 +775,16 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Notifications
         Route::post('/notifications', [BillingController::class, 'sendNotification']);
         Route::post('/billing-emitted-notification', [BillingController::class, 'sendBillingEmittedNotification']);
+    });
+
+    // Appointment Rescheduling API Routes
+    Route::middleware(['auth:sanctum'])->prefix('appointment-reschedulings')->group(function () {
+        Route::get('/', [AppointmentReschedulingController::class, 'index']);
+        Route::post('/', [AppointmentReschedulingController::class, 'store'])->middleware('permission:create appointment_reschedulings');
+        Route::get('/statistics', [AppointmentReschedulingController::class, 'statistics']);
+        Route::get('/{rescheduling}', [AppointmentReschedulingController::class, 'show']);
+        Route::post('/{rescheduling}/approve', [AppointmentReschedulingController::class, 'approve'])->middleware('role:admin,super_admin,network_manager');
+        Route::post('/{rescheduling}/reject', [AppointmentReschedulingController::class, 'reject'])->middleware('role:admin,super_admin,network_manager');
+        Route::post('/{rescheduling}/complete', [AppointmentReschedulingController::class, 'complete'])->middleware('role:admin,super_admin,network_manager');
     });
 }); 
