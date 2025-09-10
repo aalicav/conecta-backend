@@ -17,7 +17,6 @@ class WhatsAppNumberController extends Controller
     public function __construct()
     {
         $this->middleware('auth:sanctum');
-        $this->middleware('permission:manage whatsapp numbers')->only(['store', 'update', 'destroy']);
     }
 
     /**
