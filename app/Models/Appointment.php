@@ -515,7 +515,8 @@ class Appointment extends Model
      */
     public function reschedulings()
     {
-        return $this->hasMany(AppointmentRescheduling::class, 'original_appointment_id');
+        return $this->hasMany(AppointmentRescheduling::class, 'original_appointment_id')
+            ->with(['requestedBy', 'approvedBy', 'rejectedBy', 'originalBillingItem', 'newBillingItem']);
     }
 
     public function rescheduledFrom()
@@ -630,7 +631,14 @@ class Appointment extends Model
         $history = collect();
         
         // Get all reschedulings from this appointment
-        $reschedulings = $this->reschedulings()->with('newAppointment')->get();
+        $reschedulings = $this->reschedulings()->with([
+            'newAppointment',
+            'requestedBy',
+            'approvedBy', 
+            'rejectedBy',
+            'originalBillingItem',
+            'newBillingItem'
+        ])->get();
         $history = $history->merge($reschedulings);
         
         // Get rescheduling that created this appointment

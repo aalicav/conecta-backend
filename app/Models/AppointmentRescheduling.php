@@ -41,6 +41,13 @@ class AppointmentRescheduling extends Model
         'financial_impact',
         'original_amount',
         'new_amount',
+        'difference_amount',
+        'billing_reversed',
+        'new_billing_created',
+        'original_billing_item_id',
+        'new_billing_item_id',
+        'billing_reversed_at',
+        'new_billing_created_at',
         'notes',
         'requested_by',
         'approved_by',
@@ -59,11 +66,16 @@ class AppointmentRescheduling extends Model
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
         'whatsapp_sent_at' => 'datetime',
+        'billing_reversed_at' => 'datetime',
+        'new_billing_created_at' => 'datetime',
         'provider_changed' => 'boolean',
         'financial_impact' => 'boolean',
+        'billing_reversed' => 'boolean',
+        'new_billing_created' => 'boolean',
         'whatsapp_sent' => 'boolean',
         'original_amount' => 'decimal:2',
-        'new_amount' => 'decimal:2'
+        'new_amount' => 'decimal:2',
+        'difference_amount' => 'decimal:2'
     ];
 
     protected static function boot()
@@ -113,6 +125,16 @@ class AppointmentRescheduling extends Model
     public function rejectedBy()
     {
         return $this->belongsTo(User::class, 'rejected_by');
+    }
+
+    public function originalBillingItem()
+    {
+        return $this->belongsTo(BillingItem::class, 'original_billing_item_id');
+    }
+
+    public function newBillingItem()
+    {
+        return $this->belongsTo(BillingItem::class, 'new_billing_item_id');
     }
 
     /**
@@ -195,6 +217,50 @@ class AppointmentRescheduling extends Model
             self::REASON_OTHER => 'Outro motivo',
             default => 'Desconhecido'
         };
+    }
+
+    /**
+     * Financial impact methods
+     */
+    public function calculateFinancialImpact(): array
+    {
+        $originalAmount = $this->original_amount ?? 0;
+        $newAmount = $this->new_amount ?? 0;
+        $difference = $newAmount - $originalAmount;
+
+        return [
+            'original_amount' => (float) $originalAmount,
+            'new_amount' => (float) $newAmount,
+            'difference' => (float) $difference,
+            'billing_reversed' => $this->billing_reversed,
+            'new_billing_created' => $this->new_billing_created
+        ];
+    }
+
+    public function updateFinancialImpact(): void
+    {
+        $impact = $this->calculateFinancialImpact();
+        
+        $this->update([
+            'difference_amount' => $impact['difference'],
+            'financial_impact' => $impact['difference'] != 0
+        ]);
+    }
+
+    public function markBillingReversed(): void
+    {
+        $this->update([
+            'billing_reversed' => true,
+            'billing_reversed_at' => now()
+        ]);
+    }
+
+    public function markNewBillingCreated(): void
+    {
+        $this->update([
+            'new_billing_created' => true,
+            'new_billing_created_at' => now()
+        ]);
     }
 
     /**

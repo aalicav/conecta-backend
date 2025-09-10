@@ -199,8 +199,43 @@ class AppointmentController extends Controller
                 'completedBy',
                 'cancelledBy',
                 'attendanceConfirmedBy',
-                'billingBatch.billingItems'
+                'billingBatch.billingItems',
+                'reschedulings',
+                'rescheduledFrom'
             ]);
+
+            // Add rescheduling history with financial impact
+            $appointment->rescheduling_history = $appointment->getReschedulingHistory()->map(function ($rescheduling) {
+                return [
+                    'id' => $rescheduling->id,
+                    'rescheduling_number' => $rescheduling->rescheduling_number,
+                    'original_scheduled_date' => $rescheduling->original_scheduled_date,
+                    'new_scheduled_date' => $rescheduling->new_scheduled_date,
+                    'reason' => $rescheduling->reason,
+                    'reason_description' => $rescheduling->reason_description,
+                    'status' => $rescheduling->status,
+                    'requested_at' => $rescheduling->created_at,
+                    'approved_at' => $rescheduling->approved_at,
+                    'rejected_at' => $rescheduling->rejected_at,
+                    'financial_impact' => $rescheduling->calculateFinancialImpact(),
+                    'requested_by' => $rescheduling->requestedBy ? [
+                        'id' => $rescheduling->requestedBy->id,
+                        'name' => $rescheduling->requestedBy->name
+                    ] : null,
+                    'approved_by' => $rescheduling->approvedBy ? [
+                        'id' => $rescheduling->approvedBy->id,
+                        'name' => $rescheduling->approvedBy->name
+                    ] : null,
+                    'rejected_by' => $rescheduling->rejectedBy ? [
+                        'id' => $rescheduling->rejectedBy->id,
+                        'name' => $rescheduling->rejectedBy->name
+                    ] : null,
+                ];
+            });
+
+            // Add rescheduling flags
+            $appointment->was_rescheduled = $appointment->rescheduledFrom !== null;
+            $appointment->rescheduled_from = $appointment->rescheduledFrom ? $appointment->rescheduledFrom->original_appointment_id : null;
 
             return new AppointmentResource($appointment);
         } catch (\Exception $e) {

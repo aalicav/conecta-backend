@@ -49,7 +49,9 @@ class AppointmentReschedulingController extends Controller
                 'newAppointment.solicitation.healthPlan',
                 'requestedBy',
                 'approvedBy',
-                'rejectedBy'
+                'rejectedBy',
+                'originalBillingItem',
+                'newBillingItem'
             ]);
 
             // Apply filters
@@ -220,7 +222,9 @@ class AppointmentReschedulingController extends Controller
                 'newAppointment.solicitation.healthPlan',
                 'requestedBy',
                 'approvedBy',
-                'rejectedBy'
+                'rejectedBy',
+                'originalBillingItem',
+                'newBillingItem'
             ]);
 
             return response()->json([
