@@ -8,15 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Models\Deliberation;
-use App\Models\HealthPlan;
-use App\Models\Clinic;
-use App\Models\Professional;
-use App\Models\MedicalSpecialty;
-use App\Models\TussProcedure;
-use App\Models\Appointment;
-use App\Models\Solicitation;
 use App\Services\NotificationService;
-use Carbon\Carbon;
 
 class DeliberationController extends Controller
 {

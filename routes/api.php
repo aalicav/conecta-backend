@@ -576,7 +576,7 @@ Route::middleware(['auth:sanctum'])->prefix('value-verifications')->group(functi
 // Deliberations API Routes
 Route::middleware(['auth:sanctum'])->prefix('deliberations')->group(function () {
     Route::get('/', [DeliberationController::class, 'index']);
-    Route::post('/', [DeliberationController::class, 'store'])->middleware('permission:create deliberations');
+    Route::post('/', [DeliberationController::class, 'store']);
     Route::get('/statistics', [DeliberationController::class, 'statistics']);
     Route::get('/{id}', [DeliberationController::class, 'show']);
     Route::post('/{id}/approve', [DeliberationController::class, 'approve'])->middleware('role:network_manager,admin,super_admin');
