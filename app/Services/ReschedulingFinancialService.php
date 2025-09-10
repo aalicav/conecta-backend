@@ -30,12 +30,14 @@ class ReschedulingFinancialService
 
             // Remove original appointment from billing if it was eligible
             if ($originalAppointment->eligible_for_billing && $originalAppointment->billing_batch_id) {
-                $this->removeFromBilling($originalAppointment);
+                $this->removeFromBilling($originalAppointment, $rescheduling);
+                $rescheduling->markBillingReversed();
             }
 
             // Add new appointment to billing if it should be eligible
             if ($this->shouldBeEligibleForBilling($newAppointment)) {
-                $this->addToBilling($newAppointment);
+                $this->addToBilling($newAppointment, $rescheduling);
+                $rescheduling->markNewBillingCreated();
             }
 
             // Update financial amounts
@@ -54,13 +56,18 @@ class ReschedulingFinancialService
     /**
      * Remove appointment from billing
      */
-    protected function removeFromBilling(Appointment $appointment): void
+    protected function removeFromBilling(Appointment $appointment, AppointmentRescheduling $rescheduling = null): void
     {
         $billingItem = BillingItem::where('item_type', 'appointment')
             ->where('item_id', $appointment->id)
             ->first();
 
         if ($billingItem) {
+            // Save original billing item ID for tracking
+            if ($rescheduling) {
+                $rescheduling->update(['original_billing_item_id' => $billingItem->id]);
+            }
+
             // Update batch totals
             $batch = $billingItem->billingBatch;
             if ($batch) {
@@ -83,7 +90,7 @@ class ReschedulingFinancialService
     /**
      * Add appointment to billing
      */
-    protected function addToBilling(Appointment $appointment): void
+    protected function addToBilling(Appointment $appointment, AppointmentRescheduling $rescheduling = null): void
     {
         // Check if appointment is already in billing
         $existingItem = BillingItem::where('item_type', 'appointment')
@@ -101,7 +108,7 @@ class ReschedulingFinancialService
         $amount = $this->calculateBillingAmount($appointment);
 
         // Create billing item
-        BillingItem::create([
+        $billingItem = BillingItem::create([
             'billing_batch_id' => $batch->id,
             'item_type' => 'appointment',
             'item_id' => $appointment->id,
@@ -137,8 +144,13 @@ class ReschedulingFinancialService
             'patient_document' => $appointment->solicitation->patient->cpf,
         ]);
 
+        // Save new billing item ID for tracking
+        if ($rescheduling) {
+            $rescheduling->update(['new_billing_item_id' => $billingItem->id]);
+        }
+
         // Update batch totals
-        $batch->total_amount = $batch->total_amount + $amount;
+        $batch->total_amount = (float) $batch->total_amount + (float) $amount;
         $batch->items_count = $batch->items_count + 1;
         $batch->save();
 
@@ -219,11 +231,13 @@ class ReschedulingFinancialService
     {
         $originalAmount = $this->calculateBillingAmount($rescheduling->originalAppointment);
         $newAmount = $this->calculateBillingAmount($rescheduling->newAppointment);
+        $difference = $newAmount - $originalAmount;
 
         $rescheduling->update([
             'original_amount' => $originalAmount,
             'new_amount' => $newAmount,
-            'financial_impact' => $originalAmount !== $newAmount
+            'difference_amount' => $difference,
+            'financial_impact' => $difference !== 0
         ]);
     }
 
