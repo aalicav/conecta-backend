@@ -433,7 +433,7 @@ class HealthPlan extends Model implements Auditable
      */
     public function whatsappNumbers()
     {
-        return $this->belongsToMany(WhatsAppNumber::class, 'health_plan_whatsapp_numbers');
+        return $this->belongsToMany(WhatsAppNumber::class, 'health_plan_wa_numbers', 'health_plan_id', 'wa_number_id');
     }
 
     /**

@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('whatsapp_numbers', function (Blueprint $table) {
+        Schema::create('wa_numbers', function (Blueprint $table) {
             $table->id();
             $table->string('name'); // Nome identificador do número
             $table->string('phone_number')->unique(); // Número do WhatsApp
@@ -25,13 +25,13 @@ return new class extends Migration
         });
 
         // Tabela de associação entre planos de saúde e números do WhatsApp
-        Schema::create('health_plan_whatsapp_numbers', function (Blueprint $table) {
+        Schema::create('health_plan_wa_numbers', function (Blueprint $table) {
             $table->id();
             $table->foreignId('health_plan_id')->constrained('health_plans')->onDelete('cascade');
-            $table->foreignId('whatsapp_number_id')->constrained('whatsapp_numbers')->onDelete('cascade');
+            $table->foreignId('wa_number_id')->constrained('wa_numbers')->onDelete('cascade');
             $table->timestamps();
             
-            $table->unique(['health_plan_id', 'whatsapp_number_id']);
+            $table->unique(['health_plan_id', 'wa_number_id']);
         });
     }
 
@@ -40,7 +40,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('health_plan_whatsapp_numbers');
-        Schema::dropIfExists('whatsapp_numbers');
+        Schema::dropIfExists('health_plan_wa_numbers');
+        Schema::dropIfExists('wa_numbers');
     }
 };

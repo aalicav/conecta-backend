@@ -10,6 +10,8 @@ class WhatsAppNumber extends Model
 {
     use HasFactory;
 
+    protected $table = 'wa_numbers';
+
     // Types
     const TYPE_DEFAULT = 'default';
     const TYPE_HEALTH_PLAN = 'health_plan';
@@ -37,7 +39,7 @@ class WhatsAppNumber extends Model
      */
     public function healthPlans(): BelongsToMany
     {
-        return $this->belongsToMany(HealthPlan::class, 'health_plan_whatsapp_numbers');
+        return $this->belongsToMany(HealthPlan::class, 'health_plan_wa_numbers', 'wa_number_id', 'health_plan_id');
     }
 
     /**
