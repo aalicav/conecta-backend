@@ -790,7 +790,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     });
 
     // WhatsApp Numbers Management API Routes
-    Route::middleware(['auth:sanctum'])->prefix('whatsapp-numbers')->group(function () {
+    Route::middleware(['auth:sanctum'])->prefix('wa-numbers')->group(function () {
         Route::get('/', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'index']);
         Route::post('/', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'store'])->middleware('role:admin,super_admin');
         Route::get('/statistics', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'statistics']);
