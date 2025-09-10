@@ -427,4 +427,20 @@ class HealthPlan extends Model implements Auditable
     {
         return $this->morphMany(ExtemporaneousNegotiation::class, 'negotiable');
     }
+
+    /**
+     * WhatsApp numbers associated with this health plan
+     */
+    public function whatsappNumbers()
+    {
+        return $this->belongsToMany(WhatsAppNumber::class, 'health_plan_whatsapp_numbers');
+    }
+
+    /**
+     * Get the primary WhatsApp number for this health plan
+     */
+    public function getPrimaryWhatsAppNumber()
+    {
+        return $this->whatsappNumbers()->where('is_active', true)->first();
+    }
 } 

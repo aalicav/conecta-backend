@@ -5,8 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
 use App\Models\AppointmentRescheduling;
-use App\Models\Clinic;
-use App\Models\Professional;
 use App\Services\WhapiWhatsAppService;
 use App\Services\NotificationService;
 use App\Services\ReschedulingFinancialService;

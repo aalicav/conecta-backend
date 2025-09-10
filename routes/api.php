@@ -788,4 +788,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('/{rescheduling}/reject', [AppointmentReschedulingController::class, 'reject'])->middleware('role:admin,super_admin,network_manager');
         Route::post('/{rescheduling}/complete', [AppointmentReschedulingController::class, 'complete'])->middleware('role:admin,super_admin,network_manager');
     });
+
+    // WhatsApp Numbers Management API Routes
+    Route::middleware(['auth:sanctum'])->prefix('whatsapp-numbers')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'store'])->middleware('role:admin,super_admin');
+        Route::get('/statistics', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'statistics']);
+        Route::get('/available-health-plans', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'getAvailableHealthPlans']);
+        Route::get('/{whatsappNumber}', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'show']);
+        Route::put('/{whatsappNumber}', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'update'])->middleware('role:admin,super_admin');
+        Route::delete('/{whatsappNumber}', [App\Http\Controllers\Api\WhatsAppNumberController::class, 'destroy'])->middleware('role:admin,super_admin');
+    });
 }); 

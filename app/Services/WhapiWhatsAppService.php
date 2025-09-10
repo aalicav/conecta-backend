@@ -16,6 +16,7 @@ use App\Models\WhatsappMessage;
 use App\Models\NpsResponse;
 use App\Models\ProfessionalEvaluation;
 use App\Models\MedlarEvaluation;
+use App\Models\WhatsAppNumber;
 use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -26,12 +27,22 @@ class WhapiWhatsAppService
     protected $apiKey;
     protected $baseUrl;
     protected $webhookUrl;
+    protected $whatsappNumber;
 
-    public function __construct()
+    public function __construct(WhatsAppNumber $whatsappNumber = null)
     {
-        $this->apiKey = config('whapi.api_key');
-        $this->baseUrl = config('whapi.base_url');
-        $this->webhookUrl = config('whapi.webhook_url');
+        $this->whatsappNumber = $whatsappNumber;
+        
+        if ($whatsappNumber) {
+            $this->apiKey = $whatsappNumber->token;
+            $this->baseUrl = config('whapi.base_url');
+            $this->webhookUrl = config('whapi.webhook_url');
+        } else {
+            // Fallback to default configuration
+            $this->apiKey = config('whapi.api_key');
+            $this->baseUrl = config('whapi.base_url');
+            $this->webhookUrl = config('whapi.webhook_url');
+        }
         
         $this->httpClient = new Client([
             'base_uri' => $this->baseUrl,
@@ -42,6 +53,47 @@ class WhapiWhatsAppService
             ],
             'timeout' => config('whapi.message_timeout', 30),
         ]);
+    }
+
+    /**
+     * Create service instance for a specific health plan
+     */
+    public static function forHealthPlan(HealthPlan $healthPlan): self
+    {
+        $whatsappNumber = $healthPlan->getPrimaryWhatsAppNumber();
+        
+        if (!$whatsappNumber) {
+            // Fallback to default number
+            $whatsappNumber = WhatsAppNumber::getDefaultNumber();
+        }
+        
+        return new self($whatsappNumber);
+    }
+
+    /**
+     * Create service instance for professionals
+     */
+    public static function forProfessionals(): self
+    {
+        $whatsappNumber = WhatsAppNumber::getNumberForProfessionals();
+        return new self($whatsappNumber);
+    }
+
+    /**
+     * Create service instance for clinics
+     */
+    public static function forClinics(): self
+    {
+        $whatsappNumber = WhatsAppNumber::getNumberForClinics();
+        return new self($whatsappNumber);
+    }
+
+    /**
+     * Get the current WhatsApp number being used
+     */
+    public function getWhatsAppNumber(): ?WhatsAppNumber
+    {
+        return $this->whatsappNumber;
     }
 
     /**
