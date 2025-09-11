@@ -71,6 +71,7 @@ class Appointment extends Model
      */
     const STATUS_SCHEDULED = 'scheduled';
     const STATUS_CONFIRMED = 'confirmed';
+    const STATUS_PENDING_CONFIRMATION = 'pending_confirmation';
     const STATUS_COMPLETED = 'completed';
     const STATUS_CANCELLED = 'cancelled';
     const STATUS_MISSED = 'missed';
@@ -587,7 +588,7 @@ class Appointment extends Model
         ]);
 
         // Cancel original appointment
-        $this->cancel($requestedBy, "Reagendado para {$newScheduledDate->format('d/m/Y H:i')} - {$reasonDescription}");
+        $this->cancel($requestedBy->id);
 
         return $rescheduling;
     }
@@ -628,8 +629,6 @@ class Appointment extends Model
      */
     public function getReschedulingHistory(): \Illuminate\Database\Eloquent\Collection
     {
-        $history = collect();
-        
         // Get all reschedulings from this appointment
         $reschedulings = $this->reschedulings()->with([
             'newAppointment',
@@ -639,14 +638,13 @@ class Appointment extends Model
             'originalBillingItem',
             'newBillingItem'
         ])->get();
-        $history = $history->merge($reschedulings);
         
         // Get rescheduling that created this appointment
         $rescheduledFrom = $this->rescheduledFrom;
         if ($rescheduledFrom) {
-            $history->prepend($rescheduledFrom);
+            $reschedulings->prepend($rescheduledFrom);
         }
         
-        return $history->sortBy('created_at');
+        return $reschedulings->sortBy('created_at');
     }
 } 
