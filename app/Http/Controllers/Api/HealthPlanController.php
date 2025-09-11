@@ -89,8 +89,8 @@ class HealthPlanController extends Controller
             }
             
             // Search by name or CNPJ if search parameter is provided
-            if ($request->has('search') && $request->search) {
-                $searchTerm = $request->search;
+            if ($request->has('search') && !empty(trim($request->search))) {
+                $searchTerm = trim($request->search);
                 $query->where(function ($q) use ($searchTerm) {
                     $q->where('name', 'like', "%{$searchTerm}%")
                       ->orWhere('cnpj', 'like', "%{$searchTerm}%")

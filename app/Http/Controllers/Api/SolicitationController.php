@@ -13,7 +13,6 @@ use App\Services\SchedulingService;
 use App\Services\AppointmentScheduler;
 use App\Services\SchedulingConfigService;
 use App\Services\NotificationService;
-use App\Services\WhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -53,8 +52,8 @@ class SolicitationController extends Controller
         $query = Solicitation::with(['healthPlan', 'patient', 'tuss', 'medicalSpecialty', 'requestedBy', 'appointments']);
         
         // Search functionality
-        if ($request->has('search')) {
-            $searchTerm = $request->search;
+        if ($request->has('search') && !empty(trim($request->search))) {
+            $searchTerm = trim($request->search);
             $query->where(function($q) use ($searchTerm) {
                 // Search in solicitation fields
                 $q->where('id', 'like', "%{$searchTerm}%")

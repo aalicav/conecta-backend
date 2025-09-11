@@ -780,13 +780,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Appointment Rescheduling API Routes
     Route::middleware(['auth:sanctum'])->prefix('appointment-reschedulings')->group(function () {
         Route::get('/', [AppointmentReschedulingController::class, 'index']);
-        Route::post('/', [AppointmentReschedulingController::class, 'store'])->middleware('permission:create appointment_reschedulings');
+        Route::post('/', [AppointmentReschedulingController::class, 'store']);
         Route::get('/statistics', [AppointmentReschedulingController::class, 'statistics']);
         Route::get('/providers-by-specialty', [AppointmentReschedulingController::class, 'getProvidersBySpecialty']);
         Route::get('/{rescheduling}', [AppointmentReschedulingController::class, 'show']);
-        Route::post('/{rescheduling}/approve', [AppointmentReschedulingController::class, 'approve'])->middleware('role:admin,super_admin,network_manager');
-        Route::post('/{rescheduling}/reject', [AppointmentReschedulingController::class, 'reject'])->middleware('role:admin,super_admin,network_manager');
-        Route::post('/{rescheduling}/complete', [AppointmentReschedulingController::class, 'complete'])->middleware('role:admin,super_admin,network_manager');
+        Route::post('/{rescheduling}/approve', [AppointmentReschedulingController::class, 'approve']);
+        Route::post('/{rescheduling}/reject', [AppointmentReschedulingController::class, 'reject']);
+        Route::post('/{rescheduling}/complete', [AppointmentReschedulingController::class, 'complete']);
     });
 
     // WhatsApp Numbers Management API Routes
