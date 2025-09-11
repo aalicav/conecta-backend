@@ -17,9 +17,11 @@ use App\Models\NpsResponse;
 use App\Models\ProfessionalEvaluation;
 use App\Models\MedlarEvaluation;
 use App\Models\WhatsAppNumber;
+use App\Models\AppointmentRescheduling;
 use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
+use Carbon\Carbon;
 
 class WhapiWhatsAppService
 {
@@ -677,49 +679,115 @@ class WhapiWhatsAppService
 
     /**
      * Process interactive button response
+     * 
+     * @param array $webhookData The webhook data containing interactive response
+     * @return void
      */
-    protected function processInteractiveResponse(array $webhookData): void
+    public function processInteractiveResponse(array $webhookData): void
     {
         try {
             $messageId = $webhookData['id'] ?? null;
             $from = $webhookData['from'] ?? null;
             $interactiveData = $webhookData['interactive'] ?? null;
+            $timestamp = $webhookData['timestamp'] ?? null;
             
             if (!$messageId || !$from || !$interactiveData) {
                 Log::warning('Invalid interactive response data', $webhookData);
                 return;
             }
             
-            $buttonId = $interactiveData['button_reply']['id'] ?? null;
-            $buttonTitle = $interactiveData['button_reply']['title'] ?? null;
+            // Try to normalize the phone number
+            try {
+                $normalizedPhone = $this->normalizePhoneNumber($from);
+            } catch (Exception $e) {
+                Log::warning('Failed to normalize phone number for interactive response', [
+                    'original' => $from,
+                    'error' => $e->getMessage()
+                ]);
+                $normalizedPhone = $from;
+            }
             
-            if (!$buttonId) {
-                Log::warning('No button ID found in interactive response', $webhookData);
+            // Extract button information
+            $buttonId = null;
+            $buttonTitle = null;
+            $responseType = null;
+            $responseContent = null;
+            
+            // Handle different types of interactive responses
+            if (isset($interactiveData['button_reply'])) {
+                $responseType = 'button';
+                $buttonId = $interactiveData['button_reply']['id'] ?? null;
+                $buttonTitle = $interactiveData['button_reply']['title'] ?? null;
+                $responseContent = "Button: {$buttonTitle} (ID: {$buttonId})";
+            } 
+            elseif (isset($interactiveData['list_reply'])) {
+                $responseType = 'list';
+                $buttonId = $interactiveData['list_reply']['id'] ?? null;
+                $buttonTitle = $interactiveData['list_reply']['title'] ?? null;
+                $responseContent = "List selection: {$buttonTitle} (ID: {$buttonId})";
+            }
+            elseif (isset($interactiveData['nps_reply'])) {
+                $responseType = 'nps';
+                $buttonId = $interactiveData['nps_reply']['rating'] ?? null;
+                $buttonTitle = "NPS Rating: {$buttonId}";
+                $responseContent = "NPS Rating: {$buttonId}";
+            }
+            else {
+                Log::warning('Unknown interactive response type', ['data' => $interactiveData]);
                 return;
             }
             
-            Log::info('Processing interactive button response', [
+            if (!$buttonId) {
+                Log::warning('No button/selection ID found in interactive response', $webhookData);
+                return;
+            }
+            
+            Log::info('Processing interactive response', [
                 'message_id' => $messageId,
-                'from' => $from,
+                'from' => $normalizedPhone,
+                'response_type' => $responseType,
                 'button_id' => $buttonId,
-                'button_title' => $buttonTitle,
-                'interactive_data' => $interactiveData
+                'button_title' => $buttonTitle
             ]);
             
-            // Here you can add custom logic to handle different button responses
-            // For example, trigger specific actions based on button_id
-            $this->handleButtonAction($from, $buttonId, $buttonTitle, $messageId);
+            // Save the interactive response to database
+            WhatsappMessage::create([
+                'external_id' => $messageId,
+                'sender' => $normalizedPhone,
+                'recipient' => config('whapi.from_number', 'system'),
+                'message' => $responseContent,
+                'direction' => 'inbound',
+                'status' => 'received',
+                'media_type' => null,
+                'media_url' => null,
+                'received_at' => $timestamp ? Carbon::createFromTimestamp($timestamp) : now(),
+                'metadata' => [
+                    'interactive_type' => $responseType,
+                    'button_id' => $buttonId,
+                    'button_title' => $buttonTitle
+                ]
+            ]);
+            
+            // Handle the button action based on its ID
+            $this->handleButtonAction($normalizedPhone, $buttonId, $buttonTitle, $messageId);
             
         } catch (Exception $e) {
             Log::error('Failed to process interactive response', [
                 'webhook_data' => $webhookData,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }
     
     /**
      * Handle specific button actions
+     * 
+     * @param string $from Normalized phone number
+     * @param string $buttonId Button identifier
+     * @param string $buttonTitle Button display text
+     * @param string $messageId Message identifier
+     * @return void
      */
     protected function handleButtonAction(string $from, string $buttonId, string $buttonTitle, string $messageId): void
     {
@@ -731,54 +799,92 @@ class WhapiWhatsAppService
                 'message_id' => $messageId
             ]);
             
-            // Example: Handle different button actions
+            // Handle different button actions
             switch ($buttonId) {
                 case 'confirm_appointment':
                     $this->handleAppointmentConfirmation($from, $messageId);
                     break;
+                    
                 case 'cancel_appointment':
                     $this->handleAppointmentCancellation($from, $messageId);
                     break;
+                    
                 case 'reschedule_appointment':
                     $this->handleAppointmentReschedule($from, $messageId);
                     break;
+                    
                 case 'contact_support':
                     $this->handleContactSupport($from, $messageId);
                     break;
+                    
+                // NPS survey responses
                 case 'nps_0_6':
                     $this->handleNpsResponse($from, $messageId, 'detractor', '0-6');
                     break;
+                    
                 case 'nps_7_8':
                     $this->handleNpsResponse($from, $messageId, 'neutral', '7-8');
                     break;
+                    
                 case 'nps_9_10':
                     $this->handleNpsResponse($from, $messageId, 'promoter', '9-10');
                     break;
+                    
                 // Professional evaluation buttons
                 case 'prof_0_6':
                     $this->handleProfessionalEvaluation($from, $messageId, 'detractor', '0-6');
                     break;
+                    
                 case 'prof_7_8':
                     $this->handleProfessionalEvaluation($from, $messageId, 'neutral', '7-8');
                     break;
+                    
                 case 'prof_9_10':
                     $this->handleProfessionalEvaluation($from, $messageId, 'promoter', '9-10');
                     break;
+                    
                 // Medlar service evaluation buttons
                 case 'medlar_0_6':
                     $this->handleMedlarEvaluation($from, $messageId, 'detractor', '0-6');
                     break;
+                    
                 case 'medlar_7_8':
                     $this->handleMedlarEvaluation($from, $messageId, 'neutral', '7-8');
                     break;
+                    
                 case 'medlar_9_10':
                     $this->handleMedlarEvaluation($from, $messageId, 'promoter', '9-10');
                     break;
+                    
                 default:
-                    Log::info('Unknown button action', [
-                        'button_id' => $buttonId,
-                        'from' => $from
-                    ]);
+                    // Try to handle dynamic button IDs
+                    if (strpos($buttonId, 'confirm_') === 0) {
+                        // Extract appointment ID from button ID (e.g., confirm_123)
+                        $appointmentId = substr($buttonId, 8);
+                        $this->handleSpecificAppointmentConfirmation($from, $appointmentId);
+                    }
+                    elseif (strpos($buttonId, 'cancel_') === 0) {
+                        // Extract appointment ID from button ID (e.g., cancel_123)
+                        $appointmentId = substr($buttonId, 7);
+                        $this->handleSpecificAppointmentCancellation($from, $appointmentId);
+                    }
+                    elseif (strpos($buttonId, 'reschedule_') === 0) {
+                        // Extract appointment ID from button ID (e.g., reschedule_123)
+                        $appointmentId = substr($buttonId, 11);
+                        $this->handleSpecificAppointmentReschedule($from, $appointmentId);
+                    }
+                    else {
+                        Log::info('Unknown button action', [
+                            'button_id' => $buttonId,
+                            'from' => $from
+                        ]);
+                        
+                        // Send generic response for unknown button
+                        $this->sendTextMessage(
+                            $from,
+                            "Recebemos sua resposta. Um de nossos atendentes entrará em contato em breve."
+                        );
+                    }
                     break;
             }
             
@@ -787,7 +893,295 @@ class WhapiWhatsAppService
                 'from' => $from,
                 'button_id' => $buttonId,
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
+            
+            // Send error message to user
+            try {
+                $this->sendTextMessage(
+                    $from,
+                    "Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, entre em contato conosco pelo telefone para assistência."
+                );
+            } catch (Exception $innerException) {
+                Log::error('Failed to send error message', [
+                    'from' => $from,
+                    'error' => $innerException->getMessage()
+                ]);
+            }
+        }
+    }
+    
+    /**
+     * Handle confirmation for a specific appointment
+     * 
+     * @param string $from Normalized phone number
+     * @param string $appointmentId Appointment ID
+     * @return void
+     */
+    protected function handleSpecificAppointmentConfirmation(string $from, string $appointmentId): void
+    {
+        try {
+            // Find the appointment by ID
+            $appointment = Appointment::find($appointmentId);
+            
+            if (!$appointment) {
+                $this->sendTextMessage(
+                    $from,
+                    "❌ Não foi possível encontrar o agendamento especificado. Entre em contato conosco para mais informações."
+                );
+                return;
+            }
+            
+            // Verify that the phone number belongs to the patient
+            if (!$this->verifyPatientPhone($appointment, $from)) {
+                $this->sendTextMessage(
+                    $from,
+                    "❌ Você não está autorizado a confirmar este agendamento."
+                );
+                return;
+            }
+            
+            // Only allow confirmation for scheduled appointments
+            if ($appointment->status !== 'scheduled') {
+                $this->sendTextMessage(
+                    $from,
+                    "Este agendamento não está mais pendente de confirmação. Status atual: {$appointment->status}."
+                );
+                return;
+            }
+            
+            // Update appointment status to confirmed
+            $appointment->update([
+                'status' => 'confirmed',
+                'confirmed_at' => now(),
+                'patient_confirmed' => true,
+                'confirmation_method' => 'whatsapp_button'
+            ]);
+            
+            // Send confirmation message
+            $confirmationMessage = "✅ Agendamento confirmado com sucesso!\n\n" .
+                                 "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                                 "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
+                                 "Profissional: " . $appointment->provider->name . "\n\n" .
+                                 "Aguardamos você! Se precisar de algo, entre em contato conosco.";
+            
+            $this->sendTextMessage($from, $confirmationMessage);
+            
+            // Log the confirmation
+            Log::info('Specific appointment confirmed via WhatsApp button', [
+                'appointment_id' => $appointment->id,
+                'patient_phone' => $from,
+                'confirmed_at' => now()
+            ]);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle specific appointment confirmation', [
+                'appointment_id' => $appointmentId,
+                'from' => $from,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+    
+    /**
+     * Handle cancellation for a specific appointment
+     * 
+     * @param string $from Normalized phone number
+     * @param string $appointmentId Appointment ID
+     * @return void
+     */
+    protected function handleSpecificAppointmentCancellation(string $from, string $appointmentId): void
+    {
+        try {
+            // Find the appointment by ID
+            $appointment = Appointment::find($appointmentId);
+            
+            if (!$appointment) {
+                $this->sendTextMessage(
+                    $from,
+                    "❌ Não foi possível encontrar o agendamento especificado. Entre em contato conosco para mais informações."
+                );
+                return;
+            }
+            
+            // Verify that the phone number belongs to the patient
+            if (!$this->verifyPatientPhone($appointment, $from)) {
+                $this->sendTextMessage(
+                    $from,
+                    "❌ Você não está autorizado a cancelar este agendamento."
+                );
+                return;
+            }
+            
+            // Only allow cancellation for scheduled or confirmed appointments
+            if ($appointment->status !== 'scheduled' && $appointment->status !== 'confirmed') {
+                $this->sendTextMessage(
+                    $from,
+                    "Este agendamento não pode ser cancelado. Status atual: {$appointment->status}."
+                );
+                return;
+            }
+            
+            // Update appointment status to cancelled
+            $appointment->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancellation_method' => 'whatsapp_button',
+                'cancelled_by_patient' => true
+            ]);
+            
+            // Send cancellation confirmation message
+            $cancellationMessage = "❌ Agendamento cancelado com sucesso!\n\n" .
+                                 "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                                 "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
+                                 "Profissional: " . $appointment->provider->name . "\n\n" .
+                                 "Se desejar reagendar, entre em contato conosco. " .
+                                 "Obrigado por nos avisar!";
+            
+            $this->sendTextMessage($from, $cancellationMessage);
+            
+            // Log the cancellation
+            Log::info('Specific appointment cancelled via WhatsApp button', [
+                'appointment_id' => $appointment->id,
+                'patient_phone' => $from,
+                'cancelled_at' => now()
+            ]);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle specific appointment cancellation', [
+                'appointment_id' => $appointmentId,
+                'from' => $from,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+    
+    /**
+     * Handle reschedule for a specific appointment
+     * 
+     * @param string $from Normalized phone number
+     * @param string $appointmentId Appointment ID
+     * @return void
+     */
+    protected function handleSpecificAppointmentReschedule(string $from, string $appointmentId): void
+    {
+        try {
+            // Find the appointment by ID
+            $appointment = Appointment::find($appointmentId);
+            
+            if (!$appointment) {
+                $this->sendTextMessage(
+                    $from,
+                    "❌ Não foi possível encontrar o agendamento especificado. Entre em contato conosco para mais informações."
+                );
+                return;
+            }
+            
+            // Verify that the phone number belongs to the patient
+            if (!$this->verifyPatientPhone($appointment, $from)) {
+                $this->sendTextMessage(
+                    $from,
+                    "❌ Você não está autorizado a reagendar este agendamento."
+                );
+                return;
+            }
+            
+            // Only allow rescheduling for scheduled or confirmed appointments
+            if ($appointment->status !== 'scheduled' && $appointment->status !== 'confirmed') {
+                $this->sendTextMessage(
+                    $from,
+                    "Este agendamento não pode ser reagendado. Status atual: {$appointment->status}."
+                );
+                return;
+            }
+            
+            // Check if appointment was previously cancelled
+            if ($appointment->cancelled_by_patient) {
+                $this->sendTextMessage(
+                    $from,
+                    "Este agendamento foi cancelado anteriormente e não pode ser reagendado. " .
+                    "Por favor, solicite um novo agendamento entrando em contato conosco."
+                );
+                return;
+            }
+            
+            // Send reschedule options message
+            $rescheduleMessage = "🔄 Reagendamento solicitado!\n\n" .
+                               "Agendamento atual:\n" .
+                               "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                               "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
+                               "Profissional: " . $appointment->provider->name . "\n\n" .
+                               "Para reagendar, entre em contato conosco através dos canais:\n" .
+                               "📞 Telefone: " . config('app.contact_phone', '(11) 99999-9999') . "\n" .
+                               "💬 WhatsApp: " . config('app.contact_whatsapp', '(11) 99999-9999') . "\n" .
+                               "🌐 Site: " . config('app.url', 'www.conectasaude.com') . "\n\n" .
+                               "Ou responda esta mensagem com sua preferência de data e horário.";
+            
+            $this->sendTextMessage($from, $rescheduleMessage);
+            
+            // Create a reschedule request record
+            AppointmentRescheduling::create([
+                'appointment_id' => $appointment->id,
+                'original_scheduled_date' => $appointment->scheduled_date,
+                'reason' => 'Solicitado pelo paciente via WhatsApp',
+                'requested_by_patient' => true,
+                'status' => 'pending',
+                'requested_by' => null // System generated
+            ]);
+            
+            // Log the reschedule request
+            Log::info('Specific appointment reschedule requested via WhatsApp button', [
+                'appointment_id' => $appointment->id,
+                'patient_phone' => $from,
+                'requested_at' => now()
+            ]);
+            
+        } catch (Exception $e) {
+            Log::error('Failed to handle specific appointment reschedule', [
+                'appointment_id' => $appointmentId,
+                'from' => $from,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+    
+    /**
+     * Verify that the phone number belongs to the patient of the appointment
+     * 
+     * @param Appointment $appointment
+     * @param string $phone Normalized phone number
+     * @return bool
+     */
+    protected function verifyPatientPhone($appointment, string $phone): bool
+    {
+        try {
+            // Load patient relationship if not loaded
+            if (!$appointment->relationLoaded('solicitation') || 
+                !$appointment->solicitation->relationLoaded('patient')) {
+                $appointment->load('solicitation.patient');
+            }
+            
+            $patient = $appointment->solicitation->patient;
+            
+            // Check if patient has this phone number
+            foreach ($patient->phones as $patientPhone) {
+                // Compare last 8 digits to handle different formats
+                if (substr($phone, -8) === substr($patientPhone->number, -8)) {
+                    return true;
+                }
+            }
+            
+            return false;
+        } catch (Exception $e) {
+            Log::error('Error verifying patient phone', [
+                'appointment_id' => $appointment->id,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+            return false;
         }
     }
     
@@ -1844,57 +2238,99 @@ class WhapiWhatsAppService
      */
     public function normalizePhoneNumber(string $phone): string
     {
-        // Remove all non-numeric characters
-        $phone = preg_replace('/[^0-9]/', '', $phone);
-        
-        // Validate Brazilian phone number format
-        if (strlen($phone) === 11 && substr($phone, 0, 2) === '0') {
-            // Remove leading 0 from 11-digit numbers (0 + DDD + number)
-            $phone = substr($phone, 1);
-        }
-        
-        // Check if it's a valid Brazilian number
-        if (strlen($phone) === 10) {
-            // 10 digits: DDD (2) + number (8)
-            $ddd = substr($phone, 0, 2);
-            $number = substr($phone, 2);
+        try {
+            // Remove all non-numeric characters
+            $phone = preg_replace('/[^0-9]/', '', $phone);
             
-            // Validate DDD (Brazilian area codes are 11-99)
-            if ($ddd >= 11 && $ddd <= 99) {
-                $phone = '55' . $phone;
-            } else {
-                throw new Exception("Invalid Brazilian DDD: {$ddd}");
-            }
-        } elseif (strlen($phone) === 11) {
-            // 11 digits: DDD (2) + number (9)
-            $ddd = substr($phone, 0, 2);
-            $number = substr($phone, 2);
+            Log::info('Phone normalization - initial number', [
+                'original' => $phone,
+                'length' => strlen($phone)
+            ]);
             
-            // Validate DDD (Brazilian area codes are 11-99)
-            if ($ddd >= 11 && $ddd <= 99) {
-                $phone = '55' . $phone;
+            // Validate Brazilian phone number format
+            if (strlen($phone) === 11 && substr($phone, 0, 1) === '0') {
+                // Remove leading 0 from 11-digit numbers (0 + DDD + number)
+                $phone = substr($phone, 1);
+                Log::info('Removed leading 0', ['new_number' => $phone]);
+            }
+            
+            // Check if it's a valid Brazilian number
+            if (strlen($phone) === 10) {
+                // 10 digits: DDD (2) + number (8) - Standard format
+                $ddd = substr($phone, 0, 2);
+                $number = substr($phone, 2);
+                
+                // Validate DDD (Brazilian area codes are 11-99)
+                if ($ddd >= 11 && $ddd <= 99) {
+                    $phone = '55' . $phone;
+                    Log::info('10-digit number normalized', ['normalized' => $phone]);
+                } else {
+                    throw new Exception("Invalid Brazilian DDD: {$ddd}");
+                }
+            } elseif (strlen($phone) === 11) {
+                // 11 digits: DDD (2) + 9 + number (8)
+                $ddd = substr($phone, 0, 2);
+                $firstDigit = substr($phone, 2, 1);
+                $restOfNumber = substr($phone, 3);
+                
+                // Validate DDD (Brazilian area codes are 11-99)
+                if ($ddd >= 11 && $ddd <= 99) {
+                    // Check if the first digit after DDD is 9 (mobile)
+                    if ($firstDigit === '9') {
+                        // Remove the 9 prefix as requested
+                        $phone = '55' . $ddd . $restOfNumber;
+                        Log::info('Removed 9 prefix from mobile number', [
+                            'original' => $ddd . $firstDigit . $restOfNumber,
+                            'normalized' => $phone
+                        ]);
+                    } else {
+                        $phone = '55' . $phone;
+                        Log::info('11-digit number normalized', ['normalized' => $phone]);
+                    }
+                } else {
+                    throw new Exception("Invalid Brazilian DDD: {$ddd}");
+                }
+            } elseif (strlen($phone) === 12 && substr($phone, 0, 2) === '55') {
+                // Already has country code: 55 + DDD (2) + number (8)
+                $ddd = substr($phone, 2, 2);
+                if ($ddd < 11 || $ddd > 99) {
+                    throw new Exception("Invalid Brazilian DDD: {$ddd}");
+                }
+                Log::info('12-digit number with country code - already normalized', ['phone' => $phone]);
+            } elseif (strlen($phone) === 13 && substr($phone, 0, 2) === '55') {
+                // Already has country code: 55 + DDD (2) + 9 + number (8)
+                $ddd = substr($phone, 2, 2);
+                $firstDigit = substr($phone, 4, 1);
+                $restOfNumber = substr($phone, 5);
+                
+                if ($ddd < 11 || $ddd > 99) {
+                    throw new Exception("Invalid Brazilian DDD: {$ddd}");
+                }
+                
+                // Check if the first digit after DDD is 9 (mobile)
+                if ($firstDigit === '9') {
+                    // Remove the 9 prefix as requested
+                    $phone = '55' . $ddd . $restOfNumber;
+                    Log::info('Removed 9 prefix from 13-digit number', [
+                        'original' => '55' . $ddd . $firstDigit . $restOfNumber,
+                        'normalized' => $phone
+                    ]);
+                } else {
+                    Log::info('13-digit number without 9 prefix - keeping as is', ['phone' => $phone]);
+                }
             } else {
-                throw new Exception("Invalid Brazilian DDD: {$ddd}");
+                throw new Exception("Invalid phone number format. Expected 10-13 digits for Brazilian numbers, got " . strlen($phone));
             }
-        } elseif (strlen($phone) === 12 && substr($phone, 0, 2) === '55') {
-            // Already has country code
-            // Validate DDD (Brazilian area codes are 11-99)
-            $ddd = substr($phone, 2, 2);
-            if ($ddd < 11 || $ddd > 99) {
-                throw new Exception("Invalid Brazilian DDD: {$ddd}");
-            }
-        } elseif (strlen($phone) === 13 && substr($phone, 0, 2) === '55') {
-            // Already has country code
-            // Validate DDD (Brazilian area codes are 11-99)
-            $ddd = substr($phone, 2, 2);
-            if ($ddd < 11 || $ddd > 99) {
-                throw new Exception("Invalid Brazilian DDD: {$ddd}");
-            }
-        } else {
-            throw new Exception("Invalid phone number format. Expected 10-11 digits for Brazilian numbers, got " . strlen($phone));
+            
+            Log::info('Final normalized phone', ['phone' => $phone, 'length' => strlen($phone)]);
+            return $phone;
+        } catch (Exception $e) {
+            Log::error('Phone normalization error', [
+                'original_number' => $phone,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
         }
-        
-        return $phone;
     }
 
     public function formatNumber(string $phone): string
@@ -1985,17 +2421,18 @@ class WhapiWhatsAppService
             $message .= "\n" . $this->getAppointmentInstructions() . "\n\n";
             $message .= "Por favor, confirme sua presença:";
 
+            // Create buttons with specific appointment ID for better tracking
             $buttons = [
                 [
-                    'id' => 'confirm_appointment',
+                    'id' => "confirm_{$appointment->id}",
                     'title' => '✅ Confirmar Presença'
                 ],
                 [
-                    'id' => 'cancel_appointment',
+                    'id' => "cancel_{$appointment->id}",
                     'title' => '❌ Cancelar'
                 ],
                 [
-                    'id' => 'reschedule_appointment',
+                    'id' => "reschedule_{$appointment->id}",
                     'title' => '🔄 Reagendar'
                 ]
             ];
@@ -2013,6 +2450,106 @@ class WhapiWhatsAppService
                 'patient_id' => $patient->id ?? 'null',
                 'appointment_id' => $appointment->id ?? 'null',
                 'error' => $e->getMessage()
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Send rescheduled appointment notification to patient with interactive buttons.
+     *
+     * @param Patient $patient
+     * @param Appointment $appointment
+     * @param Appointment|null $originalAppointment
+     * @return array
+     */
+    public function sendRescheduledAppointmentNotification($patient, $appointment, $originalAppointment = null): array
+    {
+        try {
+            if (!$patient || !$patient->phone) {
+                Log::warning("No patient or phone number found for rescheduled appointment notification", [
+                    'patient_id' => $patient->id ?? 'null',
+                    'appointment_id' => $appointment->id ?? 'null'
+                ]);
+                return ['success' => false, 'message' => 'No patient or phone number found'];
+            }
+
+            // Get additional appointment information
+            $solicitation = $appointment->solicitation;
+            $provider = $appointment->provider;
+            $address = $appointment->address;
+            $procedure = $appointment->procedure;
+            $specialty = $solicitation->medicalSpecialty ?? null;
+            $healthPlan = $solicitation->healthPlan ?? null;
+            
+            // Get original appointment details if available
+            $originalDate = $originalAppointment ? $originalAppointment->scheduled_date->format('d/m/Y') : 'data anterior';
+            $originalTime = $originalAppointment ? $originalAppointment->scheduled_date->format('H:i') : 'horário anterior';
+
+            // Build comprehensive message for rescheduled appointment
+            $message = "🔄 *AGENDAMENTO REMARCADO*\n\n";
+            $message .= "Olá {$patient->name}!\n\n";
+            $message .= "Seu agendamento foi remarcado com sucesso:\n\n";
+            $message .= "📅 *De:* {$originalDate} às {$originalTime}\n";
+            $message .= "📅 *Para:* " . $appointment->scheduled_date->format('d/m/Y') . " às " . $appointment->scheduled_date->format('H:i') . "\n\n";
+            
+            // Professional information
+            if ($provider) {
+                $message .= "👨‍⚕️ *Profissional:* {$provider->name}\n";
+                if ($specialty) {
+                    $message .= "🩺 *Especialidade:* {$specialty->name}\n";
+                }
+            }
+            
+            // Procedure information
+            if ($procedure) {
+                $message .= "🔬 *Procedimento:* {$procedure->name}\n";
+            }
+            
+            // Health plan information
+            if ($healthPlan) {
+                $message .= "🏥 *Plano de Saúde:* {$healthPlan->name}\n";
+            }
+            
+            // Address information
+            if ($address) {
+                $message .= $this->formatAddressForMessage($address);
+            }
+            
+            $message .= "\n" . $this->getAppointmentInstructions() . "\n\n";
+            $message .= "Por favor, confirme sua presença no novo horário:";
+
+            // Create buttons with specific appointment ID for better tracking
+            $buttons = [
+                [
+                    'id' => "confirm_{$appointment->id}",
+                    'title' => '✅ Confirmar Presença'
+                ],
+                [
+                    'id' => "cancel_{$appointment->id}",
+                    'title' => '❌ Cancelar'
+                ],
+                [
+                    'id' => "reschedule_{$appointment->id}",
+                    'title' => '🔄 Reagendar'
+                ]
+            ];
+
+            return $this->sendInteractiveMessage(
+                $patient->phone,
+                $message,
+                $buttons,
+                'App\\Models\\Appointment',
+                $appointment->id
+            );
+
+        } catch (\Exception $e) {
+            Log::error("Failed to send rescheduled appointment notification to patient", [
+                'patient_id' => $patient->id ?? 'null',
+                'appointment_id' => $appointment->id ?? 'null',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
 
             return ['success' => false, 'message' => $e->getMessage()];

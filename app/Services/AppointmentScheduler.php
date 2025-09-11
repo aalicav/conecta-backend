@@ -88,12 +88,12 @@ class AppointmentScheduler
             
             // Adjust if preferred date is later than the earliest allowed date
             $startDate = $solicitation->preferred_date_start;
-            if ($startDate && $startDate->lt($earliestDate)) {
+            if ($startDate && $startDate < $earliestDate) {
                 $startDate = $earliestDate;
             }
             
             // Check if date range is valid
-            if (!$startDate || !$solicitation->preferred_date_end || $startDate->gt($solicitation->preferred_date_end)) {
+            if (!$startDate || !$solicitation->preferred_date_end || $startDate > $solicitation->preferred_date_end) {
                 Log::error('Invalid date range for scheduling. Solicitation ID: ' . $solicitation->id);
                 return null;
             }
@@ -103,7 +103,7 @@ class AppointmentScheduler
             $procedure = TussProcedure::findOrFail($solicitation->tuss_id);
             
             // Check if $procedure is a Collection and extract the first item
-            if ($procedure instanceof \Illuminate\Database\Eloquent\Collection) {
+            if ($procedure instanceof Collection) {
                 $procedure = $procedure->first();
             }
 
@@ -130,7 +130,7 @@ class AppointmentScheduler
                 Log::info("No explicit location provided for solicitation #{$solicitation->id}, trying to geocode patient address");
                 
                 // Check if $patient is a Collection and extract the first item
-                if ($patient instanceof \Illuminate\Database\Eloquent\Collection) {
+                if ($patient instanceof Collection) {
                     $patient = $patient->first();
                 }
                 
@@ -910,10 +910,10 @@ class AppointmentScheduler
      * Get clinics that offer the specified procedure
      *
      * @param Solicitation $solicitation
-     * @param Tuss|TussProcedure $procedure
-     * @return array Formatted clinic providers with location and price
+     * @param TussProcedure $procedure
+     * @return Collection Formatted clinic providers with location and price
      */
-    protected function getClinicsForProcedure(Solicitation $solicitation, $procedure): array
+    protected function getClinicsForProcedure(Solicitation $solicitation, $procedure): Collection
     {
         $query = Clinic::active()
             ->whereHas('pricingContracts', function($query) use ($procedure) {
@@ -937,10 +937,10 @@ class AppointmentScheduler
      * Get professionals that offer the specified procedure
      *
      * @param Solicitation $solicitation
-     * @param Tuss|TussProcedure $procedure
-     * @return array Formatted professional providers with location and price
+     * @param TussProcedure $procedure
+     * @return Collection Formatted professional providers with location and price
      */
-    protected function getProfessionalsForProcedure(Solicitation $solicitation, $procedure): array
+    protected function getProfessionalsForProcedure(Solicitation $solicitation, $procedure): Collection
     {
         $query = Professional::active()
             ->whereHas('pricingContracts', function($query) use ($procedure) {

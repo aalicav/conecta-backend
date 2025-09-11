@@ -8,6 +8,7 @@ use App\Services\WhapiWhatsAppService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class WhatsappController extends Controller
 {
@@ -608,7 +609,7 @@ class WhatsappController extends Controller
     }
 
     /**
-     * Handle WhatsApp webhook (simplified - only for status updates)
+     * Handle WhatsApp webhook (enhanced for both status updates and incoming messages)
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -625,19 +626,62 @@ class WhatsappController extends Controller
                 $verifyToken = config('whapi.webhook_verify_token');
                 
                 if ($mode === 'subscribe' && $token === $verifyToken) {
+                    Log::info('WhatsApp webhook verification successful');
                     return response()->json($challenge, 200);
                 }
                 
+                Log::warning('WhatsApp webhook verification failed', [
+                    'received_token' => $token,
+                    'expected_token' => $verifyToken,
+                    'mode' => $mode
+                ]);
                 return response()->json(['error' => 'Verification failed'], 403);
             }
             
-            // Process the webhook data for status updates only
+            // Process the webhook data
             $webhookData = $request->all();
             
-            Log::info('Processing WhatsApp webhook for status updates', $webhookData);
+            Log::info('Processing WhatsApp webhook', [
+                'data_type' => isset($webhookData['status']) ? 'status_update' : 
+                              (isset($webhookData['messages']) ? 'incoming_message' : 'other'),
+                'webhook_id' => $webhookData['id'] ?? 'unknown'
+            ]);
             
-            // Handle status updates from Whapi
-            $this->whatsappService->handleWebhook($webhookData);
+            // Determine what type of webhook this is
+            if (isset($webhookData['status'])) {
+                // Status update for a message we sent
+                Log::info('Processing status update', [
+                    'message_id' => $webhookData['id'] ?? 'unknown',
+                    'status' => $webhookData['status'] ?? 'unknown'
+                ]);
+                $this->whatsappService->handleWebhook($webhookData);
+            } 
+            elseif (isset($webhookData['messages']) && is_array($webhookData['messages'])) {
+                // Incoming message(s)
+                Log::info('Processing incoming messages', [
+                    'count' => count($webhookData['messages']),
+                    'first_message_id' => $webhookData['messages'][0]['id'] ?? 'unknown'
+                ]);
+                
+                foreach ($webhookData['messages'] as $message) {
+                    $this->processIncomingMessage($message);
+                }
+            }
+            elseif (isset($webhookData['type']) && $webhookData['type'] === 'interactive') {
+                // Interactive response (button click)
+                Log::info('Processing interactive response', [
+                    'message_id' => $webhookData['id'] ?? 'unknown',
+                    'from' => $webhookData['from'] ?? 'unknown',
+                    'button_id' => $webhookData['interactive']['button_reply']['id'] ?? 'unknown'
+                ]);
+                $this->whatsappService->processInteractiveResponse($webhookData);
+            }
+            else {
+                // Unknown webhook type
+                Log::warning('Received unknown webhook type', [
+                    'data' => $webhookData
+                ]);
+            }
             
             return response()->json(['success' => true]);
         } catch (\Exception $e) {
@@ -648,6 +692,435 @@ class WhatsappController extends Controller
             ]);
             
             return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    
+    /**
+     * Process an incoming WhatsApp message
+     * 
+     * @param array $message The message data from webhook
+     * @return void
+     */
+    protected function processIncomingMessage(array $message): void
+    {
+        try {
+            // Extract key information
+            $messageId = $message['id'] ?? null;
+            $from = $message['from'] ?? null;
+            $timestamp = $message['timestamp'] ?? null;
+            $type = $message['type'] ?? 'text';
+            
+            if (!$messageId || !$from) {
+                Log::warning('Incomplete message data received', ['message' => $message]);
+                return;
+            }
+            
+            Log::info('Processing incoming message', [
+                'message_id' => $messageId,
+                'from' => $from,
+                'type' => $type,
+                'timestamp' => $timestamp
+            ]);
+            
+            // Normalize phone number
+            try {
+                $normalizedPhone = $this->whatsappService->normalizePhoneNumber($from);
+            } catch (\Exception $e) {
+                Log::warning('Failed to normalize phone number', [
+                    'original' => $from,
+                    'error' => $e->getMessage()
+                ]);
+                $normalizedPhone = $from;
+            }
+            
+            // Save message to database
+            $content = '';
+            $mediaUrl = null;
+            $mediaType = null;
+            
+            switch ($type) {
+                case 'text':
+                    $content = $message['text']['body'] ?? '';
+                    break;
+                    
+                case 'image':
+                    $mediaType = 'image';
+                    $mediaUrl = $message['image']['url'] ?? null;
+                    $content = $message['image']['caption'] ?? '[Image]';
+                    break;
+                    
+                case 'document':
+                    $mediaType = 'document';
+                    $mediaUrl = $message['document']['url'] ?? null;
+                    $content = $message['document']['filename'] ?? '[Document]';
+                    break;
+                    
+                case 'audio':
+                    $mediaType = 'audio';
+                    $mediaUrl = $message['audio']['url'] ?? null;
+                    $content = '[Audio]';
+                    break;
+                    
+                case 'video':
+                    $mediaType = 'video';
+                    $mediaUrl = $message['video']['url'] ?? null;
+                    $content = $message['video']['caption'] ?? '[Video]';
+                    break;
+                    
+                case 'interactive':
+                    $content = '[Interactive Message]';
+                    if (isset($message['interactive']['button_reply'])) {
+                        $content .= ' - Button: ' . ($message['interactive']['button_reply']['title'] ?? 'Unknown');
+                    }
+                    break;
+                    
+                default:
+                    $content = "[{$type} message]";
+            }
+            
+            // Save to database
+            WhatsappMessage::create([
+                'external_id' => $messageId,
+                'sender' => $normalizedPhone,
+                'recipient' => config('whapi.from_number', 'system'),
+                'message' => $content,
+                'direction' => 'inbound',
+                'status' => 'received',
+                'media_type' => $mediaType,
+                'media_url' => $mediaUrl,
+                'received_at' => $timestamp ? Carbon::createFromTimestamp($timestamp) : now(),
+            ]);
+            
+            // Handle appointment-related keywords
+            $this->handleKeywords($normalizedPhone, $content);
+            
+        } catch (\Exception $e) {
+            Log::error('Error processing incoming message', [
+                'error' => $e->getMessage(),
+                'message' => $message
+            ]);
+        }
+    }
+    
+    /**
+     * Handle keywords in incoming messages
+     * 
+     * @param string $phone Normalized phone number
+     * @param string $content Message content
+     * @return void
+     */
+    protected function handleKeywords(string $phone, string $content): void
+    {
+        // Convert to lowercase for case-insensitive matching
+        $lowerContent = strtolower($content);
+        
+        // Check for appointment-related keywords
+        if (strpos($lowerContent, 'confirmar') !== false || 
+            strpos($lowerContent, 'confirm') !== false) {
+            
+            $this->handleAppointmentConfirmation($phone);
+        }
+        elseif (strpos($lowerContent, 'cancelar') !== false || 
+                strpos($lowerContent, 'cancel') !== false) {
+                
+            $this->handleAppointmentCancellation($phone);
+        }
+        elseif (strpos($lowerContent, 'reagendar') !== false || 
+                strpos($lowerContent, 'remarcar') !== false || 
+                strpos($lowerContent, 'reschedule') !== false) {
+                
+            $this->handleAppointmentReschedule($phone);
+        }
+        elseif (strpos($lowerContent, 'ajuda') !== false || 
+                strpos($lowerContent, 'help') !== false || 
+                strpos($lowerContent, 'suporte') !== false) {
+                
+            $this->sendHelpMessage($phone);
+        }
+    }
+    
+    /**
+     * Handle appointment confirmation via text message
+     * 
+     * @param string $phone
+     * @return void
+     */
+    protected function handleAppointmentConfirmation(string $phone): void
+    {
+        try {
+            // Find the appointment by phone number
+            $appointment = $this->findAppointmentByPhone($phone);
+            
+            if ($appointment) {
+                // Only allow confirmation for scheduled appointments
+                if ($appointment->status !== 'scheduled') {
+                    $this->whatsappService->sendTextMessage(
+                        $phone, 
+                        "Seu agendamento não está mais pendente de confirmação. Status atual: {$appointment->status}."
+                    );
+                    return;
+                }
+                
+                // Update appointment status to confirmed
+                $appointment->update([
+                    'status' => 'confirmed',
+                    'confirmed_at' => now(),
+                    'patient_confirmed' => true,
+                    'confirmation_method' => 'whatsapp_message'
+                ]);
+                
+                // Send confirmation message
+                $confirmationMessage = "✅ Agendamento confirmado com sucesso!\n\n" .
+                                     "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                                     "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
+                                     "Profissional: " . $appointment->provider->name . "\n\n" .
+                                     "Aguardamos você! Se precisar de algo, entre em contato conosco.";
+                
+                $this->whatsappService->sendTextMessage($phone, $confirmationMessage);
+                
+                // Log the confirmation
+                Log::info('Appointment confirmed via WhatsApp message', [
+                    'appointment_id' => $appointment->id,
+                    'patient_phone' => $phone,
+                    'confirmed_at' => now()
+                ]);
+            } else {
+                // Send error message if appointment not found
+                $this->whatsappService->sendTextMessage(
+                    $phone, 
+                    "❌ Não foi possível encontrar seu agendamento. Entre em contato conosco para mais informações."
+                );
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to handle appointment confirmation', [
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+    
+    /**
+     * Handle appointment cancellation via text message
+     * 
+     * @param string $phone
+     * @return void
+     */
+    protected function handleAppointmentCancellation(string $phone): void
+    {
+        try {
+            // Find the appointment by phone number
+            $appointment = $this->findAppointmentByPhone($phone);
+            
+            if ($appointment) {
+                // Only allow cancellation for scheduled or confirmed appointments
+                if ($appointment->status !== 'scheduled' && $appointment->status !== 'confirmed') {
+                    $this->whatsappService->sendTextMessage(
+                        $phone, 
+                        "Seu agendamento não pode ser cancelado. Status atual: {$appointment->status}."
+                    );
+                    return;
+                }
+                
+                // Update appointment status to cancelled
+                $appointment->update([
+                    'status' => 'cancelled',
+                    'cancelled_at' => now(),
+                    'cancellation_method' => 'whatsapp_message',
+                    'cancelled_by_patient' => true
+                ]);
+                
+                // Send cancellation confirmation message
+                $cancellationMessage = "❌ Agendamento cancelado com sucesso!\n\n" .
+                                     "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                                     "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
+                                     "Profissional: " . $appointment->provider->name . "\n\n" .
+                                     "Se desejar reagendar, entre em contato conosco. " .
+                                     "Obrigado por nos avisar!";
+                
+                $this->whatsappService->sendTextMessage($phone, $cancellationMessage);
+                
+                // Log the cancellation
+                Log::info('Appointment cancelled via WhatsApp message', [
+                    'appointment_id' => $appointment->id,
+                    'patient_phone' => $phone,
+                    'cancelled_at' => now()
+                ]);
+            } else {
+                // Send error message if appointment not found
+                $this->whatsappService->sendTextMessage(
+                    $phone, 
+                    "❌ Não foi possível encontrar seu agendamento. Entre em contato conosco para mais informações."
+                );
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to handle appointment cancellation', [
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+    
+    /**
+     * Handle appointment reschedule request via text message
+     * 
+     * @param string $phone
+     * @return void
+     */
+    protected function handleAppointmentReschedule(string $phone): void
+    {
+        try {
+            // Find the appointment by phone number
+            $appointment = $this->findAppointmentByPhone($phone);
+            
+            if ($appointment) {
+                // Only allow rescheduling for scheduled or confirmed appointments
+                if ($appointment->status !== 'scheduled' && $appointment->status !== 'confirmed') {
+                    $this->whatsappService->sendTextMessage(
+                        $phone, 
+                        "Seu agendamento não pode ser reagendado. Status atual: {$appointment->status}."
+                    );
+                    return;
+                }
+                
+                // Check if appointment was previously cancelled
+                if ($appointment->cancelled_by_patient) {
+                    $this->whatsappService->sendTextMessage(
+                        $phone, 
+                        "Este agendamento foi cancelado anteriormente e não pode ser reagendado. " .
+                        "Por favor, solicite um novo agendamento entrando em contato conosco."
+                    );
+                    return;
+                }
+                
+                // Send reschedule options message
+                $rescheduleMessage = "🔄 Reagendamento solicitado!\n\n" .
+                                   "Agendamento atual:\n" .
+                                   "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
+                                   "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
+                                   "Profissional: " . $appointment->provider->name . "\n\n" .
+                                   "Para reagendar, entre em contato conosco através dos canais:\n" .
+                                   "📞 Telefone: (11) 99999-9999\n" .
+                                   "💬 WhatsApp: (11) 99999-9999\n" .
+                                   "🌐 Site: www.conectasaude.com\n\n" .
+                                   "Ou responda esta mensagem com sua preferência de data e horário.";
+                
+                $this->whatsappService->sendTextMessage($phone, $rescheduleMessage);
+                
+                // Log the reschedule request
+                Log::info('Appointment reschedule requested via WhatsApp message', [
+                    'appointment_id' => $appointment->id,
+                    'patient_phone' => $phone,
+                    'requested_at' => now()
+                ]);
+                
+                // Create a reschedule request record
+                $this->createRescheduleRequest($appointment, $phone);
+            } else {
+                // Send error message if appointment not found
+                $this->whatsappService->sendTextMessage(
+                    $phone, 
+                    "❌ Não foi possível encontrar seu agendamento. Entre em contato conosco para mais informações."
+                );
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to handle appointment reschedule', [
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+    
+    /**
+     * Send help message with available commands
+     * 
+     * @param string $phone
+     * @return void
+     */
+    protected function sendHelpMessage(string $phone): void
+    {
+        $helpMessage = "📱 *Comandos disponíveis:*\n\n" .
+                      "• *confirmar* - Confirma seu próximo agendamento\n" .
+                      "• *cancelar* - Cancela seu próximo agendamento\n" .
+                      "• *reagendar* - Solicita reagendamento\n" .
+                      "• *ajuda* - Mostra esta mensagem\n\n" .
+                      "Para falar com um atendente, envie a palavra *atendente*.";
+        
+        $this->whatsappService->sendTextMessage($phone, $helpMessage);
+    }
+    
+    /**
+     * Find appointment by patient phone number
+     * 
+     * @param string $phone
+     * @return \App\Models\Appointment|null
+     */
+    protected function findAppointmentByPhone(string $phone)
+    {
+        try {
+            // Try to find patient by phone
+            $patient = \App\Models\Patient::whereHas('phones', function ($query) use ($phone) {
+                $query->where('number', 'like', '%' . substr($phone, -8) . '%');
+            })->first();
+            
+            if (!$patient) {
+                Log::warning('Patient not found for phone', ['phone' => $phone]);
+                return null;
+            }
+            
+            // Find the most recent upcoming appointment for this patient
+            $appointment = \App\Models\Appointment::where('patient_id', $patient->id)
+                ->whereIn('status', ['scheduled', 'confirmed'])
+                ->where('scheduled_date', '>=', now()->subHours(3)) // Include appointments from the last 3 hours
+                ->orderBy('scheduled_date', 'asc')
+                ->first();
+                
+            if (!$appointment) {
+                Log::warning('No upcoming appointments found for patient', [
+                    'patient_id' => $patient->id,
+                    'phone' => $phone
+                ]);
+            }
+            
+            return $appointment;
+        } catch (\Exception $e) {
+            Log::error('Error finding appointment by phone', [
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+    
+    /**
+     * Create reschedule request record
+     * 
+     * @param \App\Models\Appointment $appointment
+     * @param string $phone
+     * @return void
+     */
+    protected function createRescheduleRequest($appointment, string $phone): void
+    {
+        try {
+            // Create a reschedule request
+            \App\Models\AppointmentRescheduling::create([
+                'appointment_id' => $appointment->id,
+                'original_scheduled_date' => $appointment->scheduled_date,
+                'reason' => 'Solicitado pelo paciente via WhatsApp',
+                'requested_by_patient' => true,
+                'status' => 'pending',
+                'requested_by' => null // System generated
+            ]);
+            
+            Log::info('Reschedule request created', [
+                'appointment_id' => $appointment->id,
+                'patient_phone' => $phone
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to create reschedule request', [
+                'appointment_id' => $appointment->id,
+                'phone' => $phone,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 } 

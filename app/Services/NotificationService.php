@@ -119,24 +119,78 @@ class NotificationService
                 'solicitation.healthPlan',
                 'solicitation.tuss',
                 'provider',
-                'address'
+                'address',
+                'rescheduledFrom.originalAppointment'
             ]);
             
-            // Enviar notificação do sistema
+            Log::info("Sending appointment scheduled notifications", [
+                'appointment_id' => $appointment->id,
+                'patient_id' => $appointment->solicitation->patient->id ?? 'unknown',
+                'scheduled_date' => $appointment->scheduled_date,
+                'provider_type' => $appointment->provider_type,
+                'provider_id' => $appointment->provider_id
+            ]);
+            
+            // Send system notifications to relevant users
             $users = $this->getUsersToNotifyForAppointment($appointment);
             
             if (!$users->isEmpty()) {
                 // Send system notification
                 Notification::send($users, new AppointmentScheduled($appointment));
-                Log::info(message: "Sent appointment scheduled notification for appointment #{$appointment->id} to " . $users->count() . " users");
+                Log::info("Sent appointment scheduled notification for appointment #{$appointment->id} to " . $users->count() . " users");
             }
             
-            // Send WhatsApp notification
-            $this->sendWhatsAppAppointmentScheduled($appointment);
+            // Check if the appointment was rescheduled
+            $isRescheduled = $appointment->rescheduledFrom !== null;
+            
+            // Send WhatsApp notification with appropriate context
+            if ($isRescheduled && $appointment->rescheduledFrom && $appointment->rescheduledFrom->originalAppointment) {
+                // This is a rescheduled appointment - use the appropriate service method
+                $originalAppointment = $appointment->rescheduledFrom->originalAppointment;
+                
+                $patient = $appointment->solicitation->patient;
+                if ($patient) {
+                    $this->whatsAppService->sendRescheduledAppointmentNotification(
+                        $patient, 
+                        $appointment,
+                        $originalAppointment
+                    );
+                }
+            } else {
+                // This is a new appointment
+                $this->sendWhatsAppAppointmentScheduled($appointment);
+            }
+            
+            // Send email notification to patient if they have an email
+            $patient = $appointment->solicitation->patient;
+            if ($patient && $patient->email) {
+                try {
+                    // Uncomment when AppointmentConfirmation mail class is created
+                    // Mail::to($patient->email)->send(new \App\Mail\AppointmentConfirmation($appointment));
+                    
+                    // For now, just log that we would send an email
+                    Log::info("Would send appointment confirmation email (class not implemented yet)");
+                    
+                    Log::info("Sent appointment scheduled email to patient", [
+                        'appointment_id' => $appointment->id,
+                        'patient_id' => $patient->id,
+                        'email' => $patient->email
+                    ]);
+                } catch (\Exception $emailException) {
+                    Log::error("Failed to send appointment scheduled email: " . $emailException->getMessage(), [
+                        'appointment_id' => $appointment->id,
+                        'patient_id' => $patient->id,
+                        'email' => $patient->email,
+                        'error' => $emailException->getMessage()
+                    ]);
+                }
+            }
             
         } catch (\Exception $e) {
             Log::error("Failed to send appointment scheduled notifications: " . $e->getMessage(), [
-                'appointment_id' => $appointment->id
+                'appointment_id' => $appointment->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }
