@@ -120,7 +120,6 @@ class AppointmentReschedulingController extends Controller
                     AppointmentRescheduling::REASON_CLINIC_REQUEST,
                     AppointmentRescheduling::REASON_OTHER
                 ]),
-                'reason_description' => 'required|string|min:10',
                 'new_provider_id' => 'nullable|integer',
                 'new_provider_type' => 'nullable|string|in:App\\Models\\Clinic,App\\Models\\Professional',
                 'new_provider_type_id' => 'nullable|integer',
@@ -173,7 +172,7 @@ class AppointmentReschedulingController extends Controller
                 $newScheduledDate,
                 Auth::user(),
                 $request->reason,
-                $request->reason_description,
+                'Descrição do motivo',
                 $newProvider,
                 $request->notes
             );
