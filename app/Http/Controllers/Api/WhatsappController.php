@@ -664,7 +664,22 @@ class WhatsappController extends Controller
                 ]);
                 
                 foreach ($webhookData['messages'] as $message) {
-                    $this->processIncomingMessage($message);
+                    // Check if this is a button reply message
+                    if (isset($message['type']) && $message['type'] === 'reply' && 
+                        isset($message['reply']['type']) && $message['reply']['type'] === 'buttons_reply') {
+                        
+                        Log::info('Processing button reply message', [
+                            'message_id' => $message['id'] ?? 'unknown',
+                            'from' => $message['from'] ?? 'unknown',
+                            'button_id' => $message['reply']['buttons_reply']['id'] ?? 'unknown',
+                            'button_title' => $message['reply']['buttons_reply']['title'] ?? 'unknown'
+                        ]);
+                        
+                        $this->processButtonReply($message);
+                    } else {
+                        // Process as regular incoming message
+                        $this->processIncomingMessage($message);
+                    }
                 }
             }
             elseif (isset($webhookData['type']) && $webhookData['type'] === 'interactive') {
@@ -695,6 +710,67 @@ class WhatsappController extends Controller
         }
     }
     
+    /**
+     * Process a button reply message
+     * 
+     * @param array $message The message data from webhook
+     * @return void
+     */
+    protected function processButtonReply(array $message): void
+    {
+        try {
+            $messageId = $message['id'] ?? null;
+            $from = $message['from'] ?? null;
+            $timestamp = $message['timestamp'] ?? null;
+            $buttonId = $message['reply']['buttons_reply']['id'] ?? null;
+            $buttonTitle = $message['reply']['buttons_reply']['title'] ?? null;
+            
+            if (!$messageId || !$from || !$buttonId) {
+                Log::warning('Incomplete button reply data received', ['message' => $message]);
+                return;
+            }
+            
+            Log::info('Processing button reply', [
+                'message_id' => $messageId,
+                'from' => $from,
+                'button_id' => $buttonId,
+                'button_title' => $buttonTitle,
+                'timestamp' => $timestamp
+            ]);
+            
+            // Normalize phone number
+            try {
+                $normalizedPhone = $this->whatsappService->normalizePhoneNumber($from);
+            } catch (\Exception $e) {
+                Log::warning('Failed to normalize phone number for button reply', [
+                    'original' => $from,
+                    'error' => $e->getMessage()
+                ]);
+                $normalizedPhone = $from;
+            }
+            
+            // Save button reply message to database
+            WhatsappMessage::create([
+                'external_id' => $messageId,
+                'sender' => $normalizedPhone,
+                'recipient' => config('whapi.from_number', 'system'),
+                'message' => "[Button Reply] {$buttonTitle}",
+                'direction' => 'inbound',
+                'status' => 'received',
+                'received_at' => $timestamp ? Carbon::createFromTimestamp($timestamp) : now(),
+            ]);
+            
+            // Process the button action
+            $this->processButtonAction($normalizedPhone, $buttonId, $buttonTitle);
+            
+        } catch (\Exception $e) {
+            Log::error('Error processing button reply', [
+                'error' => $e->getMessage(),
+                'message' => $message
+            ]);
+        }
+    }
+
     /**
      * Process an incoming WhatsApp message
      * 
@@ -803,6 +879,60 @@ class WhatsappController extends Controller
     }
     
     /**
+     * Process button action based on button ID
+     * 
+     * @param string $phone Normalized phone number
+     * @param string $buttonId Button ID from the message
+     * @param string $buttonTitle Button title from the message
+     * @return void
+     */
+    protected function processButtonAction(string $phone, string $buttonId, string $buttonTitle): void
+    {
+        try {
+            Log::info('Processing button action', [
+                'phone' => $phone,
+                'button_id' => $buttonId,
+                'button_title' => $buttonTitle
+            ]);
+            
+            // Extract appointment ID from button ID if present
+            $appointmentId = null;
+            if (preg_match('/_(\d+)$/', $buttonId, $matches)) {
+                $appointmentId = (int) $matches[1];
+            }
+            
+            // Determine action based on button ID
+            if (strpos($buttonId, 'confirm') !== false) {
+                $this->handleAppointmentConfirmation($phone, $appointmentId);
+            }
+            elseif (strpos($buttonId, 'cancel') !== false) {
+                $this->handleAppointmentCancellation($phone, $appointmentId);
+            }
+            elseif (strpos($buttonId, 'reschedule') !== false) {
+                $this->handleAppointmentReschedule($phone, $appointmentId);
+            }
+            else {
+                Log::warning('Unknown button action', [
+                    'phone' => $phone,
+                    'button_id' => $buttonId,
+                    'button_title' => $buttonTitle
+                ]);
+                
+                // Send help message for unknown actions
+                $this->sendHelpMessage($phone);
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Error processing button action', [
+                'phone' => $phone,
+                'button_id' => $buttonId,
+                'button_title' => $buttonTitle,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
      * Handle keywords in incoming messages
      * 
      * @param string $phone Normalized phone number
@@ -840,16 +970,29 @@ class WhatsappController extends Controller
     }
     
     /**
-     * Handle appointment confirmation via text message
+     * Handle appointment confirmation via text message or button
      * 
      * @param string $phone
+     * @param int|null $appointmentId Optional appointment ID from button
      * @return void
      */
-    protected function handleAppointmentConfirmation(string $phone): void
+    protected function handleAppointmentConfirmation(string $phone, ?int $appointmentId = null): void
     {
         try {
-            // Find the appointment by phone number
-            $appointment = $this->findAppointmentByPhone($phone);
+            // Find the appointment by ID if provided, otherwise by phone number
+            if ($appointmentId) {
+                $appointment = \App\Models\Appointment::find($appointmentId);
+                if (!$appointment) {
+                    Log::warning('Appointment not found by ID', ['appointment_id' => $appointmentId]);
+                    $this->whatsappService->sendTextMessage(
+                        $phone, 
+                        "❌ Agendamento não encontrado. Entre em contato conosco para mais informações."
+                    );
+                    return;
+                }
+            } else {
+                $appointment = $this->findAppointmentByPhone($phone);
+            }
             
             if ($appointment) {
                 // Only allow confirmation for scheduled appointments
@@ -900,16 +1043,29 @@ class WhatsappController extends Controller
     }
     
     /**
-     * Handle appointment cancellation via text message
+     * Handle appointment cancellation via text message or button
      * 
      * @param string $phone
+     * @param int|null $appointmentId Optional appointment ID from button
      * @return void
      */
-    protected function handleAppointmentCancellation(string $phone): void
+    protected function handleAppointmentCancellation(string $phone, ?int $appointmentId = null): void
     {
         try {
-            // Find the appointment by phone number
-            $appointment = $this->findAppointmentByPhone($phone);
+            // Find the appointment by ID if provided, otherwise by phone number
+            if ($appointmentId) {
+                $appointment = \App\Models\Appointment::find($appointmentId);
+                if (!$appointment) {
+                    Log::warning('Appointment not found by ID', ['appointment_id' => $appointmentId]);
+                    $this->whatsappService->sendTextMessage(
+                        $phone, 
+                        "❌ Agendamento não encontrado. Entre em contato conosco para mais informações."
+                    );
+                    return;
+                }
+            } else {
+                $appointment = $this->findAppointmentByPhone($phone);
+            }
             
             if ($appointment) {
                 // Only allow cancellation for scheduled or confirmed appointments
@@ -961,16 +1117,29 @@ class WhatsappController extends Controller
     }
     
     /**
-     * Handle appointment reschedule request via text message
+     * Handle appointment reschedule request via text message or button
      * 
      * @param string $phone
+     * @param int|null $appointmentId Optional appointment ID from button
      * @return void
      */
-    protected function handleAppointmentReschedule(string $phone): void
+    protected function handleAppointmentReschedule(string $phone, ?int $appointmentId = null): void
     {
         try {
-            // Find the appointment by phone number
-            $appointment = $this->findAppointmentByPhone($phone);
+            // Find the appointment by ID if provided, otherwise by phone number
+            if ($appointmentId) {
+                $appointment = \App\Models\Appointment::find($appointmentId);
+                if (!$appointment) {
+                    Log::warning('Appointment not found by ID', ['appointment_id' => $appointmentId]);
+                    $this->whatsappService->sendTextMessage(
+                        $phone, 
+                        "❌ Agendamento não encontrado. Entre em contato conosco para mais informações."
+                    );
+                    return;
+                }
+            } else {
+                $appointment = $this->findAppointmentByPhone($phone);
+            }
             
             if ($appointment) {
                 // Only allow rescheduling for scheduled or confirmed appointments
