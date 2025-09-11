@@ -12,6 +12,7 @@ use App\Console\Commands\CleanupOldNegotiations;
 use App\Console\Commands\ProcessHealthPlanBilling;
 use App\Console\Commands\ProcessDeliberationBilling;
 use App\Console\Commands\MonitorAppointmentAttendance;
+use App\Console\Commands\SendOneHourReminders;
 
 class Kernel extends ConsoleKernel
 {
@@ -29,6 +30,7 @@ class Kernel extends ConsoleKernel
         ProcessHealthPlanBilling::class,
         ProcessDeliberationBilling::class,
         MonitorAppointmentAttendance::class,
+        SendOneHourReminders::class,
     ];
 
     /**
@@ -91,6 +93,12 @@ class Kernel extends ConsoleKernel
             ->everyTenMinutes()
             ->withoutOverlapping()
             ->appendOutputTo(storage_path('logs/appointment-attendance-monitor.log'));
+
+        // Send one-hour reminders every 5 minutes
+        $schedule->command('appointments:send-one-hour-reminders')
+            ->everyFiveMinutes()
+            ->withoutOverlapping()
+            ->appendOutputTo(storage_path('logs/one-hour-reminders.log'));
     }
 
     /**

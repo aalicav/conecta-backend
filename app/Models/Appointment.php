@@ -45,6 +45,7 @@ class Appointment extends Model
         'guide_status',
         'pre_confirmation_response',
         'pre_confirmation_response_at',
+        'reminder_sent_at',
     ];
 
     /**
@@ -64,6 +65,7 @@ class Appointment extends Model
         'professional_confirmed' => 'boolean',
         'pre_confirmation_response' => 'boolean',
         'pre_confirmation_response_at' => 'datetime',
+        'reminder_sent_at' => 'datetime',
     ];
 
     /**
