@@ -11,6 +11,7 @@ use App\Console\Commands\UpdateNegotiationPermissions;
 use App\Console\Commands\CleanupOldNegotiations;
 use App\Console\Commands\ProcessHealthPlanBilling;
 use App\Console\Commands\ProcessDeliberationBilling;
+use App\Console\Commands\MonitorAppointmentAttendance;
 
 class Kernel extends ConsoleKernel
 {
@@ -27,6 +28,7 @@ class Kernel extends ConsoleKernel
         CleanupOldNegotiations::class,
         ProcessHealthPlanBilling::class,
         ProcessDeliberationBilling::class,
+        MonitorAppointmentAttendance::class,
     ];
 
     /**
@@ -83,6 +85,12 @@ class Kernel extends ConsoleKernel
 
         // Send notifications for scheduled reports daily at 2:30 AM
         $schedule->command('reports:send-notifications')->dailyAt('02:30');
+
+        // Monitor appointment attendance every 10 minutes
+        $schedule->command('appointments:monitor-attendance')
+            ->everyTenMinutes()
+            ->withoutOverlapping()
+            ->appendOutputTo(storage_path('logs/appointment-attendance-monitor.log'));
     }
 
     /**
