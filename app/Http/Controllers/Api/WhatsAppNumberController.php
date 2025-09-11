@@ -28,7 +28,7 @@ class WhatsAppNumberController extends Controller
             $query = WhatsAppNumber::with(['healthPlans']);
 
             // Filter by type
-            if ($request->has('type')) {
+            if ($request->has('type') && !empty(trim($request->type))) {
                 $query->where('type', $request->type);
             }
 
@@ -38,8 +38,8 @@ class WhatsAppNumberController extends Controller
             }
 
             // Search
-            if ($request->has('search')) {
-                $search = $request->search;
+            if ($request->has('search') && !empty(trim($request->search))) {
+                $search = trim($request->search);
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
                       ->orWhere('phone_number', 'like', "%{$search}%")
@@ -251,8 +251,8 @@ class WhatsAppNumberController extends Controller
         try {
             $query = HealthPlan::where('status', 'active');
 
-            if ($request->has('search')) {
-                $search = $request->search;
+            if ($request->has('search') && !empty(trim($request->search))) {
+                $search = trim($request->search);
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
                       ->orWhere('cnpj', 'like', "%{$search}%");
