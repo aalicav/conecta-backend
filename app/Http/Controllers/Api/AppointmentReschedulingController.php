@@ -110,7 +110,11 @@ class AppointmentReschedulingController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $reschedulings
+                'data' => $reschedulings->items(),
+                'current_page' => $reschedulings->currentPage(),
+                'last_page' => $reschedulings->lastPage(),
+                'per_page' => $reschedulings->perPage(),
+                'total' => $reschedulings->total()
             ]);
 
         } catch (\Exception $e) {
