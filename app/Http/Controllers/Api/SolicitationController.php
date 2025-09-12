@@ -329,14 +329,6 @@ class SolicitationController extends Controller
                 ], 403);
             }
 
-            // Check if solicitation can be updated
-            if (!$solicitation->isPending() && !$solicitation->isProcessing()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'A solicitação não pode ser atualizada no estado atual'
-                ], 422);
-            }
-
             DB::beginTransaction();
 
             $validated = $this->validateSolicitation($request);
