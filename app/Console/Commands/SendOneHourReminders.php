@@ -73,8 +73,11 @@ class SendOneHourReminders extends Command
                 $hoursRemaining = floor($timeRemaining / 60);
                 $minutesRemaining = $timeRemaining % 60;
                 
-                // Enviar notificações
-                $this->sendReminderNotifications($appointment, $hoursRemaining, $minutesRemaining);
+        // Enviar notificações
+        $this->sendReminderNotifications($appointment, $hoursRemaining, $minutesRemaining);
+        
+        // Enviar notificações para plano de saúde e profissional/clínica
+        $this->sendProviderAndHealthPlanReminders($appointment, $hoursRemaining, $minutesRemaining);
                 
                 // Marcar como lembrança enviada
                 $appointment->update([
@@ -265,5 +268,233 @@ class SendOneHourReminders extends Command
         }
         
         return 'Endereço não informado';
+    }
+
+    /**
+     * Send reminder notifications to health plan and provider
+     */
+    private function sendProviderAndHealthPlanReminders(Appointment $appointment, int $hoursRemaining, int $minutesRemaining): void
+    {
+        $solicitation = $appointment->solicitation;
+        $patient = $solicitation->patient;
+        $healthPlan = $solicitation->healthPlan;
+        
+        // Notificar plano de saúde
+        if ($healthPlan) {
+            $this->sendHealthPlanReminder($appointment, $healthPlan, $patient, $hoursRemaining, $minutesRemaining);
+        }
+        
+        // Notificar profissional/clínica
+        $this->sendProviderReminder($appointment, $patient, $hoursRemaining, $minutesRemaining);
+    }
+
+    /**
+     * Send reminder to health plan
+     */
+    private function sendHealthPlanReminder(Appointment $appointment, $healthPlan, $patient, int $hoursRemaining, int $minutesRemaining): void
+    {
+        $timeText = $this->formatTimeRemaining($hoursRemaining, $minutesRemaining);
+        $solicitation = $appointment->solicitation;
+        
+        // Enviar email para o plano de saúde
+        $this->sendHealthPlanReminderEmail($appointment, $healthPlan, $patient, $timeText);
+        
+        // Enviar WhatsApp para o plano de saúde
+        $this->sendHealthPlanReminderWhatsApp($appointment, $healthPlan, $patient, $timeText);
+    }
+
+    /**
+     * Send reminder email to health plan
+     */
+    private function sendHealthPlanReminderEmail(Appointment $appointment, $healthPlan, $patient, string $timeText): void
+    {
+        $healthPlanEmail = $healthPlan->email ?? $healthPlan->contact_email;
+        
+        if (!$healthPlanEmail) {
+            $this->warn("No email found for health plan #{$healthPlan->id}");
+            return;
+        }
+
+        $subject = "Lembrete de Consulta - Paciente {$patient->name} - {$timeText}";
+        
+        $data = [
+            'appointment_id' => $appointment->id,
+            'patient_name' => $patient->name,
+            'patient_document' => $patient->document ?? 'N/A',
+            'health_plan_name' => $healthPlan->name,
+            'scheduled_date' => $appointment->scheduled_date->format('d/m/Y H:i'),
+            'time_remaining' => $timeText,
+            'procedure_name' => $appointment->solicitation->tuss->description ?? 'N/A',
+            'provider_name' => $this->getProviderName($appointment),
+            'provider_address' => $this->getProviderAddress($appointment),
+        ];
+
+        try {
+            Mail::send('emails.appointments.health_plan_one_hour_reminder', $data, function ($message) use ($healthPlanEmail, $subject) {
+                $message->to($healthPlanEmail)
+                       ->subject($subject);
+            });
+            
+            Log::info("Sent one-hour reminder email to health plan #{$healthPlan->id} for appointment #{$appointment->id}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send one-hour reminder email to health plan #{$healthPlan->id}", [
+                'health_plan_id' => $healthPlan->id,
+                'appointment_id' => $appointment->id,
+                'exception' => $e
+            ]);
+        }
+    }
+
+    /**
+     * Send reminder WhatsApp to health plan
+     */
+    private function sendHealthPlanReminderWhatsApp(Appointment $appointment, $healthPlan, $patient, string $timeText): void
+    {
+        $whatsappNumber = $healthPlan->whatsapp_number ?? $healthPlan->phone;
+        
+        if (!$whatsappNumber) {
+            $this->warn("No WhatsApp number found for health plan #{$healthPlan->id}");
+            return;
+        }
+
+        $message = "⏰ *Lembrete de Consulta - {$timeText}*\n\n" .
+                  "Paciente: {$patient->name}\n" .
+                  "Documento: " . ($patient->document ?? 'N/A') . "\n" .
+                  "Data/Hora: " . $appointment->scheduled_date->format('d/m/Y H:i') . "\n" .
+                  "Procedimento: " . ($appointment->solicitation->tuss->description ?? 'N/A') . "\n" .
+                  "Profissional: " . $this->getProviderName($appointment) . "\n" .
+                  "Endereço: " . $this->getProviderAddress($appointment) . "\n\n" .
+                  "A consulta está próxima. Por favor, confirme a presença do paciente.";
+
+        try {
+            $whatsAppService = app(\App\Services\WhapiWhatsAppService::class);
+            $whatsAppService->sendTextMessage(
+                $whatsappNumber,
+                $message,
+                'App\\Models\\HealthPlan',
+                $healthPlan->id
+            );
+            
+            Log::info("Sent one-hour reminder WhatsApp to health plan #{$healthPlan->id} for appointment #{$appointment->id}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send one-hour reminder WhatsApp to health plan #{$healthPlan->id}", [
+                'health_plan_id' => $healthPlan->id,
+                'appointment_id' => $appointment->id,
+                'exception' => $e
+            ]);
+        }
+    }
+
+    /**
+     * Send reminder to provider (professional or clinic)
+     */
+    private function sendProviderReminder(Appointment $appointment, $patient, int $hoursRemaining, int $minutesRemaining): void
+    {
+        $timeText = $this->formatTimeRemaining($hoursRemaining, $minutesRemaining);
+        
+        // Enviar email para o profissional/clínica
+        $this->sendProviderReminderEmail($appointment, $patient, $timeText);
+        
+        // Enviar WhatsApp para o profissional/clínica
+        $this->sendProviderReminderWhatsApp($appointment, $patient, $timeText);
+    }
+
+    /**
+     * Send reminder email to provider
+     */
+    private function sendProviderReminderEmail(Appointment $appointment, $patient, string $timeText): void
+    {
+        $provider = $appointment->provider;
+        $providerEmail = null;
+        $providerName = $this->getProviderName($appointment);
+        
+        if ($appointment->provider_type === 'App\\Models\\Professional') {
+            $providerEmail = $provider->email ?? $provider->contact_email;
+        } elseif ($appointment->provider_type === 'App\\Models\\Clinic') {
+            $providerEmail = $provider->email ?? $provider->contact_email;
+        }
+        
+        if (!$providerEmail) {
+            $this->warn("No email found for provider #{$appointment->provider_id} ({$appointment->provider_type})");
+            return;
+        }
+
+        $subject = "Lembrete de Consulta - Paciente {$patient->name} - {$timeText}";
+        
+        $data = [
+            'appointment_id' => $appointment->id,
+            'patient_name' => $patient->name,
+            'patient_document' => $patient->document ?? 'N/A',
+            'patient_phone' => $patient->phone ?? 'N/A',
+            'provider_name' => $providerName,
+            'scheduled_date' => $appointment->scheduled_date->format('d/m/Y H:i'),
+            'time_remaining' => $timeText,
+            'procedure_name' => $appointment->solicitation->tuss->description ?? 'N/A',
+            'provider_address' => $this->getProviderAddress($appointment),
+        ];
+
+        try {
+            Mail::send('emails.appointments.provider_one_hour_reminder', $data, function ($message) use ($providerEmail, $subject) {
+                $message->to($providerEmail)
+                       ->subject($subject);
+            });
+            
+            Log::info("Sent one-hour reminder email to provider #{$appointment->provider_id} for appointment #{$appointment->id}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send one-hour reminder email to provider #{$appointment->provider_id}", [
+                'provider_id' => $appointment->provider_id,
+                'provider_type' => $appointment->provider_type,
+                'appointment_id' => $appointment->id,
+                'exception' => $e
+            ]);
+        }
+    }
+
+    /**
+     * Send reminder WhatsApp to provider
+     */
+    private function sendProviderReminderWhatsApp(Appointment $appointment, $patient, string $timeText): void
+    {
+        $provider = $appointment->provider;
+        $providerPhone = null;
+        
+        if ($appointment->provider_type === 'App\\Models\\Professional') {
+            $providerPhone = $provider->phone;
+        } elseif ($appointment->provider_type === 'App\\Models\\Clinic') {
+            $providerPhone = $provider->phone;
+        }
+        
+        if (!$providerPhone) {
+            $this->warn("No phone found for provider #{$appointment->provider_id} ({$appointment->provider_type})");
+            return;
+        }
+
+        $message = "⏰ *Lembrete de Consulta - {$timeText}*\n\n" .
+                  "Paciente: {$patient->name}\n" .
+                  "Documento: " . ($patient->document ?? 'N/A') . "\n" .
+                  "Telefone: " . ($patient->phone ?? 'N/A') . "\n" .
+                  "Data/Hora: " . $appointment->scheduled_date->format('d/m/Y H:i') . "\n" .
+                  "Procedimento: " . ($appointment->solicitation->tuss->description ?? 'N/A') . "\n" .
+                  "Endereço: " . $this->getProviderAddress($appointment) . "\n\n" .
+                  "A consulta está próxima. Por favor, confirme sua disponibilidade.";
+
+        try {
+            $whatsAppService = app(\App\Services\WhapiWhatsAppService::class);
+            $whatsAppService->sendTextMessage(
+                $providerPhone,
+                $message,
+                $appointment->provider_type,
+                $appointment->provider_id
+            );
+            
+            Log::info("Sent one-hour reminder WhatsApp to provider #{$appointment->provider_id} for appointment #{$appointment->id}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send one-hour reminder WhatsApp to provider #{$appointment->provider_id}", [
+                'provider_id' => $appointment->provider_id,
+                'provider_type' => $appointment->provider_type,
+                'appointment_id' => $appointment->id,
+                'exception' => $e
+            ]);
+        }
     }
 }
