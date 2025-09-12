@@ -288,11 +288,14 @@ class AppointmentController extends Controller
                 ], 422);
             }
 
-            // Update the appointment
-            $appointment->update($request->only([
-                'scheduled_date',
-                'notes',
-            ]));
+            // Update the appointment - handle timezone correctly for scheduled_date
+            $updateData = $request->only(['notes']);
+
+            if ($request->has('scheduled_date')) {
+                $updateData['scheduled_date'] = Carbon::parse($request->scheduled_date, 'America/Sao_Paulo')->setTimezone('UTC');
+            }
+
+            $appointment->update($updateData);
 
             // Reload relationships
             $appointment->load([
@@ -807,12 +810,14 @@ class AppointmentController extends Controller
                 }
             }
 
-            // Create the appointment
+            // Create the appointment - handle timezone correctly
+            $scheduledDate = Carbon::parse($request->scheduled_date, 'America/Sao_Paulo')->setTimezone('UTC');
+
             $appointment = new Appointment([
                 'solicitation_id' => $solicitation->id,
                 'provider_type' => $normalizedProviderType,
                 'provider_id' => $request->provider_id,
-                'scheduled_date' => $request->scheduled_date,
+                'scheduled_date' => $scheduledDate,
                 'notes' => $request->notes,
                 'status' => Appointment::STATUS_SCHEDULED,
                 'created_by' => Auth::id(),
@@ -1894,8 +1899,10 @@ class AppointmentController extends Controller
                 ], 422);
             }
             
-            // Create the appointment
-            $scheduledDate = Carbon::parse($request->available_date)->setTimeFromTimeString($request->available_time);
+            // Create the appointment - handle timezone correctly
+            $scheduledDate = Carbon::parse($request->available_date, 'America/Sao_Paulo')
+                ->setTimeFromTimeString($request->available_time)
+                ->setTimezone('UTC');
             
             $appointment = new Appointment([
                 'solicitation_id' => $solicitation->id,
@@ -2042,12 +2049,14 @@ class AppointmentController extends Controller
 
             DB::beginTransaction();
 
-            // Create the appointment
+            // Create the appointment - handle timezone correctly
+            $scheduledDate = Carbon::parse($request->scheduled_date, 'America/Sao_Paulo')->setTimezone('UTC');
+
             $appointment = new Appointment([
                 'solicitation_id' => $solicitation->id,
                 'provider_type' => $normalizedProviderType,
                 'provider_id' => $request->provider_id,
-                'scheduled_date' => $request->scheduled_date,
+                'scheduled_date' => $scheduledDate,
                 'notes' => $request->notes,
                 'status' => Appointment::STATUS_SCHEDULED,
                 'created_by' => Auth::id(),

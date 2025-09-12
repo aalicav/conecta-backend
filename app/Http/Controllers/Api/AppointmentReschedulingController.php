@@ -112,7 +112,7 @@ class AppointmentReschedulingController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'appointment_id' => 'required|exists:appointments,id',
-                'new_scheduled_date' => 'required|date|after:now',
+                'new_scheduled_date' => 'nullable|date|after:now', // Made nullable for patient requests
                 'reason' => 'required|string|in:' . implode(',', [
                     AppointmentRescheduling::REASON_PAYMENT_NOT_RELEASED,
                     AppointmentRescheduling::REASON_DOCTOR_ABSENT,
@@ -154,6 +154,56 @@ class AppointmentReschedulingController extends Controller
 
             DB::beginTransaction();
 
+            // Check if this is a patient request - if so, revert to internal team queue
+            if ($request->reason === AppointmentRescheduling::REASON_PATIENT_REQUEST) {
+                // Cancel the current appointment
+                $appointment->cancel(Auth::user()->id, 'Reagendamento solicitado pelo paciente - aguardando nova agendamento pela equipe interna');
+
+                // Revert solicitation to pending status so it goes back to the internal team queue
+                $solicitation = $appointment->solicitation;
+                $solicitation->status = 'pending';
+                $solicitation->scheduled_automatically = false; // Force manual scheduling
+                $solicitation->save();
+
+                // Create rescheduling record for tracking purposes
+                $rescheduling = AppointmentRescheduling::create([
+                    'rescheduling_number' => null, // Will be auto-generated
+                    'original_appointment_id' => $appointment->id,
+                    'new_appointment_id' => null, // No new appointment yet
+                    'reason' => $request->reason,
+                    'reason_description' => $request->notes ?: 'Paciente solicitou reagendamento',
+                    'status' => AppointmentRescheduling::STATUS_COMPLETED, // Mark as completed since it's just for tracking
+                    'original_scheduled_date' => $appointment->scheduled_date,
+                    'new_scheduled_date' => null, // Will be set when internal team creates new appointment
+                    'original_provider_type' => $appointment->provider_type,
+                    'original_provider_type_id' => $appointment->provider_id,
+                    'new_provider_type' => null,
+                    'new_provider_type_id' => null,
+                    'provider_changed' => false,
+                    'financial_impact' => false,
+                    'original_amount' => 0,
+                    'new_amount' => 0,
+                    'requested_by' => Auth::id(),
+                    'notes' => $request->notes,
+                    'whatsapp_sent' => false
+                ]);
+
+                // Send notification to internal team
+                $this->sendPatientReschedulingRequestNotifications($rescheduling);
+
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Solicitação de reagendamento enviada para a equipe interna. Você será notificado quando um novo agendamento for criado.',
+                    'data' => $rescheduling->load([
+                        'originalAppointment.solicitation.patient',
+                        'requestedBy'
+                    ])
+                ], 201);
+            }
+
+            // Original flow for non-patient requests (admin/internal team rescheduling)
             $newScheduledDate = Carbon::parse($request->new_scheduled_date);
             $newProvider = null;
 
@@ -558,6 +608,27 @@ class AppointmentReschedulingController extends Controller
     }
 
     /**
+     * Send notifications for patient rescheduling requests
+     */
+    protected function sendPatientReschedulingRequestNotifications(AppointmentRescheduling $rescheduling): void
+    {
+        try {
+            // Send WhatsApp notification to patient confirming their request
+            $patient = $rescheduling->originalAppointment->solicitation->patient;
+            if ($patient && $patient->phone) {
+                $message = $this->buildPatientReschedulingRequestMessage($rescheduling);
+                $this->whatsappService->sendMessage($patient->phone, $message);
+            }
+
+            // Send database notification to internal team (admins, network managers)
+            $this->notificationService->notifyPatientReschedulingRequest($rescheduling);
+
+        } catch (\Exception $e) {
+            Log::error('Error sending patient rescheduling request notifications: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Build WhatsApp message for rescheduling
      */
     protected function buildReschedulingWhatsAppMessage(AppointmentRescheduling $rescheduling): string
@@ -573,6 +644,22 @@ class AppointmentReschedulingController extends Controller
                "📝 *Motivo:* {$reason}\n" .
                "📋 *Descrição:* {$rescheduling->reason_description}\n\n" .
                "Aguarde a confirmação da clínica. Você receberá uma notificação quando o reagendamento for aprovado.";
+    }
+
+    /**
+     * Build WhatsApp message for patient rescheduling request confirmation
+     */
+    protected function buildPatientReschedulingRequestMessage(AppointmentRescheduling $rescheduling): string
+    {
+        $originalDate = $rescheduling->original_scheduled_date->format('d/m/Y H:i');
+
+        return "📅 *Solicitação de Reagendamento Recebida*\n\n" .
+               "Recebemos sua solicitação de reagendamento:\n" .
+               "📅 *Consulta original:* {$originalDate}\n" .
+               "📝 *Motivo:* {$rescheduling->reason_description}\n\n" .
+               "Sua solicitação foi enviada para nossa equipe interna.\n" .
+               "Entraremos em contato em breve com as novas opções de agendamento.\n\n" .
+               "Agradecemos sua compreensão!";
     }
 
     /**

@@ -1161,18 +1161,18 @@ class WhatsappController extends Controller
                     return;
                 }
                 
-                // Send reschedule options message
-                $rescheduleMessage = "🔄 Reagendamento solicitado!\n\n" .
+                // Send reschedule confirmation message - updated to match the new flow
+                $rescheduleMessage = "🔄 Solicitação de reagendamento recebida!\n\n" .
                                    "Agendamento atual:\n" .
                                    "Data: " . $appointment->scheduled_date->format('d/m/Y') . "\n" .
                                    "Horário: " . $appointment->scheduled_date->format('H:i') . "\n" .
                                    "Profissional: " . $appointment->provider->name . "\n\n" .
-                                   "Para reagendar, entre em contato conosco através dos canais:\n" .
-                                   "📞 Telefone: (11) 99999-9999\n" .
-                                   "💬 WhatsApp: (11) 99999-9999\n" .
-                                   "🌐 Site: www.conectasaude.com\n\n" .
-                                   "Ou responda esta mensagem com sua preferência de data e horário.";
-                
+                                   "✅ Sua solicitação foi enviada para nossa equipe interna.\n" .
+                                   "📋 Entraremos em contato em breve com as novas opções de agendamento.\n\n" .
+                                   "⏰ Enquanto isso, seu agendamento atual permanece ativo.\n" .
+                                   "📞 Se precisar urgente, ligue: (11) 99999-9999\n\n" .
+                                   "Agradecemos sua compreensão!";
+
                 $this->whatsappService->sendTextMessage($phone, $rescheduleMessage);
                 
                 // Log the reschedule request
@@ -1270,22 +1270,59 @@ class WhatsappController extends Controller
     protected function createRescheduleRequest($appointment, string $phone): void
     {
         try {
-            // Create a reschedule request
-            \App\Models\AppointmentRescheduling::create([
+            // Find the user who requested this (system user or patient)
+            // For WhatsApp requests, we'll use a system user or create a temporary one
+            $systemUser = \App\Models\User::where('email', 'system@conectasaude.com')->first();
+
+            if (!$systemUser) {
+                // Create system user if it doesn't exist
+                $systemUser = \App\Models\User::create([
+                    'name' => 'Sistema WhatsApp',
+                    'email' => 'system@conectasaude.com',
+                    'password' => bcrypt('system_password'), // This should be changed in production
+                    'entity_type' => 'system',
+                    'entity_id' => null,
+                ]);
+            }
+
+            // Use the rescheduling controller to create the request
+            $reschedulingController = new AppointmentReschedulingController(
+                $this->whatsappService,
+                app(\App\Services\NotificationService::class),
+                app(\App\Services\ReschedulingFinancialService::class)
+            );
+
+            // Create rescheduling request using the same logic as the web interface
+            $requestData = [
                 'appointment_id' => $appointment->id,
-                'original_scheduled_date' => $appointment->scheduled_date,
-                'reason' => 'Solicitado pelo paciente via WhatsApp',
-                'requested_by_patient' => true,
-                'status' => 'pending',
-                'requested_by' => null // System generated
-            ]);
-            
-            Log::info('Reschedule request created', [
-                'appointment_id' => $appointment->id,
-                'patient_phone' => $phone
-            ]);
+                'reason' => 'patient_request', // Use the same reason as web interface
+                'notes' => 'Solicitação de reagendamento feita pelo paciente via WhatsApp'
+            ];
+
+            // Set the authenticated user as system user
+            \Auth::login($systemUser);
+
+            $request = new \Illuminate\Http\Request();
+            $request->merge($requestData);
+
+            // Call the store method to handle the rescheduling
+            $response = $reschedulingController->store($request);
+
+            if ($response->getStatusCode() === 201) {
+                Log::info('Reschedule request created via WhatsApp', [
+                    'appointment_id' => $appointment->id,
+                    'patient_phone' => $phone
+                ]);
+            } else {
+                Log::error('Failed to create reschedule request via WhatsApp', [
+                    'appointment_id' => $appointment->id,
+                    'phone' => $phone,
+                    'response' => $response->getData()
+                ]);
+            }
+
         } catch (\Exception $e) {
-            Log::error('Failed to create reschedule request', [
+            Log::error('Failed to create reschedule request via WhatsApp', [
                 'appointment_id' => $appointment->id,
                 'phone' => $phone,
                 'error' => $e->getMessage()

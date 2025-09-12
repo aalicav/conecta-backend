@@ -93,8 +93,8 @@ class NotificationService
                 'tuss_code' => $solicitation->tuss->code,
                 'tuss_description' => $solicitation->tuss->description,
                 'priority' => $solicitation->priority,
-                'preferred_date_start' => $solicitation->preferred_date_start ? $solicitation->preferred_date_start->format('d/m/Y') : 'Não definido',
-                'preferred_date_end' => $solicitation->preferred_date_end ? $solicitation->preferred_date_end->format('d/m/Y') : 'Não definido',
+                'preferred_date_start' => $solicitation->preferred_date_start && $solicitation->preferred_date_start instanceof \Carbon\Carbon ? $solicitation->preferred_date_start->format('d/m/Y') : 'Não definido',
+                'preferred_date_end' => $solicitation->preferred_date_end && $solicitation->preferred_date_end instanceof \Carbon\Carbon ? $solicitation->preferred_date_end->format('d/m/Y') : 'Não definido',
             ];
             
             Notification::send($users, new SolicitationCreated($solicitationData));
@@ -3380,8 +3380,22 @@ class NotificationService
     public function sendSolicitationInviteNotification(Solicitation $solicitation, SolicitationInvite $invite, User $provider)
     {
         try {
+            // Convert objects to arrays for notification
+            $solicitationData = [
+                'id' => $solicitation->id,
+                'patient_name' => $solicitation->patient->name ?? 'N/A',
+                'tuss_description' => $solicitation->tuss->description ?? 'N/A',
+                'priority' => $solicitation->priority ?? 'normal',
+            ];
+
+            $inviteData = [
+                'id' => $invite->id,
+                'status' => $invite->status ?? 'pending',
+                'created_at' => $invite->created_at?->toISOString(),
+            ];
+
             // Create and send the notification
-            $provider->notify(new SolicitationInviteCreated($solicitation, $invite));
+            $provider->notify(new SolicitationInviteCreated($solicitationData, $inviteData));
 
             Log::info('Solicitation invite notification sent successfully', [
                 'solicitation_id' => $solicitation->id,
@@ -4212,6 +4226,62 @@ class NotificationService
             
         } catch (\Exception $e) {
             Log::error('Error sending rescheduling request notifications: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notify about patient rescheduling request
+     *
+     * @param \App\Models\AppointmentRescheduling $rescheduling
+     * @return void
+     */
+    public function notifyPatientReschedulingRequest($rescheduling): void
+    {
+        try {
+            $notifiedUsers = collect();
+
+            // 1. Get the user who created the original appointment
+            $originalAppointment = $rescheduling->originalAppointment;
+            if ($originalAppointment && $originalAppointment->created_by) {
+                $appointmentCreator = User::find($originalAppointment->created_by);
+                if ($appointmentCreator) {
+                    $appointmentCreator->notify(new \App\Notifications\PatientReschedulingRequest($rescheduling));
+                    $notifiedUsers->push($appointmentCreator);
+                }
+            }
+
+            // 2. Get network_manager users
+            $networkManagers = User::role('network_manager')->get();
+            foreach ($networkManagers as $manager) {
+                if (!$notifiedUsers->contains('id', $manager->id)) {
+                    $manager->notify(new \App\Notifications\PatientReschedulingRequest($rescheduling));
+                    $notifiedUsers->push($manager);
+                }
+            }
+
+            // 3. Get super_admin users
+            $superAdmins = User::role('super_admin')->get();
+            foreach ($superAdmins as $admin) {
+                if (!$notifiedUsers->contains('id', $admin->id)) {
+                    $admin->notify(new \App\Notifications\PatientReschedulingRequest($rescheduling));
+                    $notifiedUsers->push($admin);
+                }
+            }
+
+            Log::info('Patient rescheduling request notifications sent', [
+                'rescheduling_id' => $rescheduling->id,
+                'appointment_id' => $rescheduling->original_appointment_id,
+                'creator_notified' => $appointmentCreator ? $appointmentCreator->name : null,
+                'network_managers_notified' => $networkManagers->count(),
+                'super_admins_notified' => $superAdmins->count(),
+                'total_notified' => $notifiedUsers->count()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error sending patient rescheduling request notifications: ' . $e->getMessage(), [
+                'rescheduling_id' => $rescheduling->id,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 }
