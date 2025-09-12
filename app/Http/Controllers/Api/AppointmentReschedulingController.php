@@ -691,6 +691,88 @@ class AppointmentReschedulingController extends Controller
     }
 
     /**
+     * Send approval notifications
+     */
+    protected function sendApprovalNotifications(AppointmentRescheduling $rescheduling): void
+    {
+        try {
+            // Send WhatsApp notification to patient
+            $patient = $rescheduling->originalAppointment->solicitation->patient;
+            if ($patient && $patient->phone) {
+                $message = $this->buildApprovalWhatsAppMessage($rescheduling);
+                $this->whatsappService->sendMessage($patient->phone, $message);
+            }
+
+            // Send database notification to admins
+            // Note: Specific approval notification method may need to be implemented in NotificationService
+            // For now, we'll use the existing rescheduling requested notification as a fallback
+            $this->notificationService->notifyReschedulingRequested($rescheduling);
+
+        } catch (\Exception $e) {
+            Log::error('Error sending approval notifications: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Send rejection notifications
+     */
+    protected function sendRejectionNotifications(AppointmentRescheduling $rescheduling): void
+    {
+        try {
+            // Send WhatsApp notification to patient
+            $patient = $rescheduling->originalAppointment->solicitation->patient;
+            if ($patient && $patient->phone) {
+                $message = $this->buildRejectionWhatsAppMessage($rescheduling);
+                $this->whatsappService->sendMessage($patient->phone, $message);
+            }
+
+            // Send database notification to admins
+            // Note: Specific rejection notification method may need to be implemented in NotificationService
+            // For now, we'll use the existing rescheduling requested notification as a fallback
+            $this->notificationService->notifyReschedulingRequested($rescheduling);
+
+        } catch (\Exception $e) {
+            Log::error('Error sending rejection notifications: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Build WhatsApp message for rescheduling approval
+     */
+    protected function buildApprovalWhatsAppMessage(AppointmentRescheduling $rescheduling): string
+    {
+        $originalDate = $rescheduling->original_scheduled_date->format('d/m/Y H:i');
+        $newDate = $rescheduling->new_scheduled_date ? $rescheduling->new_scheduled_date->format('d/m/Y H:i') : 'A ser definida';
+        $reason = $rescheduling->reason_label;
+
+        return "✅ *Reagendamento Aprovado*\n\n" .
+               "Seu reagendamento foi aprovado:\n" .
+               "📅 *Data original:* {$originalDate}\n" .
+               "📅 *Nova data:* {$newDate}\n" .
+               "📝 *Motivo:* {$reason}\n" .
+               "📋 *Descrição:* {$rescheduling->reason_description}\n\n" .
+               "Por favor, confirme sua presença na nova data.\n" .
+               "Em caso de dúvidas, entre em contato conosco.";
+    }
+
+    /**
+     * Build WhatsApp message for rescheduling rejection
+     */
+    protected function buildRejectionWhatsAppMessage(AppointmentRescheduling $rescheduling): string
+    {
+        $originalDate = $rescheduling->original_scheduled_date->format('d/m/Y H:i');
+        $reason = $rescheduling->reason_label;
+
+        return "❌ *Reagendamento Não Aprovado*\n\n" .
+               "Infelizmente, seu reagendamento não foi aprovado:\n" .
+               "📅 *Consulta original:* {$originalDate}\n" .
+               "📝 *Motivo solicitado:* {$reason}\n" .
+               "📋 *Motivo da rejeição:* {$rescheduling->rejection_reason}\n\n" .
+               "Por favor, entre em contato conosco para discutir outras opções.\n" .
+               "Agradecemos sua compreensão.";
+    }
+
+    /**
      * Get professionals and clinics by specialty for rescheduling
      */
     public function getProvidersBySpecialty(Request $request): JsonResponse
