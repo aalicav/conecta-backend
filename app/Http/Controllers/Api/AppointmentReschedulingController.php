@@ -41,53 +41,72 @@ class AppointmentReschedulingController extends Controller
     {
         try {
             $query = AppointmentRescheduling::with([
-                'originalAppointment.solicitation.patient',
-                'originalAppointment.solicitation.healthPlan',
-                'newAppointment.solicitation.patient',
-                'newAppointment.solicitation.healthPlan',
+                'originalAppointment' => function ($query) {
+                    $query->with(['solicitation.patient', 'solicitation.healthPlan']);
+                },
+                'newAppointment' => function ($query) {
+                    $query->with(['solicitation.patient', 'solicitation.healthPlan']);
+                },
                 'requestedBy',
                 'approvedBy',
                 'rejectedBy',
-                'originalBillingItem',
-                'newBillingItem'
+                'originalBillingItem' => function ($query) {
+                    $query->withTrashed();
+                },
+                'newBillingItem' => function ($query) {
+                    $query->withTrashed();
+                }
             ]);
 
             // Apply filters
-            if ($request->has('status')) {
+            if ($request->filled('status')) {
                 $query->where('status', $request->status);
             }
 
-            if ($request->has('reason')) {
+            if ($request->filled('reason')) {
                 $query->where('reason', $request->reason);
             }
 
-            if ($request->has('date_from')) {
-                $query->whereDate('created_at', '>=', $request->date_from);
+            if ($request->filled('date_from')) {
+                $query->where('created_at', '>=', $request->date_from . ' 00:00:00');
             }
 
-            if ($request->has('date_to')) {
-                $query->whereDate('created_at', '<=', $request->date_to);
+            if ($request->filled('date_to')) {
+                $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
             }
 
-            if ($request->has('financial_impact')) {
+            if ($request->has('financial_impact') && $request->financial_impact !== null) {
                 $query->where('financial_impact', $request->financial_impact);
             }
 
-            if ($request->has('provider_changed')) {
+            if ($request->has('provider_changed') && $request->provider_changed !== null) {
                 $query->where('provider_changed', $request->provider_changed);
             }
 
             // User permissions
-            if (Auth::user()->hasRole('plan_admin')) {
-                $query->whereHas('originalAppointment.solicitation', function ($q) {
-                    $q->where('health_plan_id', Auth::user()->entity_id);
+            if (Auth::user()->hasRole('plan_admin') && Auth::user()->entity_id) {
+                $query->whereHas('originalAppointment', function ($q) {
+                    $q->whereHas('solicitation', function ($sq) {
+                        $sq->where('health_plan_id', Auth::user()->entity_id);
+                    });
                 });
             } elseif (!Auth::user()->hasRole(['admin', 'super_admin'])) {
                 $query->where('requested_by', Auth::id());
             }
 
+            // Ensure we only get reschedulings with valid original appointments
+            $query->whereHas('originalAppointment');
+
             $reschedulings = $query->orderBy('created_at', 'desc')
                 ->paginate($request->per_page ?? 15);
+
+            // Log the query for debugging
+            Log::info('AppointmentRescheduling query executed', [
+                'user_id' => Auth::id(),
+                'user_roles' => Auth::user()->getRoleNames(),
+                'filters' => $request->only(['status', 'reason', 'date_from', 'date_to', 'financial_impact', 'provider_changed']),
+                'total_results' => $reschedulings->total()
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -95,7 +114,12 @@ class AppointmentReschedulingController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Error listing appointment reschedulings: ' . $e->getMessage());
+            Log::error('Error listing appointment reschedulings: ' . $e->getMessage(), [
+                'user_id' => Auth::id(),
+                'user_roles' => Auth::user()->getRoleNames(),
+                'filters' => $request->only(['status', 'reason', 'date_from', 'date_to', 'financial_impact', 'provider_changed']),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Erro ao listar reagendamentos',
@@ -157,7 +181,7 @@ class AppointmentReschedulingController extends Controller
             // Check if this is a patient request - if so, revert to internal team queue
             if ($request->reason === AppointmentRescheduling::REASON_PATIENT_REQUEST) {
                 // Cancel the current appointment
-                $appointment->cancel(Auth::user()->id, 'Reagendamento solicitado pelo paciente - aguardando nova agendamento pela equipe interna');
+                $appointment->cancel(Auth::user()->id);
 
                 // Revert solicitation to pending status so it goes back to the internal team queue
                 $solicitation = $appointment->solicitation;
@@ -474,12 +498,12 @@ class AppointmentReschedulingController extends Controller
             $query = AppointmentRescheduling::query();
 
             // Apply date filters
-            if ($request->has('date_from')) {
-                $query->whereDate('created_at', '>=', $request->date_from);
+            if ($request->filled('date_from')) {
+                $query->where('created_at', '>=', $request->date_from . ' 00:00:00');
             }
 
-            if ($request->has('date_to')) {
-                $query->whereDate('created_at', '<=', $request->date_to);
+            if ($request->filled('date_to')) {
+                $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
             }
 
             $statistics = [
